@@ -24,7 +24,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
         working-directory: src
@@ -32,18 +32,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install nuitka zstandard
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
           
       - name: Build with Nuitka
         working-directory: src
         run: |
           python -m nuitka 123pan.py \
-            --onefile \
-            --windows-disable-console\
-            --assume-yes-for-downloads \
-            --lto=yes \
-            --python-flag=no_site \
-            --output-filename=123pan \
-            --windows-icon-from-ico=icon.ico
+                      --onefile \
+                      --enable-plugin=qt-plugins \
+                      --qt-plugins=sensible \
+                      --windows-disable-console \
+                      --assume-yes-for-downloads \
+                      --lto=yes \
+                      --output-filename=123pan \
+                      --windows-icon-from-ico=icon.ico
         shell: bash
 
       # Windows artifact upload
