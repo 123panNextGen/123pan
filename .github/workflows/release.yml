@@ -45,7 +45,7 @@ jobs:
           python -m nuitka 123pan.py \
                       --onefile \
                       --enable-plugin=qt-plugins \
-                      --qt-plugins=sensible \
+                      --enable-plugin=pyqt6 \
                       --windows-disable-console \
                       --assume-yes-for-downloads \
                       --lto=yes \
