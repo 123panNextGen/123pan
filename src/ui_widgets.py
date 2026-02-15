@@ -205,7 +205,7 @@ class AboutDialog(QtWidgets.QDialog):
         layout.addWidget(separator1)
         
         # 版本信息
-        version_label = QtWidgets.QLabel("版本: 2.3.0")
+        version_label = QtWidgets.QLabel("版本: 2.3.1")
         version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version_label)
         

@@ -6,7 +6,6 @@ import os
 import json
 import hashlib
 import requests
-import sys
 import time
 import concurrent.futures
 import threading
@@ -443,13 +442,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.transfer_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.transfer_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.transfer_table.verticalHeader().setVisible(False)
+        self.transfer_table.verticalHeader().setDefaultSectionSize(60)
         self.transfer_table.horizontalHeader().setStretchLastSection(True)
         # 设置列宽
         self.transfer_table.setColumnWidth(0, 80)
         self.transfer_table.setColumnWidth(2, 120)
         self.transfer_table.setColumnWidth(3, 100)
         self.transfer_table.setColumnWidth(4, 100)
-        self.transfer_table.setColumnWidth(5, 80)
+        self.transfer_table.setColumnWidth(5, 120)
         transfer_layout.addWidget(self.transfer_table, stretch=1)
         
         # 添加页面到堆栈
@@ -1164,7 +1164,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     "line-height: 1.4;"
                 )
 
-    
     def add_transfer_task(self, type_str, name, size):
             # 确保 UI 操作在主线程
             row = self.transfer_table.rowCount()
@@ -1173,7 +1172,7 @@ class MainWindow(QtWidgets.QMainWindow):
             task_id = self.next_task_id
             self.next_task_id += 1
 
-            # 把 task_id 绑定到 Item 上
+            # 把 task_id 绑定到 Item 上（用于通过 ID 查找行）
             name_item = QtWidgets.QTableWidgetItem(name)
             name_item.setData(QtCore.Qt.ItemDataRole.UserRole, task_id)
 
@@ -1181,13 +1180,45 @@ class MainWindow(QtWidgets.QMainWindow):
             self.transfer_table.setItem(row, 1, name_item)
 
             # 格式化大小
-            s = f"{round(size / 1048576, 2)} MB" if size > 1048576 else f"{round(size / 1024, 2)} KB"
+            if size > 1024 * 1024 * 1024:
+                s = f"{round(size / (1024**3), 2)} GB"
+            elif size > 1024 * 1024:
+                s = f"{round(size / (1024**2), 2)} MB"
+            else:
+                s = f"{round(size / 1024, 2)} KB"
+                
             self.transfer_table.setItem(row, 2, QtWidgets.QTableWidgetItem(s))
             self.transfer_table.setItem(row, 3, QtWidgets.QTableWidgetItem("0%"))
             self.transfer_table.setItem(row, 4, QtWidgets.QTableWidgetItem("等待中"))
             
-            # 创建并初始化任务字典，添加到transfer_tasks列表中
-            task = {
+            # 创建操作按钮（解决显示不全的关键）
+            action_widget = QtWidgets.QWidget()
+            action_layout = QtWidgets.QHBoxLayout(action_widget)
+            # 消除布局边距和间距，防止挤压按钮
+            action_layout.setContentsMargins(5, 2, 5, 2)
+            action_layout.setSpacing(6)
+            
+            # 暂停/恢复按钮
+            pause_btn = QtWidgets.QPushButton("暂停")
+            pause_btn.setObjectName("transferActionBtn")
+            # 强制设置较小的尺寸控制样式，覆盖全局主题
+            btn_style = "padding: 4px 8px; font-size: 11px; min-width: 45px; height: 24px;"
+            pause_btn.setStyleSheet(btn_style)
+            
+            # 取消按钮
+            cancel_btn = QtWidgets.QPushButton("取消")
+            cancel_btn.setObjectName("transferActionBtn")
+            cancel_btn.setStyleSheet(btn_style)
+
+            action_layout.addWidget(pause_btn)
+            action_layout.addWidget(cancel_btn)
+            # 伸缩量让按钮居中
+            action_layout.addStretch() 
+            
+            self.transfer_table.setCellWidget(row, 5, action_widget)
+
+            # 完善任务字典存储（便于状态更新）
+            task_info = {
                 "id": task_id,
                 "type": type_str,
                 "name": name,
@@ -1196,15 +1227,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 "status": "等待中",
                 "file_path": None,
                 "threaded_task": None,
-                "pause_button": None,
-                "cancel_button": None,
+                "pause_button": pause_btn,   # 直接保存引用
+                "cancel_button": cancel_btn, # 直接保存引用
                 "row": row
             }
-            self.transfer_tasks.append(task)
+            self.transfer_tasks.append(task_info)
 
-            # 添加操作按钮
-            action_widget = self.create_action_buttons(task_id)
-            self.transfer_table.setCellWidget(row, 5, action_widget)
+            # 绑定按钮事件
+            pause_btn.clicked.connect(lambda: self.toggle_task_pause(task_id, pause_btn))
+            cancel_btn.clicked.connect(lambda: self.cancel_task(task_id))
+
+            # 自动调整最后一列宽度以适应按钮
+            self.transfer_table.setColumnWidth(5, 130) 
 
             return task_id
 
@@ -1986,12 +2020,3 @@ class MainWindow(QtWidgets.QMainWindow):
             self.update_transfer_task(task_id, 0, "已取消")
             if task_id in self.active_tasks:
                 del self.active_tasks[task_id]
-
-def main():
-    app = QtWidgets.QApplication(sys.argv)
-    w = MainWindow()
-    w.show()
-    sys.exit(app.exec())
-
-if __name__ == "__main__":
-    main()
