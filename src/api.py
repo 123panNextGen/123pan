@@ -9,6 +9,8 @@ import time
 import random
 import re
 import uuid
+import threading
+import concurrent.futures
 from log import get_logger
 from config import ConfigManager
 
@@ -751,3 +753,428 @@ class Pan123:
                     break
                 md5.update(data)
         return md5.hexdigest()
+
+    def stream_download_by_number(self, file_number, download_dir, task_id=None, signals=None, task=None):
+        file_detail = self.list[file_number]
+        if file_detail["Type"] == 1:
+            redirect_url = self.link_by_fileDetail(file_detail, showlink=False)
+        else:
+            redirect_url = self.link_by_number(file_number, showlink=False)
+        if isinstance(redirect_url, int):
+            raise RuntimeError("获取下载链接失败，返回码: " + str(redirect_url))
+        if file_detail["Type"] == 1:
+            fname = file_detail["FileName"] + ".zip"
+        else:
+            fname = file_detail["FileName"]
+
+        out_path = os.path.join(download_dir, fname)
+        temp = out_path + ".123pan"
+
+        os.makedirs(download_dir, exist_ok=True)
+
+        if os.path.exists(out_path):
+            # 由调用者决定覆盖行为
+            raise FileExistsError(out_path)
+
+        total = 0
+        accept_ranges = False
+        try:
+            head = requests.head(redirect_url, allow_redirects=True, timeout=30)
+            head.raise_for_status()
+            total = int(head.headers.get("Content-Length", 0) or 0)
+            accept_ranges = head.headers.get("Accept-Ranges", "").lower() == "bytes"
+        except Exception:
+            try:
+                with requests.get(redirect_url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    total = int(r.headers.get("Content-Length", 0) or 0)
+                    accept_ranges = r.headers.get("Accept-Ranges", "").lower() == "bytes"
+            except Exception:
+                total = 0
+                accept_ranges = False
+
+        try:
+            if accept_ranges and total and total > 1024 * 1024 * 2:
+                num_threads = min(8, max(1, int(total / (5 * 1024 * 1024))))
+                part_size = total // num_threads
+                downloaded = [0]
+                dl_lock = threading.Lock()
+
+                def download_range(start, end, index):
+                    part_path = f"{temp}.part{index}"
+                    headers = {"Range": f"bytes={start}-{end}"}
+                    try:
+                        with requests.get(redirect_url, headers=headers, stream=True, timeout=30) as r:
+                            r.raise_for_status()
+                            with open(part_path, "wb") as pf:
+                                for chunk in r.iter_content(chunk_size=8192):
+                                    if task:
+                                        try:
+                                            task._pause_event.wait()
+                                        except Exception:
+                                            pass
+                                        if task.is_cancelled:
+                                            return False
+                                    if chunk:
+                                        pf.write(chunk)
+                                        with dl_lock:
+                                            downloaded[0] += len(chunk)
+                                            if total and signals:
+                                                signals.progress.emit(int(downloaded[0] * 100 / total))
+                        return True
+                    except Exception:
+                        if os.path.exists(part_path):
+                            try:
+                                os.remove(part_path)
+                            except Exception:
+                                pass
+                        return False
+
+                futures = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as exe:
+                    for i in range(num_threads):
+                        start = i * part_size
+                        end = (start + part_size - 1) if i < num_threads - 1 else (total - 1)
+                        futures.append(exe.submit(download_range, start, end, i))
+
+                    ok = True
+                    for f in concurrent.futures.as_completed(futures):
+                        if not f.result():
+                            ok = False
+                            break
+
+                if not ok:
+                    for i in range(num_threads):
+                        p = f"{temp}.part{i}"
+                        if os.path.exists(p):
+                            try:
+                                os.remove(p)
+                            except Exception:
+                                pass
+                    raise RuntimeError("分片下载失败")
+                if task and task.is_cancelled:
+                    for i in range(num_threads):
+                        p = f"{temp}.part{i}"
+                        if os.path.exists(p):
+                            try:
+                                os.remove(p)
+                            except Exception:
+                                pass
+                    return "已取消"
+
+                with open(temp, "wb") as out_f:
+                    for i in range(num_threads):
+                        p = f"{temp}.part{i}"
+                        with open(p, "rb") as pf:
+                            while True:
+                                chunk = pf.read(8192)
+                                if not chunk:
+                                    break
+                                out_f.write(chunk)
+                        try:
+                            os.remove(p)
+                        except Exception:
+                            pass
+
+                if task and task.is_cancelled:
+                    if os.path.exists(temp):
+                        os.remove(temp)
+                    return "已取消"
+                os.replace(temp, out_path)
+                return out_path
+            else:
+                with requests.get(redirect_url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    done = 0
+                    with open(temp, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if task:
+                                try:
+                                    task._pause_event.wait()
+                                except Exception:
+                                    pass
+                                if task.is_cancelled:
+                                    f.close()
+                                    if os.path.exists(temp):
+                                        os.remove(temp)
+                                    return "已取消"
+                            if chunk:
+                                f.write(chunk)
+                                done += len(chunk)
+                                if total and signals:
+                                    signals.progress.emit(int(done * 100 / total))
+                if task and task.is_cancelled:
+                    if os.path.exists(temp):
+                        os.remove(temp)
+                    return "已取消"
+                os.replace(temp, out_path)
+                return out_path
+        except Exception:
+            if os.path.exists(temp):
+                try:
+                    os.remove(temp)
+                except Exception:
+                    pass
+            raise
+
+    def upload_file_stream(self, file_path, dup_choice=1, task_id=None, signals=None, task=None):
+        """上传文件（分块），支持 progress 回调 与 取消/暂停 控制。
+
+        与 MainWindow 的 ThreadedTask 接口兼容。
+        """
+        file_path = file_path.replace('"', "").replace("\\", "/")
+        file_name = os.path.basename(file_path)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("文件不存在")
+        if os.path.isdir(file_path):
+            raise IsADirectoryError("不支持文件夹上传")
+        fsize = os.path.getsize(file_path)
+
+        md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(64 * 1024)
+                if not data:
+                    break
+                md5.update(data)
+                if task and task.is_cancelled:
+                    return "已取消"
+        readable_hash = md5.hexdigest()
+
+        list_up_request = {
+            "driveId": 0,
+            "etag": readable_hash,
+            "fileName": file_name,
+            "parentFileId": self.parent_file_id,
+            "size": fsize,
+            "type": 0,
+            "duplicate": 0,
+        }
+        url = "https://www.123pan.com/b/api/file/upload_request"
+        headers = self.header_logined.copy()
+        res = requests.post(url, headers=headers, data=list_up_request, timeout=30)
+        res_json = res.json()
+        code = res_json.get("code", -1)
+        if code == 5060:
+            list_up_request["duplicate"] = dup_choice
+            res = requests.post(url, headers=headers, data=json.dumps(list_up_request), timeout=30)
+            res_json = res.json()
+            code = res_json.get("code", -1)
+        if code != 0:
+            raise RuntimeError("上传请求失败: " + json.dumps(res_json, ensure_ascii=False))
+        data = res_json["data"]
+        if data.get("Reuse"):
+            return "复用上传成功"
+        bucket = data["Bucket"]
+        storage_node = data["StorageNode"]
+        upload_key = data["Key"]
+        upload_id = data["UploadId"]
+        up_file_id = data["FileId"]
+        block_size = 5242880
+        total_sent = 0
+        part_number = 1
+        with open(file_path, "rb") as f:
+            while True:
+                block = f.read(block_size)
+                if not block:
+                    break
+                get_link_data = {
+                    "bucket": bucket,
+                    "key": upload_key,
+                    "partNumberEnd": part_number + 1,
+                    "partNumberStart": part_number,
+                    "uploadId": upload_id,
+                    "StorageNode": storage_node,
+                }
+                get_link_url = "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
+                get_link_res = requests.post(get_link_url, headers=headers, data=json.dumps(get_link_data), timeout=30)
+                get_link_res_json = get_link_res.json()
+                if get_link_res_json.get("code", -1) != 0:
+                    raise RuntimeError("获取上传链接失败: " + json.dumps(get_link_res_json, ensure_ascii=False))
+                upload_url = get_link_res_json["data"]["presignedUrls"][str(part_number)]
+                requests.put(upload_url, data=block, timeout=60)
+                total_sent += len(block)
+                if signals and fsize:
+                    signals.progress.emit(int(total_sent * 100 / fsize))
+                part_number += 1
+        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
+        uploaded_comp_data = {"bucket": bucket, "key": upload_key, "uploadId": upload_id, "storageNode": storage_node}
+        requests.post(uploaded_list_url, headers=headers, data=json.dumps(uploaded_comp_data), timeout=30)
+        compmultipart_up_url = "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
+        requests.post(compmultipart_up_url, headers=headers, data=json.dumps(uploaded_comp_data), timeout=30)
+        if fsize > 64 * 1024 * 1024:
+            time.sleep(3)
+        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
+        close_up_session_data = {"fileId": up_file_id}
+        close_res = requests.post(close_up_session_url, headers=headers, data=json.dumps(close_up_session_data), timeout=30)
+        cr = close_res.json()
+        if cr.get("code", -1) != 0:
+            raise RuntimeError("上传完成确认失败: " + json.dumps(cr, ensure_ascii=False))
+        return up_file_id
+
+
+# ==================== 工具函数和任务管理模块 ====================
+
+def format_file_size(size):
+    """格式化文件大小"""
+    if size > 1073741824:
+        return f"{round(size / 1073741824, 2)} GB"
+    elif size > 1048576:
+        return f"{round(size / 1048576, 2)} MB"
+    elif size > 1024:
+        return f"{round(size / 1024, 2)} KB"
+    else:
+        return f"{size} B"
+
+
+class TransferTask:
+    """传输任务的数据模型"""
+    def __init__(self, task_id, task_type, name, size):
+        self.id = task_id
+        self.type = task_type  # "上传" 或 "下载"
+        self.name = name
+        self.size = size
+        self.progress = 0
+        self.status = "等待中"
+        self.file_path = None
+        self.threaded_task = None
+        self.is_paused = False
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "type": self.type,
+            "name": self.name,
+            "size": self.size,
+            "progress": self.progress,
+            "status": self.status,
+            "file_path": self.file_path
+        }
+
+
+class TransferTaskManager:
+    """传输任务管理器 - 仅处理业务逻辑，不涉及UI"""
+    def __init__(self):
+        self.tasks = {}
+        self.next_task_id = 0
+        self.lock = threading.Lock()
+
+    def create_task(self, task_type, name, size):
+        """创建新任务并返回task_id"""
+        with self.lock:
+            task_id = self.next_task_id
+            self.next_task_id += 1
+            self.tasks[task_id] = TransferTask(task_id, task_type, name, size)
+        return task_id
+
+    def get_task(self, task_id):
+        """获取指定任务"""
+        return self.tasks.get(task_id)
+
+    def update_task_progress(self, task_id, progress):
+        """更新任务进度"""
+        task = self.get_task(task_id)
+        if task:
+            task.progress = max(0, min(100, progress))
+
+    def update_task_status(self, task_id, status):
+        """更新任务状态"""
+        task = self.get_task(task_id)
+        if task:
+            task.status = status
+
+    def update_task(self, task_id, progress=None, status=None):
+        """更新任务（进度和/或状态）"""
+        task = self.get_task(task_id)
+        if task:
+            if progress is not None:
+                task.progress = max(0, min(100, progress))
+            if status is not None:
+                task.status = status
+
+    def cancel_task(self, task_id):
+        """取消任务"""
+        task = self.get_task(task_id)
+        if task:
+            task.status = "已取消"
+            if task.threaded_task:
+                try:
+                    task.threaded_task.cancel()
+                except:
+                    pass
+            return True
+        return False
+
+    def pause_task(self, task_id):
+        """暂停任务"""
+        task = self.get_task(task_id)
+        if task and task.threaded_task:
+            try:
+                task.threaded_task.pause()
+                task.status = "已暂停"
+                task.is_paused = True
+                return True
+            except:
+                pass
+        return False
+
+    def resume_task(self, task_id):
+        """恢复任务"""
+        task = self.get_task(task_id)
+        if task and task.threaded_task:
+            try:
+                task.threaded_task.resume()
+                task.status = "下载中" if task.type == "下载" else "上传中"
+                task.is_paused = False
+                return True
+            except:
+                pass
+        return False
+
+    def remove_task(self, task_id):
+        """移除任务"""
+        if task_id in self.tasks:
+            del self.tasks[task_id]
+            return True
+        return False
+
+    def get_all_tasks(self):
+        """获取所有任务"""
+        return list(self.tasks.values())
+
+    def clear_completed_tasks(self):
+        """清除已完成的任务"""
+        to_remove = [task_id for task_id, task in self.tasks.items() 
+                     if task.status in ("已完成", "已取消", "失败")]
+        for task_id in to_remove:
+            del self.tasks[task_id]
+
+
+class FileDataManager:
+    """文件数据处理器 - 处理与文件相关的业务逻辑，不涉及UI"""
+    
+    @staticmethod
+    def get_file_type_name(file_type):
+        """根据文件类型返回类型名称"""
+        return "文件夹" if file_type == 1 else "文件"
+
+    @staticmethod
+    def format_file_size_value(size):
+        """格式化文件大小（工具函数别名）"""
+        return format_file_size(size)
+
+    @staticmethod
+    def get_file_extension(filename):
+        """获取文件扩展名"""
+        return os.path.splitext(filename)[1].lower()
+
+    @staticmethod
+    def validate_file_exists(file_path):
+        """验证文件是否存在"""
+        return os.path.isfile(file_path)
+
+    @staticmethod
+    def is_duplicate_filename(pan_instance, filename):
+        """检查是否存在同名文件"""
+        return any(item.get("FileName") == filename for item in pan_instance.list)

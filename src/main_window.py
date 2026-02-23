@@ -3,16 +3,10 @@
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 import os
-import json
-import hashlib
-import requests
-import time
-import concurrent.futures
-import threading
 from log import get_logger
 from config import ConfigManager
 from ui_widgets import SidebarButton, LoginDialog, SettingsDialog, AboutDialog
-from api import Pan123
+from api import Pan123, format_file_size, TransferTaskManager, FileDataManager
 from threading_utils import ThreadedTask
 from ui_theme_manager import ThemeManager
 
@@ -118,6 +112,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.threadpool = QtCore.QThreadPool.globalInstance()
         # 设置线程池的最大线程数，允许同时下载多个文件
         self.threadpool.setMaxThreadCount(64)
+        
+        # 初始化任务管理器
+        self.transfer_manager = TransferTaskManager()
 
         # 应用123云盘主题
         self.theme_manager = ThemeManager(self)
@@ -421,9 +418,8 @@ class MainWindow(QtWidgets.QMainWindow):
         files_layout.addWidget(file_list_widget, stretch=1)
         
         # 传输任务管理
-        self.transfer_tasks = []
-        self.next_task_id = 0
-        self.active_tasks = {}  # 保存活动任务的引用，用于取消
+        # 注：使用transfer_manager管理任务数据，ui/style在此处理
+        self.active_tasks = {}  # 保存活动任务的ThreadedTask引用，用于取消
         
         # 传输页面
         self.transfer_page = QtWidgets.QWidget()
@@ -571,13 +567,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # 添加传输任务
         task_id = self.add_transfer_task("上传", fname, file_size)
         
-        task = ThreadedTask(self._task_upload_file, file_path, dup_choice, task_id)
+        task = ThreadedTask(self.pan.upload_file_stream, file_path, dup_choice, task_id)
         
-        # 保存任务对象引用
-        for i, t in enumerate(self.transfer_tasks):
-            if t["id"] == task_id:
-                self.transfer_tasks[i]["threaded_task"] = task
-                break
+        # 保存任务对象引用到manager中
+        task_obj = self.transfer_manager.get_task(task_id)
+        if task_obj:
+            task_obj.threaded_task = task
         
         self.active_tasks[task_id] = task
         
@@ -1165,12 +1160,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
 
     def add_transfer_task(self, type_str, name, size):
+            # 使用manager创建任务
+            task_id = self.transfer_manager.create_task(type_str, name, size)
+            
             # 确保 UI 操作在主线程
             row = self.transfer_table.rowCount()
             self.transfer_table.insertRow(row)
-
-            task_id = self.next_task_id
-            self.next_task_id += 1
 
             # 把 task_id 绑定到 Item 上（用于通过 ID 查找行）
             name_item = QtWidgets.QTableWidgetItem(name)
@@ -1180,12 +1175,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.transfer_table.setItem(row, 1, name_item)
 
             # 格式化大小
-            if size > 1024 * 1024 * 1024:
-                s = f"{round(size / (1024**3), 2)} GB"
-            elif size > 1024 * 1024:
-                s = f"{round(size / (1024**2), 2)} MB"
-            else:
-                s = f"{round(size / 1024, 2)} KB"
+            s = format_file_size(size)
                 
             self.transfer_table.setItem(row, 2, QtWidgets.QTableWidgetItem(s))
             self.transfer_table.setItem(row, 3, QtWidgets.QTableWidgetItem("0%"))
@@ -1217,22 +1207,6 @@ class MainWindow(QtWidgets.QMainWindow):
             
             self.transfer_table.setCellWidget(row, 5, action_widget)
 
-            # 完善任务字典存储（便于状态更新）
-            task_info = {
-                "id": task_id,
-                "type": type_str,
-                "name": name,
-                "size": size,
-                "progress": 0,
-                "status": "等待中",
-                "file_path": None,
-                "threaded_task": None,
-                "pause_button": pause_btn,   # 直接保存引用
-                "cancel_button": cancel_btn, # 直接保存引用
-                "row": row
-            }
-            self.transfer_tasks.append(task_info)
-
             # 绑定按钮事件
             pause_btn.clicked.connect(lambda: self.toggle_task_pause(task_id, pause_btn))
             cancel_btn.clicked.connect(lambda: self.cancel_task(task_id))
@@ -1242,42 +1216,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
             return task_id
 
-    def create_action_buttons(self, task_id):
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(container)
-        
-        # 暂停/恢复按钮
-        pause_btn = QtWidgets.QPushButton("暂停")
-        # 取消按钮
-        cancel_btn = QtWidgets.QPushButton("取消")
-        
-        # 设置按钮固定大小，防止被 QSS 拉伸变形
-        pause_btn.setFixedSize(60, 24)
-        cancel_btn.setFixedSize(60, 24)
-        
-        # 可以在这里为这些按钮添加特定的对象名，以便单独设置样式
-        pause_btn.setObjectName("transferActionBtn")
-        cancel_btn.setObjectName("transferActionBtn")
-        
-        # 连接按钮信号到处理函数
-        pause_btn.clicked.connect(lambda: self.toggle_task_pause(task_id, pause_btn))
-        cancel_btn.clicked.connect(lambda: self.cancel_task(task_id))
-        
-        # 保存按钮引用到任务中，便于后续更新
-        for i, t in enumerate(self.transfer_tasks):
-            if t["id"] == task_id:
-                self.transfer_tasks[i]['pause_button'] = pause_btn
-                self.transfer_tasks[i]['cancel_button'] = cancel_btn
-                break
-
-        layout.addWidget(pause_btn)
-        layout.addWidget(cancel_btn)
-        layout.setContentsMargins(5, 2, 5, 2)
-        layout.setSpacing(10)
-        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        
-        return container
-    
     def update_transfer_task(self, task_id, progress, status):
             """根据 task_id 安全地更新传输列表中的某一行"""
             # 遍历表格找到匹配 task_id 的行（假设我们将 task_id 存储在某列的数据角色中）
@@ -1294,113 +1232,105 @@ class MainWindow(QtWidgets.QMainWindow):
             # 更新进度 (第3列)
             if progress is not None:
                 self.transfer_table.item(found_row, 3).setText(f"{progress}%")
+                self.transfer_manager.update_task_progress(task_id, progress)
                 
             # 更新状态 (第4列)
             if status:
                 self.transfer_table.item(found_row, 4).setText(status)
+                self.transfer_manager.update_task_status(task_id, status)
     
     def cancel_transfer_task(self, task_id):
-        """取消传输任务"""
-        # 查找任务
-        for i, task in enumerate(self.transfer_tasks):
-            if task["id"] == task_id:
-                # 取消线程任务
-                if task.get("threaded_task"):
-                    task["threaded_task"].cancel()
-                
-                # 如果是下载任务，删除临时文件
-                if task["type"] == "下载" and task.get("file_path") and os.path.exists(task["file_path"]):
-                    try:
-                        os.remove(task["file_path"])
-                        # 也检查是否有最终文件存在（如果下载已完成但未清理）
-                        final_path = task["file_path"].replace(".123pan", "")
-                        if os.path.exists(final_path):
-                            os.remove(final_path)
-                    except Exception as e:
-                        print(f"删除文件失败: {e}")
-                
-                # 更新任务状态
-                task["status"] = "已取消"
-                task["progress"] = 0
-                self.transfer_table.setItem(i, 3, QtWidgets.QTableWidgetItem("0%"))
-                self.transfer_table.setItem(i, 4, QtWidgets.QTableWidgetItem("已取消"))
-                
-                # 隐藏按钮容器
-                widget = self.transfer_table.cellWidget(i, 5)
-                if widget:
-                    widget.setVisible(False)
-                # 也隐藏单独的按钮引用（若存在）
-                if task.get('pause_button'):
-                    try:
-                        task['pause_button'].setVisible(False)
-                    except Exception:
-                        pass
-                if task.get('cancel_button'):
-                    try:
-                        task['cancel_button'].setVisible(False)
-                    except Exception:
-                        pass
-                
-                # 从活动任务列表中移除
-                if task_id in self.active_tasks:
-                    del self.active_tasks[task_id]
-                
+        """取消传输任务（业务逻辑部分已在TransferTaskManager中处理）"""
+        task = self.transfer_manager.get_task(task_id)
+        if not task:
+            return
+        
+        # 取消线程任务
+        if task.threaded_task:
+            task.threaded_task.cancel()
+        
+        # 如果是下载任务，删除临时文件
+        if task.type == "下载" and task.file_path and os.path.exists(task.file_path):
+            try:
+                os.remove(task.file_path)
+                # 也检查是否有最终文件存在（如果下载已完成但未清理）
+                final_path = task.file_path.replace(".123pan", "")
+                if os.path.exists(final_path):
+                    os.remove(final_path)
+            except Exception as e:
+                print(f"删除文件失败: {e}")
+        
+        # 更新任务状态
+        self.update_transfer_task(task_id, 0, "已取消")
+        
+        # 隐藏按钮容器
+        found_row = -1
+        for row in range(self.transfer_table.rowCount()):
+            item = self.transfer_table.item(row, 1)
+            if item and item.data(QtCore.Qt.ItemDataRole.UserRole) == task_id:
+                found_row = row
                 break
+        
+        if found_row != -1:
+            widget = self.transfer_table.cellWidget(found_row, 5)
+            if widget:
+                widget.setVisible(False)
+        
+        # 从活动任务列表中移除
+        if task_id in self.active_tasks:
+            del self.active_tasks[task_id]
 
     def pause_transfer_task(self, task_id):
-        """切换暂停/继续传输任务"""
-        for i, task in enumerate(self.transfer_tasks):
-            if task["id"] == task_id:
-                threaded = task.get("threaded_task")
-                pause_btn = task.get('pause_button')
-                if not threaded:
-                    return
-                # 切换状态
-                if getattr(threaded, 'is_paused', False):
-                    try:
-                        threaded.resume()
-                    except Exception:
-                        pass
-                    task["status"] = "下载中"
-                    if pause_btn:
-                        pause_btn.setText("暂停")
-                else:
-                    try:
-                        threaded.pause()
-                    except Exception:
-                        pass
-                    task["status"] = "已暂停"
-                    if pause_btn:
-                        pause_btn.setText("继续")
+        """暂停传输任务"""
+        task = self.transfer_manager.get_task(task_id)
+        if not task or not task.threaded_task:
+            return
+        
+        # 切换状态
+        if getattr(task.threaded_task, 'is_paused', False):
+            try:
+                task.threaded_task.resume()
+            except Exception:
+                pass
+            task.status = "下载中" if task.type == "下载" else "上传中"
+        else:
+            try:
+                task.threaded_task.pause()
+            except Exception:
+                pass
+            task.status = "已暂停"
 
-                # 更新表格显示
-                self.transfer_table.setItem(i, 4, QtWidgets.QTableWidgetItem(task["status"]))
+        # 更新表格显示
+        found_row = -1
+        for row in range(self.transfer_table.rowCount()):
+            item = self.transfer_table.item(row, 1)
+            if item and item.data(QtCore.Qt.ItemDataRole.UserRole) == task_id:
+                found_row = row
                 break
+        
+        if found_row != -1:
+            self.transfer_table.setItem(found_row, 4, QtWidgets.QTableWidgetItem(task.status))
     
     def remove_transfer_task(self, task_id):
         """移除传输任务"""
-        # 查找任务
-        for i, task in enumerate(self.transfer_tasks):
-            if task["id"] == task_id:
-                # 从列表中移除
-                self.transfer_tasks.pop(i)
-                # 从表格中移除
-                self.transfer_table.removeRow(i)
-                # 从活动任务列表中移除
-                if task_id in self.active_tasks:
-                    del self.active_tasks[task_id]
+        # 寻找任务在表格中的行号
+        found_row = -1
+        for row in range(self.transfer_table.rowCount()):
+            item = self.transfer_table.item(row, 1)
+            if item and item.data(QtCore.Qt.ItemDataRole.UserRole) == task_id:
+                found_row = row
                 break
-    
-    def format_file_size(self, size):
-        """格式化文件大小"""
-        if size > 1073741824:
-            return f"{round(size / 1073741824, 2)} GB"
-        elif size > 1048576:
-            return f"{round(size / 1048576, 2)} MB"
-        elif size > 1024:
-            return f"{round(size / 1024, 2)} KB"
-        else:
-            return f"{size} B"
+        
+        if found_row != -1:
+            # 从表格中移除
+            self.transfer_table.removeRow(found_row)
+        
+        # 从管理器中移除
+        self.transfer_manager.remove_task(task_id)
+        
+        # 从活动任务列表中移除
+        if task_id in self.active_tasks:
+            del self.active_tasks[task_id]
 
     def get_selected_detail(self):
         row = self.prompt_selected_row()
@@ -1441,13 +1371,12 @@ class MainWindow(QtWidgets.QMainWindow):
         task_id = self.add_transfer_task("下载", file_name, file_size)
         
         self.status.showMessage("正在解析下载链接...")
-        task = ThreadedTask(self._task_get_download_and_stream, file_index, download_dir, task_id)
+        task = ThreadedTask(self.pan.stream_download_by_number, file_index, download_dir, task_id)
         
-        # 保存任务对象引用
-        for i, t in enumerate(self.transfer_tasks):
-            if t["id"] == task_id:
-                self.transfer_tasks[i]["threaded_task"] = task
-                break
+        # 保存任务对象引用到manager中
+        task_obj = self.transfer_manager.get_task(task_id)
+        if task_obj:
+            task_obj.threaded_task = task
         
         self.active_tasks[task_id] = task
         
@@ -1472,186 +1401,7 @@ class MainWindow(QtWidgets.QMainWindow):
         task.signals.finished.connect(lambda tid=task_id: on_task_finished(tid))
         self.threadpool.start(task)
 
-    def _task_get_download_and_stream(self, file_index, download_dir, task_id, signals=None, task=None):
-        file_detail = self.pan.list[file_index]
-        if file_detail["Type"] == 1:
-            redirect_url = self.pan.link_by_fileDetail(file_detail, showlink=False)
-        else:
-            redirect_url = self.pan.link_by_number(file_index, showlink=False)
-        if isinstance(redirect_url, int):
-            raise RuntimeError("获取下载链接失败，返回码: " + str(redirect_url))
-        if file_detail["Type"] == 1:
-            fname = file_detail["FileName"] + ".zip"
-        else:
-            fname = file_detail["FileName"]
-        out_path = os.path.join(download_dir, fname)
-        temp = out_path + ".123pan"
-
-        # 保存文件路径到任务对象
-        for i, t in enumerate(self.transfer_tasks):
-            if t["id"] == task_id:
-                self.transfer_tasks[i]["file_path"] = temp
-                break
-
-        if os.path.exists(out_path):
-            reply = QtWidgets.QMessageBox.question(None, "文件已存在", f"{fname} 已存在，是否覆盖？", QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
-            if reply == QtWidgets.QMessageBox.StandardButton.No:
-                return "已取消"
-
-        # 尝试获取头信息，判断是否支持 Range
-        total = 0
-        accept_ranges = False
-        try:
-            head = requests.head(redirect_url, allow_redirects=True, timeout=30)
-            head.raise_for_status()
-            total = int(head.headers.get("Content-Length", 0) or 0)
-            accept_ranges = head.headers.get("Accept-Ranges", "").lower() == "bytes"
-        except Exception:
-            # 有些链接不支持 HEAD，使用 GET 获取 headers
-            try:
-                with requests.get(redirect_url, stream=True, timeout=30) as r:
-                    r.raise_for_status()
-                    total = int(r.headers.get("Content-Length", 0) or 0)
-                    accept_ranges = r.headers.get("Accept-Ranges", "").lower() == "bytes"
-            except Exception:
-                total = 0
-                accept_ranges = False
-
-        # 如果支持分片并且文件较大，则采用多线程分片下载
-        try:
-            if accept_ranges and total and total > 1024 * 1024 * 2:
-                # 计算分片数（最多 8 片）
-                num_threads = min(8, max(1, int(total / (5 * 1024 * 1024))))
-                part_size = total // num_threads
-                parts = []
-                downloaded = [0]
-                dl_lock = threading.Lock()
-
-                def download_range(start, end, index):
-                    part_path = f"{temp}.part{index}"
-                    headers = {"Range": f"bytes={start}-{end}"}
-                    try:
-                        with requests.get(redirect_url, headers=headers, stream=True, timeout=30) as r:
-                            r.raise_for_status()
-                            with open(part_path, "wb") as pf:
-                                for chunk in r.iter_content(chunk_size=8192):
-                                    # 支持暂停/继续
-                                    if task:
-                                        # wait 如果被暂停，会在这里阻塞
-                                        try:
-                                            task._pause_event.wait()
-                                        except Exception:
-                                            pass
-                                        if task.is_cancelled:
-                                            return False
-                                    if chunk:
-                                        pf.write(chunk)
-                                        with dl_lock:
-                                            downloaded[0] += len(chunk)
-                                            if total and signals:
-                                                signals.progress.emit(int(downloaded[0] * 100 / total))
-                        return True
-                    except Exception:
-                        # 出错时确保部分文件被删除
-                        if os.path.exists(part_path):
-                            try:
-                                os.remove(part_path)
-                            except Exception:
-                                pass
-                        return False
-
-                # 提交分片任务
-                futures = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as exe:
-                    for i in range(num_threads):
-                        start = i * part_size
-                        end = (start + part_size - 1) if i < num_threads - 1 else (total - 1)
-                        futures.append(exe.submit(download_range, start, end, i))
-
-                    # 等待完成
-                    ok = True
-                    for f in concurrent.futures.as_completed(futures):
-                        if not f.result():
-                            ok = False
-                            break
-
-                if not ok:
-                    # 清理部分文件
-                    for i in range(num_threads):
-                        p = f"{temp}.part{i}"
-                        if os.path.exists(p):
-                            try:
-                                os.remove(p)
-                            except Exception:
-                                pass
-                    raise RuntimeError("分片下载失败")
-                if task and task.is_cancelled:
-                    for i in range(num_threads):
-                        p = f"{temp}.part{i}"
-                        if os.path.exists(p):
-                            try:
-                                os.remove(p)
-                            except Exception:
-                                pass
-                    return "已取消"
-
-                # 合并部分文件
-                with open(temp, "wb") as out_f:
-                    for i in range(num_threads):
-                        p = f"{temp}.part{i}"
-                        with open(p, "rb") as pf:
-                            while True:
-                                chunk = pf.read(8192)
-                                if not chunk:
-                                    break
-                                out_f.write(chunk)
-                        try:
-                            os.remove(p)
-                        except Exception:
-                            pass
-
-                if task and task.is_cancelled:
-                    if os.path.exists(temp):
-                        os.remove(temp)
-                    return "已取消"
-                os.replace(temp, out_path)
-                return out_path
-            else:
-                # 单线程流式下载，支持暂停/取消
-                with requests.get(redirect_url, stream=True, timeout=30) as r:
-                    r.raise_for_status()
-                    done = 0
-                    with open(temp, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if task:
-                                try:
-                                    task._pause_event.wait()
-                                except Exception:
-                                    pass
-                                if task.is_cancelled:
-                                    f.close()
-                                    if os.path.exists(temp):
-                                        os.remove(temp)
-                                    return "已取消"
-                            if chunk:
-                                f.write(chunk)
-                                done += len(chunk)
-                                if total and signals:
-                                    signals.progress.emit(int(done * 100 / total))
-                if task and task.is_cancelled:
-                    if os.path.exists(temp):
-                        os.remove(temp)
-                    return "已取消"
-                os.replace(temp, out_path)
-                return out_path
-        except Exception as e:
-            # 如果发生异常，删除临时文件并抛出
-            if os.path.exists(temp):
-                try:
-                    os.remove(temp)
-                except Exception:
-                    pass
-            raise
+    
 
     def on_showlink(self):
         file_index, file_detail = self.get_selected_detail()
@@ -1720,13 +1470,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # 添加传输任务
         task_id = self.add_transfer_task("上传", fname, file_size)
         
-        task = ThreadedTask(self._task_upload_file, path, dup_choice, task_id)
+        task = ThreadedTask(self.pan.upload_file_stream, path, dup_choice, task_id)
         
-        # 保存任务对象引用
-        for i, t in enumerate(self.transfer_tasks):
-            if t["id"] == task_id:
-                self.transfer_tasks[i]["threaded_task"] = task
-                break
+        # 保存任务对象引用到manager中
+        task_obj = self.transfer_manager.get_task(task_id)
+        if task_obj:
+            task_obj.threaded_task = task
         
         self.active_tasks[task_id] = task
         
@@ -1752,104 +1501,7 @@ class MainWindow(QtWidgets.QMainWindow):
         task.signals.finished.connect(lambda tid=task_id: on_task_finished(tid))
         self.threadpool.start(task)
 
-    def _task_upload_file(self, file_path, dup_choice, task_id, signals=None, task=None):
-        file_path = file_path.replace('"', "").replace("\\", "/")
-        file_name = os.path.basename(file_path)
-        if not os.path.exists(file_path):
-            raise RuntimeError("文件不存在")
-        if os.path.isdir(file_path):
-            raise RuntimeError("不支持文件夹上传")
-        fsize = os.path.getsize(file_path)
-        
-        # 检查是否被取消
-        if task and task.is_cancelled:
-            return "已取消"
-        
-        md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            while True:
-                data = f.read(64 * 1024)
-                if not data:
-                    break
-                md5.update(data)
-                # 检查是否被取消
-                if task and task.is_cancelled:
-                    return "已取消"
-        readable_hash = md5.hexdigest()
-        
-        # 检查是否被取消
-        if task and task.is_cancelled:
-            return "已取消"
-        list_up_request = {
-            "driveId": 0,
-            "etag": readable_hash,
-            "fileName": file_name,
-            "parentFileId": self.pan.parent_file_id,
-            "size": fsize,
-            "type": 0,
-            "duplicate": 0,
-        }
-        url = "https://www.123pan.com/b/api/file/upload_request"
-        headers = self.pan.header_logined.copy()
-        res = requests.post(url, headers=headers, data=list_up_request, timeout=30)
-        res_json = res.json()
-        code = res_json.get("code", -1)
-        if code == 5060:
-            list_up_request["duplicate"] = dup_choice
-            res = requests.post(url, headers=headers, data=json.dumps(list_up_request), timeout=30)
-            res_json = res.json()
-            code = res_json.get("code", -1)
-        if code != 0:
-            raise RuntimeError("上传请求失败: " + json.dumps(res_json, ensure_ascii=False))
-        data = res_json["data"]
-        if data.get("Reuse"):
-            return "复用上传成功"
-        bucket = data["Bucket"]
-        storage_node = data["StorageNode"]
-        upload_key = data["Key"]
-        upload_id = data["UploadId"]
-        up_file_id = data["FileId"]
-        block_size = 5242880
-        total_sent = 0
-        part_number = 1
-        with open(file_path, "rb") as f:
-            while True:
-                block = f.read(block_size)
-                if not block:
-                    break
-                get_link_data = {
-                    "bucket": bucket,
-                    "key": upload_key,
-                    "partNumberEnd": part_number + 1,
-                    "partNumberStart": part_number,
-                    "uploadId": upload_id,
-                    "StorageNode": storage_node,
-                }
-                get_link_url = "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
-                get_link_res = requests.post(get_link_url, headers=headers, data=json.dumps(get_link_data), timeout=30)
-                get_link_res_json = get_link_res.json()
-                if get_link_res_json.get("code", -1) != 0:
-                    raise RuntimeError("获取上传链接失败: " + json.dumps(get_link_res_json, ensure_ascii=False))
-                upload_url = get_link_res_json["data"]["presignedUrls"][str(part_number)]
-                requests.put(upload_url, data=block, timeout=60)
-                total_sent += len(block)
-                if signals and fsize:
-                    signals.progress.emit(int(total_sent * 100 / fsize))
-                part_number += 1
-        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
-        uploaded_comp_data = {"bucket": bucket, "key": upload_key, "uploadId": upload_id, "storageNode": storage_node}
-        requests.post(uploaded_list_url, headers=headers, data=json.dumps(uploaded_comp_data), timeout=30)
-        compmultipart_up_url = "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
-        requests.post(compmultipart_up_url, headers=headers, data=json.dumps(uploaded_comp_data), timeout=30)
-        if fsize > 64 * 1024 * 1024:
-            time.sleep(3)
-        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
-        close_up_session_data = {"fileId": up_file_id}
-        close_res = requests.post(close_up_session_url, headers=headers, data=json.dumps(close_up_session_data), timeout=30)
-        cr = close_res.json()
-        if cr.get("code", -1) != 0:
-            raise RuntimeError("上传完成确认失败: " + json.dumps(cr, ensure_ascii=False))
-        return up_file_id
+    
 
     def on_mkdir(self):
         if not self.pan:
@@ -1883,27 +1535,11 @@ class MainWindow(QtWidgets.QMainWindow):
         pwd, ok = QtWidgets.QInputDialog.getText(self, "分享", "提取码（留空则没有提取码）：")
         if not ok:
             return
-        file_id_list = str(file_detail["FileId"])
-        data = {
-            "driveId": 0,
-            "expiration": "2099-12-12T08:00:00+08:00",
-            "fileIdList": file_id_list,
-            "shareName": "123云盘分享",
-            "sharePwd": pwd or "",
-            "event": "shareCreate"
-        }
-        headers = self.pan.header_logined.copy()
         try:
-            r = requests.post("https://www.123pan.com/a/api/share/create", headers=headers, data=json.dumps(data), timeout=30)
-            jr = r.json()
-            if jr.get("code", -1) != 0:
-                self._show_error("分享失败: " + jr.get("message", str(jr)))
-                return
-            share_key = jr["data"]["ShareKey"]
-            share_url = "https://www.123pan.com/s/" + share_key
+            share_url = self.pan.share([file_detail["FileId"]], pwd or "")
             QtWidgets.QMessageBox.information(self, "分享链接", f"{share_url}\n提取码：{pwd or '(无)'}")
         except Exception as e:
-            self._show_error("分享异常: " + str(e))
+            self._show_error("分享失败: " + str(e))
 
     def _show_error(self, msg):
         QtWidgets.QMessageBox.critical(self, "错误", msg)
@@ -1999,17 +1635,24 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggle_task_pause(self, task_id, button):
         """处理暂停和恢复逻辑"""
         task = self.active_tasks.get(task_id)
-        if not task: return
+        if not task:
+            return
+        
+        task_obj = self.transfer_manager.get_task(task_id)
+        if not task_obj:
+            return
         
         if task.is_paused:
             task.resume()
             button.setText("暂停")
-            button.setStyleSheet(button.styleSheet().replace("#f9e2af", self.get_theme_color('accent')))
+            task_obj.is_paused = False
+            task_obj.status = "下载中" if task_obj.type == "下载" else "上传中"
         else:
             task.pause()
             button.setText("恢复")
-            # 变成警告色（黄色）
-            button.setStyleSheet(button.styleSheet().replace(self.get_theme_color('accent'), "#f9e2af"))
+            task_obj.is_paused = True
+            task_obj.status = "已暂停"
+            # 更新表格显示
             self.update_transfer_task(task_id, None, "已暂停")
 
     def cancel_task(self, task_id):
