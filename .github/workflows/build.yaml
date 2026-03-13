@@ -1,0 +1,91 @@
+name: Build & Release 123pan
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        working-directory: src
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
+          
+      - name: Build with Nuitka
+        working-directory: src
+        run: |
+          bash ./build.sh
+        shell: bash
+
+      # Windows artifact upload
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 123pan-windows
+          path: src/123pan.exe
+
+      # Linux artifact upload
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 123pan-linux
+          path: src/123pan
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows artifact
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: 123pan-windows
+          path: ./artifacts/windows
+
+      - name: Download Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: 123pan-linux
+          path: ./artifacts/linux
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            ./artifacts/windows/123pan.exe
+            ./artifacts/linux/123pan
+          generate_release_notes: false

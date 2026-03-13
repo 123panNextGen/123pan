@@ -6,7 +6,7 @@
             "name": "debug",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/123pan.py",
+            "program": "${workspaceFolder}/src/123pan.py",
             "console": "integratedTerminal"
         }
     ]
