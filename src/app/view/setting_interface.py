@@ -5,7 +5,7 @@ from PyQt6.QtGui import QDesktopServices
 from qfluentwidgets import ExpandLayout, SettingCardGroup, PushSettingCard, SwitchSettingCard, ScrollArea, PrimaryPushSettingCard
 from qfluentwidgets import FluentIcon as FIF
 
-from ..common.config import cfg, YEAR, ABOUT_URL, isWin11
+from ..common.config import cfg, YEAR, ABOUT_URL, isWin11 ,VERSION
 from ..common.style_sheet import StyleSheet
 
 class SettingInterface(ScrollArea):
@@ -43,7 +43,7 @@ class SettingInterface(ScrollArea):
             self.tr('项目页面'),
             FIF.INFO,
             self.tr('关于'),
-            '© Copyright' + f" {YEAR}",
+            '123pan' + f"{VERSION}" + ' © Copyright' + f" {YEAR}",
             self.aboutGroup
         )
 
