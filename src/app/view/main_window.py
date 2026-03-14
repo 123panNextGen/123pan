@@ -1,9 +1,27 @@
 from PyQt6.QtCore import Qt, pyqtSignal, QEasingCurve, QUrl, QSize, QTimer
 from PyQt6.QtGui import QIcon, QDesktopServices, QColor
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QFrame, QWidget, QDialog, QMessageBox, QVBoxLayout, QFormLayout, QLineEdit, QPushButton
+from PyQt6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QFrame,
+    QWidget,
+    QDialog,
+    QMessageBox,
+    QVBoxLayout,
+    QFormLayout,
+    QLineEdit,
+    QPushButton,
+)
 
-from qfluentwidgets import (NavigationAvatarWidget, NavigationItemPosition, MessageBox, FluentWindow,
-                            SplashScreen, SystemThemeListener, isDarkTheme)
+from qfluentwidgets import (
+    NavigationAvatarWidget,
+    NavigationItemPosition,
+    MessageBox,
+    FluentWindow,
+    SplashScreen,
+    SystemThemeListener,
+    isDarkTheme,
+)
 from qfluentwidgets import FluentIcon as FIF
 
 from .file_interface import FileInterface
@@ -15,6 +33,7 @@ from ..common import resource
 from ..common.api import Pan123
 from ..common import config
 
+
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
@@ -25,20 +44,26 @@ class MainWindow(FluentWindow):
         self.file_interface = FileInterface(self)
         self.transfer_interface = TransferInterface(self)
         self.setting_interface = SettingInterface(self)
-        
+
         self._startup_login_flow()
         self._initNavigation()
 
     def _initNavigation(self):
         self.addSubInterface(self.file_interface, FIF.FOLDER, "文件")
         self.addSubInterface(self.transfer_interface, FIF.SYNC, "传输")
-        self.addSubInterface(self.setting_interface, FIF.SETTING, "设置",
-                             position=NavigationItemPosition.BOTTOM)
-        
+        self.addSubInterface(
+            self.setting_interface,
+            FIF.SETTING,
+            "设置",
+            position=NavigationItemPosition.BOTTOM,
+        )
+
     def _startup_login_flow(self):
         cfg_loaded = False
         cfg = config.ConfigManager.load_config()
-        if config.ConfigManager.get_setting("userName") and config.ConfigManager.get_setting("passWord"):
+        if config.ConfigManager.get_setting(
+            "userName"
+        ) and config.ConfigManager.get_setting("passWord"):
             try:
                 self.pan = Pan123(readfile=True, input_pwd=False)
                 res_code = self.pan.get_dir(save=False)[0]
@@ -57,4 +82,6 @@ class MainWindow(FluentWindow):
                 return
             self.pan = dlg.get_pan()
 
-        self.refresh_file_list(reset_page=True)
+        # 将 pan 对象传递给 file_interface 并刷新文件列表
+        self.file_interface.pan = self.pan
+        self.file_interface._FileInterface__loadPanAndData()
