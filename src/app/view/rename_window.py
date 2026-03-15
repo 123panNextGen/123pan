@@ -61,3 +61,4 @@ class NewFolderDialog(QDialog):
     def get_new_name(self):
         """获取新名称"""
         return self.name_input.text().strip()
+
