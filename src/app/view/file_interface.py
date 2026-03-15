@@ -542,11 +542,11 @@ class FileInterface(QWidget):
         file_name = name_item.text()
         file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
-        if file_type == 1:  # 文件夹
-            from qfluentwidgets import InfoBar
+        # if file_type == 1:  # 文件夹
+        #     from qfluentwidgets import InfoBar
 
-            InfoBar.warning(title="下载错误", content="暂不支持下载文件夹", parent=self)
-            return
+        #     InfoBar.warning(title="下载错误", content="暂不支持下载文件夹", parent=self)
+        #     return
 
         # 选择保存路径
         from PyQt6.QtWidgets import QFileDialog
@@ -609,11 +609,11 @@ class FileInterface(QWidget):
             file_name = name_item.text()
             file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
-            if file_type == 1:  # 文件夹
-                InfoBar.warning(
-                    title="删除错误", content="暂不支持删除文件夹", parent=self
-                )
-                return
+            # if file_type == 1:  # 文件夹
+            #     InfoBar.warning(
+            #         title="删除错误", content="暂不支持删除文件夹", parent=self
+            #     )
+            #     return
 
         # 创建任务执行删除文件操作
         from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
@@ -676,8 +676,23 @@ class FileInterface(QWidget):
         from qfluentwidgets import InfoBar
 
         if success:
+            # 保存树的展开状态
+            expanded_items = self.__getExpandedItems()
+
             # 刷新文件列表
             self.__refreshFileList()
+
+            # 重新加载树结构
+            self.__initTree()
+
+            # 恢复树的展开状态
+            self.__restoreExpandedItems(expanded_items)
+
+            # 重新选择当前目录
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+
             # 显示成功信息
             InfoBar.success(
                 title="删除成功",
