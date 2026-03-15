@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont
 import os
 
 # 导入Pan123类
@@ -504,8 +505,8 @@ class TransferInterface(QWidget):
             # 操作按钮 - 只在首次创建时添加
             if not self.uploadTable.cellWidget(row, 4):
                 action_layout = QHBoxLayout()
-                delete_button = PushButton(FIF.DELETE.icon(), "", self.uploadTable)
-                delete_button.setFixedSize(48, 32)  # 增加宽度
+                delete_button = PushButton(FIF.DELETE.icon(), "删除任务", self.uploadTable)
+                delete_button.setFixedSize(128, 24)
 
                 # 添加点击事件
                 delete_button.clicked.connect(
@@ -558,9 +559,8 @@ class TransferInterface(QWidget):
             # 操作按钮 - 只在首次创建时添加
             if not self.downloadTable.cellWidget(row, 4):
                 action_layout = QHBoxLayout()
-                delete_button = PushButton(FIF.DELETE.icon(), "", self.downloadTable)
-                delete_button.setFixedSize(48, 32)  # 增加宽度
-                delete_button.setStyleSheet("font-size: 10px;")  # 缩小字体
+                delete_button = PushButton(FIF.DELETE.icon(), "删除任务", self.downloadTable)
+                delete_button.setFixedSize(128, 24)
 
                 # 添加点击事件
                 delete_button.clicked.connect(
