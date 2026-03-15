@@ -311,9 +311,9 @@ class TransferInterface(QWidget):
 
         self.uploadTable = TableWidget(self.uploadFrame)
         self.uploadTable.setAlternatingRowColors(True)
-        self.uploadTable.setColumnCount(5)
+        self.uploadTable.setColumnCount(6)
         self.uploadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "状态", "操作"]
+            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
         )
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
@@ -326,6 +326,7 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
 
         self.uploadLayout.addWidget(self.uploadTable)
 
@@ -337,9 +338,9 @@ class TransferInterface(QWidget):
 
         self.downloadTable = TableWidget(self.downloadFrame)
         self.downloadTable.setAlternatingRowColors(True)
-        self.downloadTable.setColumnCount(5)
+        self.downloadTable.setColumnCount(6)
         self.downloadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "状态", "操作"]
+            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
         )
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
@@ -352,6 +353,7 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
 
         self.downloadLayout.addWidget(self.downloadTable)
 
@@ -501,20 +503,29 @@ class TransferInterface(QWidget):
             progress_bar = self.uploadTable.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(True)  # 显示百分比
+                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
                 self.uploadTable.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
+            # 百分比
+            percent_item = self.uploadTable.item(row, 3)
+            if not percent_item:
+                percent_item = QTableWidgetItem(f"{task.progress}%")
+                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.uploadTable.setItem(row, 3, percent_item)
+            else:
+                percent_item.setText(f"{task.progress}%")
+
             # 状态
-            status_item = self.uploadTable.item(row, 3)
+            status_item = self.uploadTable.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.uploadTable.setItem(row, 3, status_item)
+                self.uploadTable.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
             # 操作按钮 - 只在首次创建时添加
-            if not self.uploadTable.cellWidget(row, 4):
+            if not self.uploadTable.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
                 delete_button = PushButton(
                     FIF.DELETE.icon(), "删除任务", self.uploadTable
@@ -530,7 +541,7 @@ class TransferInterface(QWidget):
 
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                self.uploadTable.setCellWidget(row, 4, action_widget)
+                self.uploadTable.setCellWidget(row, 5, action_widget)
 
     def __update_download_table(self):
         """更新下载表格"""
@@ -557,20 +568,29 @@ class TransferInterface(QWidget):
             progress_bar = self.downloadTable.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(True)  # 显示百分比
+                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
                 self.downloadTable.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
+            # 百分比
+            percent_item = self.downloadTable.item(row, 3)
+            if not percent_item:
+                percent_item = QTableWidgetItem(f"{task.progress}%")
+                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.downloadTable.setItem(row, 3, percent_item)
+            else:
+                percent_item.setText(f"{task.progress}%")
+
             # 状态
-            status_item = self.downloadTable.item(row, 3)
+            status_item = self.downloadTable.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.downloadTable.setItem(row, 3, status_item)
+                self.downloadTable.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
             # 操作按钮 - 只在首次创建时添加
-            if not self.downloadTable.cellWidget(row, 4):
+            if not self.downloadTable.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
                 delete_button = PushButton(
                     FIF.DELETE.icon(), "删除任务", self.downloadTable
@@ -586,7 +606,7 @@ class TransferInterface(QWidget):
 
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                self.downloadTable.setCellWidget(row, 4, action_widget)
+                self.downloadTable.setCellWidget(row, 5, action_widget)
 
     def __format_size(self, size):
         """格式化文件大小"""
