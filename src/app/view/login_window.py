@@ -72,6 +72,7 @@ class LoginDialog(QDialog):
         # 从配置文件中加载用户名
         config = ConfigManager.load_config()
         self.le_user.setText(config.get("userName", ""))
+        self.le_pass.setText(config.get("passWord", ""))
 
     def on_ok(self):
         """登录处理"""

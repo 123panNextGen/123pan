@@ -7,7 +7,7 @@
   <div>
     <a href="https://github.com/Qxyz17/123pan/stargazers"><img src="https://img.shields.io/github/stars/Qxyz17/123pan" alt="Stars"></a>
     <a href="https://github.com/Qxyz17/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
-    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.8%2B-blue" alt="Python Version"></a>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version"></a>
     <a href="https://github.com/Qxyz17/123pan/releases"><img src="https://img.shields.io/github/downloads/Qxyz17/123pan/total" alt="Downloads"></a>
   </div>
   <br>

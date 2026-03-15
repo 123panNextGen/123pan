@@ -27,7 +27,7 @@ class Config(QConfig):
 
 YEAR = 2026
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 
 cfg = Config()
 cfg.themeMode.value = Theme.AUTO
