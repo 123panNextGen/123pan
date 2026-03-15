@@ -15,7 +15,14 @@ import requests
 Pan123 = __import__("app.common.api").common.api.Pan123
 
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import TabBar, SegmentedWidget, TableWidget, PushButton, ProgressBar
+from qfluentwidgets import (
+    TabBar,
+    SegmentedWidget,
+    TableWidget,
+    PushButton,
+    ProgressBar,
+    InfoBar,
+)
 
 from ..common.style_sheet import StyleSheet
 
@@ -440,6 +447,12 @@ class TransferInterface(QWidget):
         """任务完成处理"""
         if task_type == "upload":
             self.__update_upload_table()
+            # 上传完成时显示右上角提示
+            InfoBar.success(
+                title="上传完成",
+                content=f"文件 '{task.file_name}' 上传成功",
+                parent=self,
+            )
         else:
             self.__update_download_table()
 

@@ -20,9 +20,7 @@
 
 ## 项目源码结构
 ```
-.
-├── 123pan.pro
-├── 123pan.py
+src
 ├── app
 │   ├── common
 │   │   ├── api.py
@@ -30,6 +28,10 @@
 │   │   ├── log.py
 │   │   ├── resource.py
 │   │   └── style_sheet.py
+│   ├── dialog
+│   │   ├── __init__.py
+│   │   └── rename_dialog.py
+│   ├── download
 │   ├── resource
 │   │   ├── qss
 │   │   │   ├── dark
@@ -57,11 +59,11 @@
 │       ├── main_window.py
 │       ├── setting_interface.py
 │       └── transfer_interface.py
+├── 123pan.pro
+├── 123pan.py
 ├── build.sh
 ├── resource_build.bat
 └── resource_build.sh
-
-8 directories, 32 files
 ```
 
 ## 使用

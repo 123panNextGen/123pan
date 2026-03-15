@@ -28,6 +28,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
+from ..dialog import NewFolderDialog
 
 Pan123 = importlib.import_module("app.common.api").Pan123
 
@@ -388,12 +389,17 @@ class FileInterface(QWidget):
     def __createNewFolder(self):
         """创建新文件夹"""
 
-        # 使用输入对话框
-        folder_name, ok = QInputDialog.getText(self, "新建文件夹", "请输入文件夹名称:")
+        # 使用新建文件夹弹窗
+        dialog = NewFolderDialog(self)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            folder_name = dialog.get_new_name()
 
-        # 显示对话框
-        if ok and folder_name.strip():
-            folder_name = folder_name.strip()
+            # 检查文件夹名称是否为空
+            if not folder_name.strip():
+                InfoBar.warning(
+                    title="输入错误", content="请输入文件夹名称", parent=self
+                )
+                return
 
             # 创建任务执行创建文件夹操作
             class CreateFolderSignals(QObject):
@@ -428,8 +434,6 @@ class FileInterface(QWidget):
 
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
-        elif ok and not folder_name.strip():
-            InfoBar.warning(title="输入错误", content="请输入文件夹名称", parent=self)
 
     def __onCreateFolderFinished(self, result, folder_name, error):
         """创建文件夹完成后的回调"""
