@@ -6,14 +6,23 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-import os
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QCoreApplication
+from PyQt6.QtGui import QFont
+from pathlib import Path
+import requests
 
 # 导入Pan123类
 Pan123 = __import__("app.common.api").common.api.Pan123
 
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import TabBar, SegmentedWidget, TableWidget, PushButton, ProgressBar
+from qfluentwidgets import (
+    TabBar,
+    SegmentedWidget,
+    TableWidget,
+    PushButton,
+    ProgressBar,
+    InfoBar,
+)
 
 from ..common.style_sheet import StyleSheet
 
@@ -203,15 +212,14 @@ class DownloadThread(QThread):
 
     def __download_from_url(self, url, save_path, file_name, signals):
         """从URL下载文件"""
-        import requests
-        import os
 
         # 确保保存路径存在
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
+        file_path = Path(save_path)
+        save_dir = file_path.parent
+        if not save_dir.exists():
+            save_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = os.path.join(save_path, file_name)
-        temp_path = file_path + ".tmp"
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
 
         # 发送请求
         response = requests.get(url, stream=True, timeout=30)
@@ -234,16 +242,16 @@ class DownloadThread(QThread):
                                 last_progress = progress
 
             # 重命名临时文件
-            if os.path.exists(temp_path):
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                os.rename(temp_path, file_path)
+            if temp_path.exists():
+                if file_path.exists():
+                    file_path.unlink()
+                temp_path.rename(file_path)
             else:
                 raise Exception("临时文件不存在")
         except Exception as e:
             # 清理临时文件
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            if temp_path.exists():
+                temp_path.unlink()
             raise e
 
 
@@ -303,9 +311,9 @@ class TransferInterface(QWidget):
 
         self.uploadTable = TableWidget(self.uploadFrame)
         self.uploadTable.setAlternatingRowColors(True)
-        self.uploadTable.setColumnCount(5)
+        self.uploadTable.setColumnCount(6)
         self.uploadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "状态", "操作"]
+            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
         )
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
@@ -318,6 +326,7 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
 
         self.uploadLayout.addWidget(self.uploadTable)
 
@@ -329,9 +338,9 @@ class TransferInterface(QWidget):
 
         self.downloadTable = TableWidget(self.downloadFrame)
         self.downloadTable.setAlternatingRowColors(True)
-        self.downloadTable.setColumnCount(5)
+        self.downloadTable.setColumnCount(6)
         self.downloadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "状态", "操作"]
+            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
         )
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
@@ -344,6 +353,7 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
 
         self.downloadLayout.addWidget(self.downloadTable)
 
@@ -418,7 +428,6 @@ class TransferInterface(QWidget):
         """更新任务进度"""
         task.progress = progress
         # 使用QCoreApplication.processEvents()来确保界面响应
-        from PyQt6.QtCore import QCoreApplication
 
         QCoreApplication.processEvents()
         if isinstance(task, UploadTask):
@@ -430,7 +439,6 @@ class TransferInterface(QWidget):
         """更新任务状态"""
         task.status = status
         # 使用QCoreApplication.processEvents()来确保界面响应
-        from PyQt6.QtCore import QCoreApplication
 
         QCoreApplication.processEvents()
         if isinstance(task, UploadTask):
@@ -442,6 +450,12 @@ class TransferInterface(QWidget):
         """任务完成处理"""
         if task_type == "upload":
             self.__update_upload_table()
+            # 上传完成时显示右上角提示
+            InfoBar.success(
+                title="上传完成",
+                content=f"文件 '{task.file_name}' 上传成功",
+                parent=self,
+            )
         else:
             self.__update_download_table()
 
@@ -489,23 +503,34 @@ class TransferInterface(QWidget):
             progress_bar = self.uploadTable.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(True)  # 显示百分比
+                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
                 self.uploadTable.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
+            # 百分比
+            percent_item = self.uploadTable.item(row, 3)
+            if not percent_item:
+                percent_item = QTableWidgetItem(f"{task.progress}%")
+                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.uploadTable.setItem(row, 3, percent_item)
+            else:
+                percent_item.setText(f"{task.progress}%")
+
             # 状态
-            status_item = self.uploadTable.item(row, 3)
+            status_item = self.uploadTable.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.uploadTable.setItem(row, 3, status_item)
+                self.uploadTable.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
             # 操作按钮 - 只在首次创建时添加
-            if not self.uploadTable.cellWidget(row, 4):
+            if not self.uploadTable.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
-                delete_button = PushButton(FIF.DELETE.icon(), "", self.uploadTable)
-                delete_button.setFixedSize(48, 32)  # 增加宽度
+                delete_button = PushButton(
+                    FIF.DELETE.icon(), "删除任务", self.uploadTable
+                )
+                delete_button.setFixedSize(128, 24)
 
                 # 添加点击事件
                 delete_button.clicked.connect(
@@ -516,7 +541,7 @@ class TransferInterface(QWidget):
 
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                self.uploadTable.setCellWidget(row, 4, action_widget)
+                self.uploadTable.setCellWidget(row, 5, action_widget)
 
     def __update_download_table(self):
         """更新下载表格"""
@@ -543,24 +568,34 @@ class TransferInterface(QWidget):
             progress_bar = self.downloadTable.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(True)  # 显示百分比
+                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
                 self.downloadTable.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
+            # 百分比
+            percent_item = self.downloadTable.item(row, 3)
+            if not percent_item:
+                percent_item = QTableWidgetItem(f"{task.progress}%")
+                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.downloadTable.setItem(row, 3, percent_item)
+            else:
+                percent_item.setText(f"{task.progress}%")
+
             # 状态
-            status_item = self.downloadTable.item(row, 3)
+            status_item = self.downloadTable.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.downloadTable.setItem(row, 3, status_item)
+                self.downloadTable.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
             # 操作按钮 - 只在首次创建时添加
-            if not self.downloadTable.cellWidget(row, 4):
+            if not self.downloadTable.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
-                delete_button = PushButton(FIF.DELETE.icon(), "", self.downloadTable)
-                delete_button.setFixedSize(48, 32)  # 增加宽度
-                delete_button.setStyleSheet("font-size: 10px;")  # 缩小字体
+                delete_button = PushButton(
+                    FIF.DELETE.icon(), "删除任务", self.downloadTable
+                )
+                delete_button.setFixedSize(128, 24)
 
                 # 添加点击事件
                 delete_button.clicked.connect(
@@ -571,7 +606,7 @@ class TransferInterface(QWidget):
 
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                self.downloadTable.setCellWidget(row, 4, action_widget)
+                self.downloadTable.setCellWidget(row, 5, action_widget)
 
     def __format_size(self, size):
         """格式化文件大小"""

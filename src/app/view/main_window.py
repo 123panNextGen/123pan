@@ -80,7 +80,7 @@ class MainWindow(FluentWindow):
         if not cfg_loaded:
             dlg = LoginDialog(self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
-                QMessageBox.information(self, "提示", "未登录，程序将退出。")
+                # QMessageBox.information(self, "提示", "未登录，程序将退出。")
                 QTimer.singleShot(0, self.close)
                 return
             self.pan = dlg.get_pan()

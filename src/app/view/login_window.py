@@ -19,7 +19,8 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("登录123云盘")
-        self.resize(420, 220)
+        self.resize(460, 320)
+        self.setFixedSize(460, 320)
         self.setWindowFlags(
             self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
         )
@@ -72,6 +73,7 @@ class LoginDialog(QDialog):
         # 从配置文件中加载用户名
         config = ConfigManager.load_config()
         self.le_user.setText(config.get("userName", ""))
+        self.le_pass.setText(config.get("passWord", ""))
 
     def on_ok(self):
         """登录处理"""
@@ -83,15 +85,16 @@ class LoginDialog(QDialog):
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            # 构造123pan并登录
+            # 构造123pan并登录（优先读取已保存的设备信息，避免每次创建新设备）
             try:
-                self.pan = Pan123(
-                    readfile=False, user_name=user, pass_word=pwd, input_pwd=False
-                )
+                self.pan = Pan123(readfile=True, input_pwd=False)
             except Exception:
-                self.pan = Pan123(
-                    readfile=False, user_name=user, pass_word=pwd, input_pwd=False
-                )
+                self.pan = Pan123(readfile=True, input_pwd=False)
+
+            # 覆盖用户名/密码（配置文件可能保存了旧账号）
+            self.pan.user_name = user
+            self.pan.password = pwd
+
             if not getattr(self.pan, "authorization", None):
                 code = self.pan.login()
                 if code != 200 and code != 0:

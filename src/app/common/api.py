@@ -26,9 +26,10 @@ class Pan123:
             input_pwd=False,
     ):
 
-        # 随机生成设备信息
+        # 设备信息（优先从配置读取，否则随机生成）
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
+        self.loginuuid = uuid.uuid4().hex
 
         self.cookies = None
         self.recycle_list = None
@@ -54,7 +55,7 @@ class Pan123:
             "accept-encoding": "gzip",
             "content-type": "application/json",
             "osversion": self.osversion,
-            "loginuuid": str(uuid.uuid4().hex),
+            "loginuuid": self.loginuuid,
             "platform": "android",
             "devicetype": self.devicetype,
             "devicename": "Xiaomi",
@@ -165,6 +166,12 @@ class Pan123:
             text = a.json()
             res_code_getdir = text["code"]
             if res_code_getdir != 0:
+                # token 过期时尝试重新登录一次
+                if res_code_getdir == 2:
+                    logger.warning("token 过期，正在尝试重新登录")
+                    login_code = self.login()
+                    if login_code == 0 or login_code == 200:
+                        return self.get_dir_by_id(file_id, save, all, limit)
                 logger.error("code = 2 Error:" + str(res_code_getdir))
                 logger.error(text.get("message", ""))
                 return res_code_getdir, []
@@ -588,10 +595,13 @@ class Pan123:
             config = ConfigManager.load_config()
             deviceType = config.get("deviceType", "")
             osVersion = config.get("osVersion", "")
+            loginuuid = config.get("loginuuid", "")
             if deviceType:
                 self.devicetype = deviceType
             if osVersion:
                 self.osversion = osVersion
+            if loginuuid:
+                self.loginuuid = loginuuid
             user_name = config.get("userName", user_name)
             pass_word = config.get("passWord", pass_word)
             authorization = config.get("authorization", authorization)

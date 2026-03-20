@@ -27,7 +27,7 @@ class Config(QConfig):
 
 YEAR = 2026
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 
 cfg = Config()
 cfg.themeMode.value = Theme.AUTO
@@ -68,12 +68,13 @@ class ConfigManager:
             "authorization": "",
             "deviceType": "",
             "osVersion": "",
+            "loginuuid": "",
             "settings": {
                 "defaultDownloadPath": os.path.join(os.path.expanduser("~"), "Downloads"),
                 "askDownloadLocation": True
             }
         }
-        
+
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -81,9 +82,19 @@ class ConfigManager:
                     # 确保新版本配置兼容性
                     if "settings" not in config:
                         config["settings"] = default_config["settings"]
+                    # 兼容旧版本配置
+                    for k in ["userName", "passWord", "authorization", "deviceType", "osVersion", "loginuuid"]:
+                        if k not in config:
+                            config[k] = default_config.get(k, "")
                     return config
             except Exception as e:
                 logger.error(f"加载配置失败: {e}")
+                # 若配置文件损坏或为空，尝试重置为默认配置
+                try:
+                    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                        json.dump(default_config, f, indent=2, ensure_ascii=False)
+                except Exception as e2:
+                    logger.error(f"重写配置失败: {e2}")
                 return default_config
         return default_config
     

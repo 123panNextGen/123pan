@@ -1,6 +1,0 @@
-pyqt6
-PyQt6-Fluent-Widgets[full]
-pyside6
-requests
-nuitka
-zstandard

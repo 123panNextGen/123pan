@@ -1,6 +1,8 @@
 import importlib
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -12,12 +14,24 @@ from PyQt6.QtWidgets import (
     QWidget,
     QTreeWidgetItemIterator,
     QTableWidgetItem,
+    QInputDialog,
+    QFileDialog,
+    QMenu,
 )
+from PyQt6.QtGui import QAction
 
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import BreadcrumbBar, TableWidget, TreeWidget, PushButton
+from qfluentwidgets import (
+    BreadcrumbBar,
+    TableWidget,
+    TreeWidget,
+    PushButton,
+    InfoBar,
+    Action,
+)
 
 from ..common.style_sheet import StyleSheet
+from .newfolder_window import NewFolderDialog
 
 Pan123 = importlib.import_module("app.common.api").Pan123
 
@@ -126,6 +140,9 @@ class FileInterface(QWidget):
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
         self.__connectSignalToSlot()
+        # 为文件表格添加右键菜单
+        self.fileTable.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fileTable.customContextMenuRequested.connect(self.__onFileTableContextMenu)
         self.__loadPanAndData()
 
     def __connectSignalToSlot(self):
@@ -273,8 +290,6 @@ class FileInterface(QWidget):
         file_items = self.__fetchDirList(self.current_dir_id)
         self.fileTable.setRowCount(len(file_items))
 
-        from qfluentwidgets import FluentIcon as FIF
-
         for row, file_item in enumerate(file_items):
             file_name = file_item.get("FileName", "")
             file_type = int(file_item.get("Type", 0))
@@ -282,7 +297,7 @@ class FileInterface(QWidget):
             file_id = int(file_item.get("FileId", 0) or 0)
 
             type_text = "文件夹" if file_type == 1 else "文件"
-            size_text = "-" if file_type == 1 else self.__formatSize(file_size)
+            size_text = self.__formatSize(file_size)
 
             name_item = QTableWidgetItem(file_name)
             name_item.setData(Qt.ItemDataRole.UserRole, file_id)
@@ -379,70 +394,137 @@ class FileInterface(QWidget):
 
     def __createNewFolder(self):
         """创建新文件夹"""
-        from PyQt6.QtWidgets import QInputDialog
 
-        # 使用输入对话框
-        folder_name, ok = QInputDialog.getText(self, "新建文件夹", "请输入文件夹名称:")
+        # 使用新建文件夹弹窗
+        dialog = NewFolderDialog(self)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            folder_name = dialog.get_new_name()
 
-        # 显示对话框
-        if ok and folder_name.strip():
-            folder_name = folder_name.strip()
-            try:
-                # 保存当前目录ID
-                current_parent_id = self.pan.parent_file_id
-                # 设置当前目录为目标目录
-                self.pan.parent_file_id = self.current_dir_id
-                # 调用API创建文件夹
-                result = self.pan.mkdir(folder_name)
-                # 恢复当前目录
-                self.pan.parent_file_id = current_parent_id
-
-                if result:
-                    # 刷新文件列表
-                    self.__refreshFileList()
-                    from qfluentwidgets import InfoBar
-
-                    InfoBar.success(
-                        title="创建成功",
-                        content=f"文件夹 '{folder_name}' 创建成功",
-                        parent=self,
-                    )
-                else:
-                    from qfluentwidgets import InfoBar
-
-                    InfoBar.error(
-                        title="创建失败", content="创建文件夹失败", parent=self
-                    )
-            except Exception as e:
-                from qfluentwidgets import InfoBar
-
-                InfoBar.error(
-                    title="创建失败", content=f"创建文件夹时发生错误: {e}", parent=self
+            # 检查文件夹名称是否为空
+            if not folder_name.strip():
+                InfoBar.warning(
+                    title="输入错误", content="请输入文件夹名称", parent=self
                 )
-        elif ok and not folder_name.strip():
-            from qfluentwidgets import InfoBar
+                return
 
-            InfoBar.warning(title="输入错误", content="请输入文件夹名称", parent=self)
+            # 创建任务执行创建文件夹操作
+            class CreateFolderSignals(QObject):
+                finished = pyqtSignal(bool, str, str)
+
+            class CreateFolderTask(QRunnable):
+                def __init__(self, pan, folder_name, current_dir_id, signals):
+                    super().__init__()
+                    self.pan = pan
+                    self.folder_name = folder_name
+                    self.current_dir_id = current_dir_id
+                    self.signals = signals
+
+                def run(self):
+                    try:
+                        # 保存当前目录ID
+                        current_parent_id = self.pan.parent_file_id
+                        # 设置当前目录为目标目录
+                        self.pan.parent_file_id = self.current_dir_id
+                        # 调用API创建文件夹
+                        result = self.pan.mkdir(self.folder_name)
+                        # 恢复当前目录
+                        self.pan.parent_file_id = current_parent_id
+                        self.signals.finished.emit(result, self.folder_name, "")
+                    except Exception as e:
+                        self.signals.finished.emit(False, self.folder_name, str(e))
+
+            # 创建信号和任务
+            signals = CreateFolderSignals()
+            signals.finished.connect(self.__onCreateFolderFinished)
+            task = CreateFolderTask(self.pan, folder_name, self.current_dir_id, signals)
+
+            # 提交任务到线程池
+            QThreadPool.globalInstance().start(task)
+
+    def __onCreateFolderFinished(self, result, folder_name, error):
+        """创建文件夹完成后的回调"""
+        if result:
+            # 保存树的展开状态
+            expanded_items = self.__getExpandedItems()
+
+            # 刷新文件列表
+            self.__refreshFileList()
+
+            # 重新加载树结构
+            self.__initTree()
+
+            # 恢复树的展开状态
+            self.__restoreExpandedItems(expanded_items)
+
+            # 重新选择当前目录
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+
+            InfoBar.success(
+                title="创建成功",
+                content=f"文件夹 '{folder_name}' 创建成功",
+                parent=self,
+            )
+        else:
+            if error:
+                InfoBar.error(
+                    title="创建失败",
+                    content=f"创建文件夹时发生错误: {error}",
+                    parent=self,
+                )
+            else:
+                InfoBar.error(title="创建失败", content="创建文件夹失败", parent=self)
+
+    def __getExpandedItems(self):
+        """获取树的展开状态"""
+        expanded_items = []
+
+        def collect_expanded_items(item):
+            if item.isExpanded():
+                item_id = item.data(0, Qt.ItemDataRole.UserRole)
+                if item_id:
+                    expanded_items.append(item_id)
+
+            for i in range(item.childCount()):
+                collect_expanded_items(item.child(i))
+
+        root = self.folderTree.invisibleRootItem()
+        for i in range(root.childCount()):
+            collect_expanded_items(root.child(i))
+
+        return expanded_items
+
+    def __restoreExpandedItems(self, expanded_items):
+        """恢复树的展开状态"""
+
+        def expand_items(item):
+            item_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item_id and item_id in expanded_items:
+                item.setExpanded(True)
+
+            for i in range(item.childCount()):
+                expand_items(item.child(i))
+
+        root = self.folderTree.invisibleRootItem()
+        for i in range(root.childCount()):
+            expand_items(root.child(i))
 
     def __uploadFile(self):
         """上传文件"""
-        from PyQt6.QtWidgets import QFileDialog
-        import os
-
         # 打开文件选择对话框
         file_paths, _ = QFileDialog.getOpenFileNames(self, "选择要上传的文件")
 
         if file_paths:
             # 添加上传任务到传输界面
             for file_path in file_paths:
-                file_name = os.path.basename(file_path)
-                file_size = os.path.getsize(file_path)
+                path = Path(file_path)
+                file_name = path.name
+                file_size = path.stat().st_size
                 if self.transfer_interface:
                     self.transfer_interface.add_upload_task(
                         file_name, file_size, file_path, self.current_dir_id
                     )
-
-            from qfluentwidgets import InfoBar
 
             InfoBar.success(
                 title="上传文件",
@@ -455,8 +537,6 @@ class FileInterface(QWidget):
         # 获取选中的文件
         selected_items = self.fileTable.selectedItems()
         if not selected_items:
-            from qfluentwidgets import InfoBar
-
             InfoBar.warning(title="下载错误", content="请选择要下载的文件", parent=self)
             return
 
@@ -467,18 +547,30 @@ class FileInterface(QWidget):
         file_name = name_item.text()
         file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
+        # 如果是文件夹，将文件名改为xxx.zip
         if file_type == 1:  # 文件夹
-            from qfluentwidgets import InfoBar
+            file_name = file_name + ".zip"
 
-            InfoBar.warning(title="下载错误", content="暂不支持下载文件夹", parent=self)
-            return
+        # 导入配置管理器
+        from app.common.config import ConfigManager
 
-        # 选择保存路径
-        from PyQt6.QtWidgets import QFileDialog
-
-        save_path = QFileDialog.getExistingDirectory(
-            self, "选择保存的文件夹", file_name
+        # 获取配置
+        ask_download_location = ConfigManager.get_setting("askDownloadLocation", True)
+        default_download_path = ConfigManager.get_setting(
+            "defaultDownloadPath", str(Path.home() / "Downloads")
         )
+
+        save_path = None
+
+        # 根据配置决定是否询问下载位置
+        if ask_download_location:
+            # 选择保存文件
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "保存文件", str(Path(default_download_path) / file_name)
+            )
+        else:
+            # 直接使用默认下载位置
+            save_path = str(Path(default_download_path) / file_name)
 
         if save_path:
             # 获取文件大小
@@ -502,11 +594,9 @@ class FileInterface(QWidget):
                     file_name, file_size, file_id, save_path, self.current_dir_id
                 )
 
-            from qfluentwidgets import InfoBar
-
             InfoBar.success(
                 title="下载文件",
-                content=f"已添加下载任务: {file_name} 到 {save_path}",
+                content=f"已添加下载任务: {file_name}",
                 parent=self,
             )
 
@@ -516,7 +606,6 @@ class FileInterface(QWidget):
 
     def __deleteFile(self, file_id=None, file_name=None):
         """删除文件"""
-        from qfluentwidgets import InfoBar
 
         # 如果没有提供file_id和file_name，则从选中的文件获取
         if file_id is None or file_name is None:
@@ -534,52 +623,122 @@ class FileInterface(QWidget):
             file_name = name_item.text()
             file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
-            if file_type == 1:  # 文件夹
-                InfoBar.warning(
-                    title="删除错误", content="暂不支持删除文件夹", parent=self
-                )
-                return
+            # if file_type == 1:  # 文件夹
+            #     InfoBar.warning(
+            #         title="删除错误", content="暂不支持删除文件夹", parent=self
+            #     )
+            #     return
 
-        try:
-            # 直接使用文件ID删除，不需要查找索引
-            # 调用API删除文件
-            success = False
+        # 创建任务执行删除文件操作
+        class DeleteFileSignals(QObject):
+            finished = pyqtSignal(bool, str, str)
 
-            # 先在self.pan.list中找到对应的文件
-            for i, file in enumerate(self.pan.list):
-                if str(file.get("FileId")) == str(file_id):
+        class DeleteFileTask(QRunnable):
+            def __init__(self, pan, file_id, file_name, current_dir_id, signals):
+                super().__init__()
+                self.pan = pan
+                self.file_id = file_id
+                self.file_name = file_name
+                self.current_dir_id = current_dir_id
+                self.signals = signals
+
+            def run(self):
+                try:
+                    # 直接使用文件ID删除，不需要查找索引
                     # 调用API删除文件
-                    self.pan.delete_file(i, by_num=True, operation=True)
-                    success = True
-                    break
+                    success = False
 
-            # 如果在self.pan.list中找不到，尝试重新加载当前目录的文件列表
-            if not success:
-                code, files = self.pan.get_dir_by_id(
-                    self.current_dir_id, save=True, all=True, limit=1000
-                )
-                if code == 0:
+                    # 先在self.pan.list中找到对应的文件
                     for i, file in enumerate(self.pan.list):
-                        if str(file.get("FileId")) == str(file_id):
+                        if str(file.get("FileId")) == str(self.file_id):
                             # 调用API删除文件
                             self.pan.delete_file(i, by_num=True, operation=True)
                             success = True
                             break
 
-            if success:
-                # 刷新文件列表
-                self.__refreshFileList()
-                # 显示成功信息
-                InfoBar.success(
-                    title="删除成功",
-                    content=f"文件 '{file_name}' 已成功删除",
+                    # 如果在self.pan.list中找不到，尝试重新加载当前目录的文件列表
+                    if not success:
+                        code, files = self.pan.get_dir_by_id(
+                            self.current_dir_id, save=True, all=True, limit=1000
+                        )
+                        if code == 0:
+                            for i, file in enumerate(self.pan.list):
+                                if str(file.get("FileId")) == str(self.file_id):
+                                    # 调用API删除文件
+                                    self.pan.delete_file(i, by_num=True, operation=True)
+                                    success = True
+                                    break
+
+                    self.signals.finished.emit(success, self.file_name, "")
+                except Exception as e:
+                    self.signals.finished.emit(False, self.file_name, str(e))
+
+        # 创建信号和任务
+        signals = DeleteFileSignals()
+        signals.finished.connect(self.__onDeleteFileFinished)
+        task = DeleteFileTask(
+            self.pan, file_id, file_name, self.current_dir_id, signals
+        )
+
+        # 提交任务到线程池
+        QThreadPool.globalInstance().start(task)
+
+    def __onDeleteFileFinished(self, success, file_name, error):
+        """删除文件完成后的回调"""
+
+        if success:
+            # 保存树的展开状态
+            expanded_items = self.__getExpandedItems()
+
+            # 刷新文件列表
+            self.__refreshFileList()
+
+            # 重新加载树结构
+            self.__initTree()
+
+            # 恢复树的展开状态
+            self.__restoreExpandedItems(expanded_items)
+
+            # 重新选择当前目录
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+
+            # 显示成功信息
+            InfoBar.success(
+                title="删除成功",
+                content=f"文件 '{file_name}' 已成功删除",
+                parent=self,
+            )
+        else:
+            if error:
+                # 显示错误信息
+                InfoBar.error(
+                    title="删除失败",
+                    content=f"删除文件时发生错误: {error}",
                     parent=self,
                 )
             else:
                 # 显示错误信息
                 InfoBar.error(title="删除失败", content="文件不存在", parent=self)
-        except Exception as e:
-            # 显示错误信息
-            InfoBar.error(
-                title="删除失败", content=f"删除文件时发生错误: {e}", parent=self
-            )
+
+    def __onFileTableContextMenu(self, position):
+        """文件表格右键菜单"""
+        # 获取鼠标点击位置的行
+        index = self.fileTable.indexAt(position)
+        if not index.isValid():
+            return
+
+        # 选择右键点击的行
+        self.fileTable.selectRow(index.row())
+
+        # 创建右键菜单
+        menu = QMenu(self)
+
+        # 添加删除菜单项
+        delete_action = QAction(FIF.DELETE.icon(), "删除", self)
+        delete_action.triggered.connect(self.__deleteFile)
+        menu.addAction(delete_action)
+
+        # 显示菜单
+        menu.exec(self.fileTable.mapToGlobal(position))

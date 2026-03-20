@@ -1,0 +1,18 @@
+[project]
+name = "123pan"
+version = "3.0.1"
+description = "第三方123云盘客户端，解决了123云盘电脑客户端限制每日1GB自用流量的问题 "
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyqt6>=6.10.2",
+    "pyqt6-fluent-widgets[full]>=1.11.1",
+    "requests>=2.32.5",
+    "zstandard>=0.25.0",
+]
+
+[dependency-groups]
+build = ["nuitka>=4.0.5", "pyside6>=6.10.2"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"

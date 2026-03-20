@@ -11,7 +11,7 @@ else
   EXTRA_ARGS=(--windows-disable-console --lto=yes)
 fi
 
-python -m nuitka 123pan.py \
+uv run -m nuitka 123pan.py \
   --onefile \
   --enable-plugin=pyqt6 \
   --assume-yes-for-downloads \
