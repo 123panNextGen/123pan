@@ -11,7 +11,7 @@ dependencies = [
     "zstandard>=0.25.0",
 ]
 
-[dependency-extras]
+[project.optional-dependencies]
 build = ["nuitka>=4.0.5"]
 
 [[tool.uv.index]]

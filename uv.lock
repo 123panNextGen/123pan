@@ -13,13 +13,20 @@ dependencies = [
     { name = "zstandard" },
 ]
 
+[package.optional-dependencies]
+build = [
+    { name = "nuitka" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "nuitka", marker = "extra == 'build'", specifier = ">=4.0.5" },
     { name = "pyqt6", specifier = ">=6.10.2" },
     { name = "pyqt6-fluent-widgets", extras = ["full"], specifier = ">=1.11.1" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
+provides-extras = ["build"]
 
 [[package]]
 name = "certifi"
@@ -116,6 +123,12 @@ sdist = { url = "https://mirrors.aliyun.com/pypi/packages/6f/6d/0703ccc57f3a7233
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea" },
 ]
+
+[[package]]
+name = "nuitka"
+version = "4.0.6"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/0a/4b/4923ebb606657c26d53969e1d864c89f2f4a8eca7b6ab45bed66060c9cae/nuitka-4.0.6.tar.gz", hash = "sha256:9c14827058faf27414b6d28f5a27ef709fd6aa9b5f04af20e01b42889ac25b5c" }
 
 [[package]]
 name = "numpy"
