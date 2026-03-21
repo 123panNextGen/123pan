@@ -25,6 +25,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
+from ..common.api import format_file_size
 
 
 class TransferTask:
@@ -113,11 +114,13 @@ class DownloadThread(QThread):
             # 更新状态为下载中
             self.status_updated.emit("下载中")
 
-            # 打印调试信息
-            print(
+            # 记录调试信息
+            from ..common.log import get_logger
+            logger = get_logger(__name__)
+            logger.debug(
                 f"下载任务: {self.task.file_name}, file_id: {self.task.file_id}, type: {type(self.task.file_id)}"
             )
-            print(f"当前目录ID: {self.task.current_dir_id}")
+            logger.debug(f"当前目录ID: {self.task.current_dir_id}")
 
             # 直接使用文件ID下载，不需要查找索引
             # 先在当前文件夹中查找文件
@@ -128,29 +131,29 @@ class DownloadThread(QThread):
                 self.task.current_dir_id, save=False, all=True, limit=1000
             )
             if code == 0:
-                print(f"在当前目录中查找文件，当前目录ID: {self.task.current_dir_id}")
+                logger.debug(f"在当前目录中查找文件，当前目录ID: {self.task.current_dir_id}")
                 for file in files:
                     file_id = file.get("FileId")
                     if str(file_id) == str(self.task.file_id):
                         target_file = file
-                        print(f"在当前目录中找到文件: {target_file.get('FileName')}")
+                        logger.debug(f"在当前目录中找到文件: {target_file.get('FileName')}")
                         break
 
             # 如果还是找不到，尝试从Pan123的list属性中查找
             if not target_file:
-                print("在当前目录中找不到文件，尝试从Pan123的list属性中查找")
+                logger.debug("在当前目录中找不到文件，尝试从Pan123的list属性中查找")
                 for file in self.pan.list:
                     file_id = file.get("FileId")
                     if str(file_id) == str(self.task.file_id):
                         target_file = file
-                        print(
+                        logger.debug(
                             f"从Pan123的list属性中找到文件: {target_file.get('FileName')}"
                         )
                         break
 
             # 如果还是找不到，尝试获取根目录的所有文件，然后查找
             if not target_file:
-                print("从Pan123的list属性中找不到文件，尝试获取根目录的所有文件")
+                logger.debug("从Pan123的list属性中找不到文件，尝试获取根目录的所有文件")
                 code, files = self.pan.get_dir_by_id(
                     0, save=False, all=True, limit=1000
                 )
@@ -159,14 +162,14 @@ class DownloadThread(QThread):
                         file_id = file.get("FileId")
                         if str(file_id) == str(self.task.file_id):
                             target_file = file
-                            print(
+                            logger.debug(
                                 f"从根目录的所有文件中找到文件: {target_file.get('FileName')}"
                             )
                             break
 
             if not target_file:
                 # 如果还是找不到，尝试直接使用文件ID构造文件详情
-                print("所有搜索方法都找不到文件，尝试直接使用文件ID构造文件详情")
+                logger.debug("所有搜索方法都找不到文件，尝试直接使用文件ID构造文件详情")
                 # 这里我们尝试直接使用文件ID获取文件详情
                 # 注意：这种方法可能不适用，因为link_by_fileDetail需要完整的文件详情
                 # 但我们可以尝试构造一个基本的文件详情对象
@@ -178,7 +181,7 @@ class DownloadThread(QThread):
                     "Etag": "",  # 空ETag
                     "S3KeyFlag": False,  # 假设不是S3存储
                 }
-                print(f"构造文件详情: {target_file}")
+                logger.debug(f"构造文件详情: {target_file}")
 
             # 执行下载
             class ProgressSignals:
@@ -191,10 +194,11 @@ class DownloadThread(QThread):
             signals = ProgressSignals(self)
 
             # 使用文件详情获取下载链接
-            print(f"开始下载文件: {target_file.get('FileName')}")
+            logger.debug(f"开始下载文件: {target_file.get('FileName')}")
             download_url = self.pan.link_by_fileDetail(target_file, showlink=False)
             if isinstance(download_url, int):
-                raise Exception(f"获取下载链接失败，返回码: {download_url}")
+                logger.error(f"获取下载链接失败，返回码: {download_url}")
+                raise RuntimeError(f"获取下载链接失败，返回码: {download_url}")
 
             # 直接从URL下载
             self.__download_from_url(
@@ -206,7 +210,7 @@ class DownloadThread(QThread):
             self.status_updated.emit("已完成")
             self.finished.emit()
         except Exception as e:
-            print(f"下载错误: {e}")
+            logger.error(f"下载错误: {e}")
             self.error.emit(str(e))
             self.status_updated.emit("失败")
 
@@ -461,7 +465,7 @@ class TransferInterface(QWidget):
 
     def __task_error(self, task, error):
         """任务错误处理"""
-        print(f"任务错误: {error}")
+        logger.error(f"任务错误: {error}")
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):
@@ -496,7 +500,7 @@ class TransferInterface(QWidget):
             # 文件大小
             size_item = self.uploadTable.item(row, 1)
             if not size_item:
-                size_item = QTableWidgetItem(self.__format_size(task.file_size))
+                size_item = QTableWidgetItem(format_file_size(task.file_size))
                 self.uploadTable.setItem(row, 1, size_item)
 
             # 进度条
@@ -561,7 +565,7 @@ class TransferInterface(QWidget):
             # 文件大小
             size_item = self.downloadTable.item(row, 1)
             if not size_item:
-                size_item = QTableWidgetItem(self.__format_size(task.file_size))
+                size_item = QTableWidgetItem(format_file_size(task.file_size))
                 self.downloadTable.setItem(row, 1, size_item)
 
             # 进度条
@@ -607,13 +611,3 @@ class TransferInterface(QWidget):
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
                 self.downloadTable.setCellWidget(row, 5, action_widget)
-
-    def __format_size(self, size):
-        """格式化文件大小"""
-        if size < 1024:
-            return f"{size} B"
-        if size < 1024**2:
-            return f"{size / 1024:.2f} KB"
-        if size < 1024**3:
-            return f"{size / 1024 ** 2:.2f} MB"
-        return f"{size / 1024 ** 3:.2f} GB"

@@ -113,8 +113,15 @@ class LoginDialog(QDialog):
         try:
             if hasattr(self.pan, "save_file"):
                 self.pan.save_file()
-        except Exception:
-            pass
+        except (IOError, OSError) as e:
+            # 忽略配置文件保存失败,不影响登录流程
+            from ..common.log import get_logger
+            logger = get_logger(__name__)
+            logger.warning(f"保存配置失败: {e}")
+        except Exception as e:
+            from ..common.log import get_logger
+            logger = get_logger(__name__)
+            logger.error(f"保存配置时发生未知错误: {e}")
         self.accept()
 
     def get_pan(self):

@@ -2,7 +2,7 @@ import importlib
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
+from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject, QTimer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -31,6 +31,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
+from ..common.api import format_file_size
 from .newfolder_window import NewFolderDialog
 
 Pan123 = importlib.import_module("app.common.api").Pan123
@@ -297,7 +298,7 @@ class FileInterface(QWidget):
             file_id = int(file_item.get("FileId", 0) or 0)
 
             type_text = "文件夹" if file_type == 1 else "文件"
-            size_text = self.__formatSize(file_size)
+            size_text = format_file_size(file_size)
 
             name_item = QTableWidgetItem(file_name)
             name_item.setData(Qt.ItemDataRole.UserRole, file_id)
@@ -379,15 +380,6 @@ class FileInterface(QWidget):
         if tree_item:
             self.folderTree.setCurrentItem(tree_item)
 
-    def __formatSize(self, size):
-        if size < 1024:
-            return f"{size} B"
-        if size < 1024**2:
-            return f"{size / 1024:.2f} KB"
-        if size < 1024**3:
-            return f"{size / 1024 ** 2:.2f} MB"
-        return f"{size / 1024 ** 3:.2f} GB"
-
     def __updateBackButtonState(self):
         """更新返回按钮状态"""
         self.backButton.setEnabled(len(self.path_stack) > 1)
@@ -409,7 +401,7 @@ class FileInterface(QWidget):
 
             # 创建任务执行创建文件夹操作
             class CreateFolderSignals(QObject):
-                finished = pyqtSignal(bool, str, str)
+                finished = pyqtSignal(bool, str, str, list, list)  # result, folder_name, error, file_items, folder_items
 
             class CreateFolderTask(QRunnable):
                 def __init__(self, pan, folder_name, current_dir_id, signals):
@@ -429,9 +421,31 @@ class FileInterface(QWidget):
                         result = self.pan.mkdir(self.folder_name)
                         # 恢复当前目录
                         self.pan.parent_file_id = current_parent_id
-                        self.signals.finished.emit(result, self.folder_name, "")
+
+                        if result:
+                            # 在后台线程中获取最新的文件列表
+                            cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
+                            self.pan.file_page = 0
+                            code, items = self.pan.get_dir_by_id(
+                                self.current_dir_id, save=False, all=True, limit=100
+                            )
+                            self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+
+                            # 在后台线程中获取文件夹列表（用于更新树）
+                            folder_items = []
+                            if code == 0:
+                                for item in items:
+                                    if int(item.get("Type", 0)) == 1:
+                                        folder_items.append({
+                                            "FileId": item.get("FileId"),
+                                            "FileName": item.get("FileName")
+                                        })
+
+                            self.signals.finished.emit(True, self.folder_name, "", items, folder_items)
+                        else:
+                            self.signals.finished.emit(False, self.folder_name, "", [], [])
                     except Exception as e:
-                        self.signals.finished.emit(False, self.folder_name, str(e))
+                        self.signals.finished.emit(False, self.folder_name, str(e), [], [])
 
             # 创建信号和任务
             signals = CreateFolderSignals()
@@ -441,31 +455,25 @@ class FileInterface(QWidget):
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
 
-    def __onCreateFolderFinished(self, result, folder_name, error):
-        """创建文件夹完成后的回调"""
+    def __onCreateFolderFinished(self, result, folder_name, error, file_items, folder_items):
+        """创建文件夹完成后的回调 - 只负责UI更新"""
         if result:
-            # 保存树的展开状态
-            expanded_items = self.__getExpandedItems()
-
-            # 刷新文件列表
-            self.__refreshFileList()
-
-            # 重新加载树结构
-            self.__initTree()
-
-            # 恢复树的展开状态
-            self.__restoreExpandedItems(expanded_items)
-
-            # 重新选择当前目录
-            current_item = self.__findTreeItemById(self.current_dir_id)
-            if current_item:
-                self.folderTree.setCurrentItem(current_item)
-
             InfoBar.success(
                 title="创建成功",
                 content=f"文件夹 '{folder_name}' 创建成功",
                 parent=self,
             )
+
+            # 更新文件列表（轻量级UI操作）
+            self.__updateFileListUI(file_items)
+
+            # 更新树结构（轻量级UI操作）
+            self.__updateTreeUI(folder_items)
+
+            # 重新选择当前目录
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
         else:
             if error:
                 InfoBar.error(
@@ -475,6 +483,71 @@ class FileInterface(QWidget):
                 )
             else:
                 InfoBar.error(title="创建失败", content="创建文件夹失败", parent=self)
+
+    def __updateFileListUI(self, file_items):
+        """更新文件列表UI - 轻量级操作"""
+        self.fileTable.setRowCount(len(file_items))
+
+        for row, file_item in enumerate(file_items):
+            file_name = file_item.get("FileName", "")
+            file_type = int(file_item.get("Type", 0))
+            file_size = int(file_item.get("Size", 0) or 0)
+            file_id = int(file_item.get("FileId", 0) or 0)
+
+            type_text = "文件夹" if file_type == 1 else "文件"
+            size_text = format_file_size(file_size)
+
+            name_item = QTableWidgetItem(file_name)
+            name_item.setData(Qt.ItemDataRole.UserRole, file_id)
+            name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
+            name_item.setIcon(
+                FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
+            )
+
+            type_item = QTableWidgetItem(type_text)
+            size_item = QTableWidgetItem(size_text)
+
+            self.fileTable.setItem(row, 0, name_item)
+            self.fileTable.setItem(row, 1, type_item)
+            self.fileTable.setItem(row, 2, size_item)
+
+    def __updateTreeUI(self, folder_items):
+        """更新树结构UI - 轻量级操作"""
+        # 简单刷新当前目录下的子节点
+        current_item = self.__findTreeItemById(self.current_dir_id)
+        if current_item:
+            # 移除占位符
+            for i in range(current_item.childCount()):
+                child = current_item.child(i)
+                if child.data(0, Qt.ItemDataRole.UserRole) is None:
+                    current_item.removeChild(child)
+                    break
+
+            # 更新子节点
+            existing_items = {}
+            for i in range(current_item.childCount()):
+                child = current_item.child(i)
+                file_id = child.data(0, Qt.ItemDataRole.UserRole)
+                if file_id:
+                    existing_items[file_id] = child
+
+            # 添加新的文件夹
+            for folder in folder_items:
+                file_id = int(folder.get("FileId", 0))
+                file_name = folder.get("FileName", "")
+
+                if file_id in existing_items:
+                    # 已存在，不需要添加
+                    continue
+
+                child = QTreeWidgetItem([file_name])
+                child.setIcon(0, FIF.FOLDER.icon())
+                child.setData(0, Qt.ItemDataRole.UserRole, file_id)
+                child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
+                current_item.addChild(child)
+
+                # 添加占位符
+                self.__addPlaceholder(child)
 
     def __getExpandedItems(self):
         """获取树的展开状态"""
@@ -631,7 +704,7 @@ class FileInterface(QWidget):
 
         # 创建任务执行删除文件操作
         class DeleteFileSignals(QObject):
-            finished = pyqtSignal(bool, str, str)
+            finished = pyqtSignal(bool, str, str, list, list)  # success, file_name, error, file_items, folder_items
 
         class DeleteFileTask(QRunnable):
             def __init__(self, pan, file_id, file_name, current_dir_id, signals):
@@ -669,9 +742,30 @@ class FileInterface(QWidget):
                                     success = True
                                     break
 
-                    self.signals.finished.emit(success, self.file_name, "")
+                    if success:
+                        # 在后台线程中获取最新的文件列表
+                        cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
+                        self.pan.file_page = 0
+                        code, items = self.pan.get_dir_by_id(
+                            self.current_dir_id, save=False, all=True, limit=100
+                        )
+                        self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+
+                        # 在后台线程中获取文件夹列表（用于更新树）
+                        folder_items = []
+                        if code == 0:
+                            for item in items:
+                                if int(item.get("Type", 0)) == 1:
+                                    folder_items.append({
+                                        "FileId": item.get("FileId"),
+                                        "FileName": item.get("FileName")
+                                    })
+
+                        self.signals.finished.emit(True, self.file_name, "", items, folder_items)
+                    else:
+                        self.signals.finished.emit(False, self.file_name, "", [], [])
                 except Exception as e:
-                    self.signals.finished.emit(False, self.file_name, str(e))
+                    self.signals.finished.emit(False, self.file_name, str(e), [], [])
 
         # 创建信号和任务
         signals = DeleteFileSignals()
@@ -683,33 +777,27 @@ class FileInterface(QWidget):
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
 
-    def __onDeleteFileFinished(self, success, file_name, error):
-        """删除文件完成后的回调"""
+    def __onDeleteFileFinished(self, success, file_name, error, file_items, folder_items):
+        """删除文件完成后的回调 - 只负责UI更新"""
 
         if success:
-            # 保存树的展开状态
-            expanded_items = self.__getExpandedItems()
-
-            # 刷新文件列表
-            self.__refreshFileList()
-
-            # 重新加载树结构
-            self.__initTree()
-
-            # 恢复树的展开状态
-            self.__restoreExpandedItems(expanded_items)
-
-            # 重新选择当前目录
-            current_item = self.__findTreeItemById(self.current_dir_id)
-            if current_item:
-                self.folderTree.setCurrentItem(current_item)
-
             # 显示成功信息
             InfoBar.success(
                 title="删除成功",
                 content=f"文件 '{file_name}' 已成功删除",
                 parent=self,
             )
+
+            # 更新文件列表（轻量级UI操作）
+            self.__updateFileListUI(file_items)
+
+            # 更新树结构（轻量级UI操作）
+            self.__updateTreeUI(folder_items)
+
+            # 重新选择当前目录
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
         else:
             if error:
                 # 显示错误信息

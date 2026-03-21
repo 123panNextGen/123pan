@@ -21,7 +21,7 @@ class Pan123:
             self,
             readfile=True,
             user_name="",
-            pass_word="",
+            password="",
             authorization="",
             input_pwd=False,
     ):
@@ -42,12 +42,12 @@ class Pan123:
         self.dir_list = []
         self.name_dict = {}
         if readfile:
-            self.read_ini(user_name, pass_word, input_pwd, authorization)
+            self.read_ini(user_name, password, input_pwd, authorization)
         else:
-            if user_name == "" or pass_word == "":
+            if user_name == "" or password == "":
                 raise Exception("用户名或密码为空")
             self.user_name = user_name
-            self.password = pass_word
+            self.password = password
             self.authorization = authorization
         self.header_logined = {
             "user-agent": "123pan/v2.4.0(" + self.osversion + ";Xiaomi)",
@@ -160,8 +160,14 @@ class Pan123:
             }
             try:
                 a = requests.get(base_url, headers=self.header_logined, params=params, timeout=30)
-            except Exception:
-                logger.error("连接失败")
+            except requests.exceptions.Timeout:
+                logger.error(f"请求超时: {base_url}")
+                return -1, []
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"连接失败: {e}")
+                return -1, []
+            except requests.exceptions.RequestException as e:
+                logger.error(f"请求异常: {e}")
                 return -1, []
             text = a.json()
             res_code_getdir = text["code"]
@@ -364,9 +370,9 @@ class Pan123:
             timeout=10
         )
         dele_json = delete_res.json()
-        print(dele_json)
+        logger.debug(f"删除文件响应: {dele_json}")
         message = dele_json.get("message", "")
-        print(message)
+        logger.info(f"删除文件消息: {message}")
 
     def share(self, file_id_list, share_pwd=""):
         """分享文件"""
@@ -586,7 +592,7 @@ class Pan123:
     def read_ini(
             self,
             user_name,
-            pass_word,
+            password,
             input_pwd,
             authorization="",
     ):
@@ -603,15 +609,15 @@ class Pan123:
             if loginuuid:
                 self.loginuuid = loginuuid
             user_name = config.get("userName", user_name)
-            pass_word = config.get("passWord", pass_word)
+            password = config.get("passWord", password)
             authorization = config.get("authorization", authorization)
         except Exception as e:
             logger.error(f"获取配置失败: {e}")
-            if user_name == "" or pass_word == "":
+            if user_name == "" or password == "":
                 raise Exception("无法从配置获取账号信息")
 
         self.user_name = user_name
-        self.password = pass_word
+        self.password = password
         self.authorization = authorization
 
     def mkdir(self, dirname, remakedir=False):
@@ -709,10 +715,24 @@ class Pan123:
 
         try:
             if accept_ranges and total and total > 1024 * 1024 * 2:
-                num_threads = min(8, max(1, int(total / (5 * 1024 * 1024))))
+                # 支持配置的线程数,默认最大8线程
+                from .config import ConfigManager
+                max_download_threads = ConfigManager.get_setting("maxDownloadThreads", 8)
+                max_download_threads = min(max(1, int(max_download_threads)), 16)  # 限制在1-16之间
+
+                # 根据文件大小动态调整线程数
+                num_threads = min(
+                    max_download_threads,
+                    max(1, int(total / (10 * 1024 * 1024)))  # 每10MB使用一个线程
+                )
+
+                # 动态调整 chunk_size
+                chunk_size = min(1024 * 1024, max(8192, total // (num_threads * 100)))  # 8KB - 1MB
+
                 part_size = total // num_threads
                 downloaded = [0]
                 dl_lock = threading.Lock()
+                last_progress_time = [0]  # 用于控制进度更新频率
 
                 def download_range(start, end, index):
                     part_path = f"{temp}.part{index}"
@@ -721,7 +741,7 @@ class Pan123:
                         with requests.get(redirect_url, headers=headers, stream=True, timeout=30) as r:
                             r.raise_for_status()
                             with open(part_path, "wb") as pf:
-                                for chunk in r.iter_content(chunk_size=8192):
+                                for chunk in r.iter_content(chunk_size=chunk_size):
                                     if task:
                                         try:
                                             task._pause_event.wait()
@@ -733,67 +753,96 @@ class Pan123:
                                         pf.write(chunk)
                                         with dl_lock:
                                             downloaded[0] += len(chunk)
-                                            if total and signals:
-                                                signals.progress.emit(int(downloaded[0] * 100 / total))
+                                            # 限制进度更新频率,避免过于频繁的UI更新
+                                            current_time = time.time()
+                                            if current_time - last_progress_time[0] > 0.1:  # 每100ms更新一次
+                                                if total and signals:
+                                                    signals.progress.emit(int(downloaded[0] * 100 / total))
+                                                last_progress_time[0] = current_time
                         return True
-                    except Exception:
+                    except requests.exceptions.RequestException as e:
+                        logger.error(f"下载分片 {index} 失败: {e}")
                         if os.path.exists(part_path):
                             try:
                                 os.remove(part_path)
-                            except Exception:
+                            except OSError:
+                                pass
+                        return False
+                    except Exception as e:
+                        logger.error(f"下载分片 {index} 时发生未知错误: {e}")
+                        if os.path.exists(part_path):
+                            try:
+                                os.remove(part_path)
+                            except OSError:
                                 pass
                         return False
 
                 futures = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as exe:
-                    for i in range(num_threads):
-                        start = i * part_size
-                        end = (start + part_size - 1) if i < num_threads - 1 else (total - 1)
-                        futures.append(exe.submit(download_range, start, end, i))
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=num_threads,
+                        thread_name_prefix="download_range"
+                    ) as exe:
+                        for i in range(num_threads):
+                            start = i * part_size
+                            end = (start + part_size - 1) if i < num_threads - 1 else (total - 1)
+                            futures.append(exe.submit(download_range, start, end, i))
 
-                    ok = True
-                    for f in concurrent.futures.as_completed(futures):
-                        if not f.result():
-                            ok = False
-                            break
+                        ok = True
+                        for f in concurrent.futures.as_completed(futures):
+                            if not f.result():
+                                ok = False
+                                break
 
-                if not ok:
-                    for i in range(num_threads):
-                        p = f"{temp}.part{i}"
-                        if os.path.exists(p):
-                            try:
-                                os.remove(p)
-                            except Exception:
-                                pass
-                    raise RuntimeError("分片下载失败")
+                    if not ok:
+                        raise RuntimeError("分片下载失败")
+                except concurrent.futures.CancelledError:
+                    logger.warning("下载任务被取消")
+                    raise RuntimeError("下载任务被取消")
+
                 if task and task.is_cancelled:
                     for i in range(num_threads):
                         p = f"{temp}.part{i}"
                         if os.path.exists(p):
                             try:
                                 os.remove(p)
-                            except Exception:
+                            except OSError:
                                 pass
                     return "已取消"
 
-                with open(temp, "wb") as out_f:
-                    for i in range(num_threads):
-                        p = f"{temp}.part{i}"
-                        with open(p, "rb") as pf:
-                            while True:
-                                chunk = pf.read(8192)
-                                if not chunk:
-                                    break
-                                out_f.write(chunk)
-                        try:
-                            os.remove(p)
-                        except Exception:
-                            pass
+                # 合并分片文件,使用更高效的方式
+                try:
+                    with open(temp, "wb") as out_f:
+                        for i in range(num_threads):
+                            p = f"{temp}.part{i}"
+                            try:
+                                with open(p, "rb") as pf:
+                                    while True:
+                                        chunk = pf.read(1024 * 1024)  # 使用更大的缓冲区
+                                        if not chunk:
+                                            break
+                                        out_f.write(chunk)
+                                os.remove(p)
+                            except OSError as e:
+                                logger.error(f"合并分片文件 {i} 时出错: {e}")
+                                if os.path.exists(p):
+                                    try:
+                                        os.remove(p)
+                                    except OSError:
+                                        pass
+                                raise RuntimeError(f"合并分片文件失败: {e}")
+                except OSError as e:
+                    logger.error(f"创建临时文件时出错: {e}")
+                    raise RuntimeError("合并分片文件失败")
 
                 if task and task.is_cancelled:
                     if os.path.exists(temp):
-                        os.remove(temp)
+                        try:
+                            os.remove(temp)
+                        except OSError:
+                            pass
                     return "已取消"
+
                 os.replace(temp, out_path)
                 return out_path
             else:

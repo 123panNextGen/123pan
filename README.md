@@ -94,7 +94,7 @@ cd 123pan/
 
 ```shell
 uv sync
-uv sync --group build # 构建环境
+uv sync --extra build # 构建环境
 ```
 
 然后运行`src`下的`123pan.py`即可。
@@ -114,10 +114,10 @@ uv run src/123pan.py
   "authorization": "令牌",
   "deviceType": "驱动类型",
   "osVersion": "安卓版本",
-  "loginuuid": "登陆UUID" ，
+  "loginuuid": "登陆UUID" ,
   "settings": {
     "defaultDownloadPath": "默认下载路径",
-    "askDownloadLocation": 开关
+    "askDownloadLocation": true
   }
 }
 ```

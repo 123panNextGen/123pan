@@ -1,8 +1,11 @@
 import sys
+
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt
-from qfluentwidgets import FluentTranslator, setTheme, Theme
+from qfluentwidgets import FluentTranslator, Theme, setTheme
+
 from app.view.main_window import MainWindow
+
 
 def main():
     # 高 DPI 支持
@@ -16,12 +19,14 @@ def main():
     translator = FluentTranslator()
     app.installTranslator(translator)
 
-    # 跟随系统深色/浅色
-    setTheme(Theme.AUTO)
+    # # 跟随系统深色/浅色
+    # 临时使用 浅色``
+    setTheme(Theme.LIGHT)
 
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

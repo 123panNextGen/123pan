@@ -11,7 +11,7 @@ dependencies = [
     "zstandard>=0.25.0",
 ]
 
-[dependency-groups]
+[dependency-extras]
 build = ["nuitka>=4.0.5", "pyside6>=6.10.2"]
 
 [[tool.uv.index]]
