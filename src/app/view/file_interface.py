@@ -51,6 +51,11 @@ class FileInterface(QWidget):
         self.is_updating_breadcrumb = False
         self.transfer_interface = None
 
+        # 排序模式: 0=按名称, 2=按大小
+        self.sort_mode = 0
+        # 排序方向: True=升序, False=降序
+        self.sort_ascending = True
+
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
         self.mainLayout.setSpacing(12)
@@ -131,6 +136,10 @@ class FileInterface(QWidget):
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            # 启用列头点击排序
+            header.setSectionsClickable(True)
+            header.setSortIndicatorShown(True)
+            header.sortIndicatorChanged.connect(self.__onHeaderSortIndicatorChanged)
         self.listLayout.addWidget(self.fileTable)
 
         self.contentLayout.addWidget(self.treeFrame, 2)
@@ -290,10 +299,11 @@ class FileInterface(QWidget):
         # 使用后台线程加载文件列表，避免阻塞主线程
         self.fileTable.setRowCount(0)
 
-        # 创建信号和任务
-        signals = self.LoadListSignals()
-        signals.finished.connect(self.__onLoadListFinished)
-        task = self.LoadListTask(self.__fetchDirList, self.current_dir_id, signals)
+        # 创建任务
+        task = self.LoadListTask(self.__fetchDirList, self.current_dir_id)
+
+        # 连接信号
+        task.signals.finished.connect(self.__onLoadListFinished)
 
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
@@ -315,15 +325,16 @@ class FileInterface(QWidget):
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
     # 后台加载文件列表的信号和任务类
-    class LoadListSignals(QObject):
-        finished = pyqtSignal(list, str)  # file_items, error
-
     class LoadListTask(QRunnable):
-        def __init__(self, fetch_method, dir_id, signals):
+        class LoadListSignals(QObject):
+            finished = pyqtSignal(list, str)  # file_items, error
+
+        def __init__(self, fetch_method, dir_id):
             super().__init__()
             self.fetch_method = fetch_method
             self.dir_id = dir_id
-            self.signals = signals
+            # 将信号对象作为成员变量，防止被垃圾回收
+            self.signals = self.LoadListSignals()
 
         def run(self):
             try:
@@ -522,8 +533,61 @@ class FileInterface(QWidget):
                 parent=self,
             )
         else:
+            # 对文件列表进行排序
+            sorted_items = self.__sortFileList(file_items)
             # 更新文件列表（轻量级UI操作）
-            self.__updateFileListUI(file_items)
+            self.__updateFileListUI(sorted_items)
+
+    def __sortFileList(self, file_items):
+        """对文件列表进行排序，文件夹始终在前"""
+        # 分离文件夹和文件
+        folders = []
+        files = []
+
+        for item in file_items:
+            file_type = int(item.get("Type", 0))
+            if file_type == 1:  # 文件夹
+                folders.append(item)
+            else:  # 文件
+                files.append(item)
+
+        # 根据排序模式对文件夹和文件分别排序
+        if self.sort_mode == 0:  # 按名称排序（仅翻转，不按字母排序）
+            # 不排序，保持原始顺序，但可以翻转
+            pass
+        elif self.sort_mode == 2:  # 按大小排序
+            # sort_ascending=True 表示升序（小到大），reverse=False
+            # sort_ascending=False 表示降序（大到小），reverse=True
+            reverse = not self.sort_ascending
+            folders.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
+            files.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
+
+        # 合并结果：文件夹在前，文件在后
+        result = folders + files
+
+        # 如果是按名称排序且需要降序，则翻转整个列表
+        if self.sort_mode == 0 and not self.sort_ascending:
+            result.reverse()
+
+        return result
+
+    def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
+        """列头排序指示器改变时的处理"""
+        # 只处理名称列（0）和大小列（2）的排序
+        if logicalIndex in [0, 2]:
+            if logicalIndex == self.sort_mode:
+                # 点击同一列，切换排序方向
+                self.sort_ascending = not self.sort_ascending
+            else:
+                # 点击不同列，切换到新列
+                self.sort_mode = logicalIndex
+                # 如果是大小列，默认使用降序；名称列默认使用升序
+                if logicalIndex == 2:
+                    self.sort_ascending = False
+                else:
+                    self.sort_ascending = True
+            # 重新加载当前列表以应用新的排序
+            self.__loadCurrentList()
 
     def __updateTreeUI(self, folder_items):
         """更新树结构UI - 轻量级操作"""
