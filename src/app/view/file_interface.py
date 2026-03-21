@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QWidget,
     QTreeWidgetItemIterator,
     QTableWidgetItem,
-    QInputDialog,
     QFileDialog,
     QMenu,
 )
@@ -33,6 +32,7 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
 from .newfolder_window import NewFolderDialog
+from .rename_window import RenameDialog
 
 Pan123 = importlib.import_module("app.common.api").Pan123
 
@@ -904,25 +904,21 @@ class FileInterface(QWidget):
         old_name = name_item.text()
         file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
-        # 使用输入对话框获取新名称
-        new_name, ok = QInputDialog.getText(
-            self,
-            "重命名",
-            "请输入新的名称:",
-            text=old_name
-        )
+        # 使用重命名对话框获取新名称
+        dialog = RenameDialog(old_name, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
 
-        if not ok or not new_name.strip():
+        new_name = dialog.get_new_name()
+
+        # 检查新名称是否为空
+        if not new_name:
+            InfoBar.warning(title="重命名错误", content="名称不能为空", parent=self)
             return
 
         # 检查新名称是否与旧名称相同
-        if new_name.strip() == old_name:
+        if new_name == old_name:
             InfoBar.warning(title="重命名错误", content="新名称与旧名称相同", parent=self)
-            return
-
-        # 检查新名称是否为空
-        if not new_name.strip():
-            InfoBar.warning(title="重命名错误", content="名称不能为空", parent=self)
             return
 
         # 检查新名称是否包含无效字符
