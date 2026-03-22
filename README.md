@@ -25,12 +25,14 @@
 
 ```
 123pan
+├── config
 ├── doc
 │   ├── api.md
-│   ├── image.png
+│   ├── image.png  (lfs)
 │   └── todo.md
 ├── script
-│   └── build.sh
+│   ├── build.sh
+│   └── lint.sh
 ├── src
 │   ├── app
 │   │   ├── common
@@ -62,6 +64,7 @@
 │   │   │   │       └── view_interface.qss
 │   │   │   └── resource.qrc
 │   │   └── view
+│   │       ├── cloud_interface.py
 │   │       ├── file_interface.py
 │   │       ├── login_window.py
 │   │       ├── main_window.py
