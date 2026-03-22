@@ -1,26 +1,23 @@
-import sys
-import os
 import json
+import os
 import platform
+import sys
 from pathlib import Path
 
 from qfluentwidgets import (
-    qconfig,
-    QConfig,
-    Theme,
-    ConfigItem,
-    OptionsConfigItem,
-    RangeConfigItem,
-    OptionsValidator,
-    RangeValidator,
-    FolderValidator,
-    FolderListValidator,
     BoolValidator,
-    __version__,
+    ConfigItem,
+    FolderListValidator,
+    FolderValidator,
+    OptionsConfigItem,
+    OptionsValidator,
+    QConfig,
+    RangeConfigItem,
+    RangeValidator,
+    Theme,
 )
 
 from .log import get_logger
-from .const import YEAR, VERSION, ABOUT_URL, all_device_type, all_os_versions
 
 logger = get_logger(__name__)
 

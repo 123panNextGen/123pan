@@ -1,17 +1,19 @@
-import os
-import json
+import concurrent.futures
 import hashlib
-import requests
-import time
+import json
+import os
 import random
 import re
-import uuid
 import threading
-import concurrent.futures
+import time
+import uuid
 from pathlib import Path
-from .log import get_logger
+
+import requests
+
 from .config import ConfigManager
 from .const import all_device_type, all_os_versions
+from .log import get_logger
 
 logger = get_logger(__name__)
 
@@ -79,6 +81,7 @@ class Pan123:
             "https://www.123pan.com/b/api/user/sign_in",
             headers=self.header_logined,
             data=data,
+            timeout=(3, 5),
         )
 
         res_sign = login_res.json()

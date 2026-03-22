@@ -1,0 +1,10 @@
+[MASTER]
+
+ignored-modules=PyQt6,PyQt6.QtCore,PyQt6.QtWidgets,PyQt6.QtGui,qfluentwidgets
+
+disable=
+    C0114,  # missing-module-docstring
+    C0116,  # missing-function-docstring
+    C0115,  # missing-class-docstring
+    W0611,  # unused-import
+    C0103,  # invalid-name
