@@ -32,7 +32,7 @@ from .login_window import LoginDialog
 
 from ..common import resource
 from ..common.api import Pan123
-from ..common import config
+from ..common.config import ConfigManager
 
 
 class MainWindow(FluentWindow):
@@ -71,10 +71,10 @@ class MainWindow(FluentWindow):
 
     def _startup_login_flow(self):
         cfg_loaded = False
-        cfg = config.ConfigManager.load_config()
-        if config.ConfigManager.get_setting(
+        cfg = ConfigManager.load_config()
+        if ConfigManager.get_setting(
                 "userName"
-        ) and config.ConfigManager.get_setting("passWord"):
+        ) and ConfigManager.get_setting("passWord"):
             try:
                 self.pan = Pan123(readfile=True, input_pwd=False)
                 res_code = self.pan.get_dir(save=False)[0]
@@ -108,7 +108,6 @@ class MainWindow(FluentWindow):
 
     def clear_login_config(self):
         """清除登录配置信息"""
-        from ..common.config import ConfigManager
         config = ConfigManager.load_config()
         # 清除登录相关的信息
         config["userName"] = ""
