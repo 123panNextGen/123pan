@@ -8,5 +8,5 @@ DEFAULT_ARGS=(--disable-error-code import-not-found --follow-untyped-imports --e
 (
   cd $project
 
-  uv run mypy "${DEFAULT_ARGS[@]}" "$@"
+  uv run mypy "${DEFAULT_ARGS[@]}" "${@:-.}"
   )
