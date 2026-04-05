@@ -235,24 +235,26 @@ class DownloadThread(QThread):
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
 
         # 发送请求
-        response = requests.get(url, stream=True, timeout=30)
-        total_size = int(response.headers.get("Content-Length", 0))
-        downloaded_size = 0
-        last_progress = 0
-
-        # 写入文件
+        logger.debug(f"下载URL: {url}")
         try:
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        if total_size > 0:
-                            progress = int(downloaded_size * 100 / total_size)
-                            # 只在进度变化时发送信号，减少信号发射频率
-                            if progress != last_progress:
-                                signals.emit(progress)
-                                last_progress = progress
+            with requests.get(url, stream=True, timeout=30) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get("Content-Length", 0))
+                downloaded_size = 0
+                last_progress = 0
+
+                # 写入文件
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            if total_size > 0:
+                                progress = int(downloaded_size * 100 / total_size)
+                                # 只在进度变化时发送信号，减少信号发射频率
+                                if progress != last_progress:
+                                    signals.emit(progress)
+                                    last_progress = progress
 
             # 重命名临时文件
             if temp_path.exists():
@@ -261,6 +263,11 @@ class DownloadThread(QThread):
                 temp_path.rename(file_path)
             else:
                 raise Exception("临时文件不存在")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"下载请求失败: {url} -> {e}")
+            if temp_path.exists():
+                temp_path.unlink()
+            raise RuntimeError(f"下载请求失败: {e}")
         except Exception as e:
             # 清理临时文件
             if temp_path.exists():
