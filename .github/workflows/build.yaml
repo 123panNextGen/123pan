@@ -30,13 +30,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
     
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           python-version-file: ".python-version"
@@ -65,7 +65,7 @@ jobs:
       # Windows artifact upload
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: 123pan-windows
           path: 123pan.exe
@@ -73,7 +73,7 @@ jobs:
       # Linux artifact upload
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: 123pan-linux
           path: 123pan
@@ -87,14 +87,14 @@ jobs:
     steps:
       - name: Download Windows artifact
         if: runner.os == 'Linux'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: 123pan-windows
           path: ./artifacts/windows
 
       - name: Download Linux artifact
         if: runner.os == 'Linux'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: 123pan-linux
           path: ./artifacts/linux

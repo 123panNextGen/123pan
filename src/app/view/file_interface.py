@@ -16,8 +16,9 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QFileDialog,
     QMenu,
+    QApplication,
 )
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QClipboard
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (
@@ -1132,6 +1133,11 @@ class FileInterface(QWidget):
         # 创建右键菜单
         menu = QMenu(self)
 
+        # 添加获取下载链接菜单项
+        copy_link_action = QAction(FIF.LINK.icon(), "获取下载链接", self)
+        copy_link_action.triggered.connect(self.__copyDownloadLink)
+        menu.addAction(copy_link_action)
+
         # 添加重命名菜单项
         rename_action = QAction(FIF.EDIT.icon(), "重命名", self)
         rename_action.triggered.connect(self.__renameFile)
@@ -1144,6 +1150,55 @@ class FileInterface(QWidget):
 
         # 显示菜单
         menu.exec(self.fileTable.mapToGlobal(position))
+
+    def __copyDownloadLink(self):
+        """复制文件下载链接到剪贴板"""
+        # 获取选中的行
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            InfoBar.warning(
+                title="复制链接失败", content="请选择一个文件", parent=self
+            )
+            return
+
+        # 获取文件信息
+        row = selected_items[0].row()
+        name_item = self.fileTable.item(row, 0)
+        file_id = name_item.data(Qt.ItemDataRole.UserRole)
+        file_name = name_item.text()
+
+        # 在 pan.list 中找到对应的文件详情
+        file_detail = None
+        for item in self.pan.list:
+            if str(item.get("FileId")) == str(file_id):
+                file_detail = item
+                break
+
+        if not file_detail:
+            InfoBar.error(
+                title="复制链接失败", content="无法找到文件详情", parent=self
+            )
+            return
+
+        try:
+            # 获取下载链接
+            url = self.pan.link_by_fileDetail(file_detail, showlink=False)
+            if isinstance(url, str) and url:
+                # 复制到剪贴板
+                clipboard = QApplication.clipboard()
+                clipboard.setText(url)
+                InfoBar.success(
+                    title="复制成功", content=f"已复制 {file_name} 的下载链接到剪贴板", parent=self
+                )
+            else:
+                InfoBar.error(
+                    title="复制链接失败", content="获取下载链接失败", parent=self
+                )
+        except Exception as e:
+            logger.error(f"复制下载链接失败: {e}")
+            InfoBar.error(
+                title="复制链接失败", content=f"发生错误: {str(e)}", parent=self
+            )
 
     def update_storage_info(self, used_text):
         """更新云盘存储信息"""
