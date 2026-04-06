@@ -298,12 +298,11 @@ class FileInterface(QWidget):
             self.__initTree()
             self.__loadCurrentList()
             self.__updateBreadcrumb()
-            self.__updateBackButtonState()
+
             # 统计并更新云盘存储信息
             self.load_and_update_storage_info()
         except Exception as e:
             self.__setErrorBreadcrumb(f"初始化失败: {e}")
-            self.backButton.setEnabled(False)
 
     def __initTree(self):
         self.folderTree.clear()
@@ -568,10 +567,6 @@ class FileInterface(QWidget):
         tree_item = self.__findTreeItemById(target_dir_id)
         if tree_item:
             self.folderTree.setCurrentItem(tree_item)
-
-    def __updateBackButtonState(self):
-        """更新返回按钮状态"""
-        self.backButton.setEnabled(len(self.path_stack) > 1)
 
     def __createNewFolder(self):
         """创建新文件夹"""
