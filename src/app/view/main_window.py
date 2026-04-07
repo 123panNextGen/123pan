@@ -14,7 +14,7 @@ from .file_interface import FileInterface
 from .transfer_interface import TransferInterface
 from .setting_interface import SettingInterface
 from .cloud_interface import CloudInterface
-from .login_window import LoginDialog, login_with_credentials, should_auto_login
+from .login_window import LoginDialog, try_token_probe
 
 from ..common import resource
 from ..common.database import Database
@@ -67,24 +67,16 @@ class MainWindow(FluentWindow):
 
     def _startup_login_flow(self):
         db = Database.instance()
-        auto_login_error = None
-        if should_auto_login(db):
-            try:
-                self.pan = login_with_credentials(
-                    db.get_config("userName", ""),
-                    db.get_config("passWord", ""),
-                )
-            except Exception as exc:
-                auto_login_error = str(exc)
+        self.pan = None
 
-        if auto_login_error or not hasattr(self, "pan"):
+        # 尝试 token 探测
+        stay_logged_in = bool(db.get_config("stayLoggedIn", True))
+        if stay_logged_in:
+            self.pan = try_token_probe(db)
+
+        # token 无效或未开启保持登录，弹出登录对话框
+        if self.pan is None:
             dlg = LoginDialog(self)
-            if auto_login_error:
-                MessageBox(
-                    "自动登录失败",
-                    f"{auto_login_error}\n请手动重新登录。",
-                    self,
-                ).exec()
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 QTimer.singleShot(0, self.close)
                 return
@@ -127,7 +119,8 @@ class MainWindow(FluentWindow):
         db = Database.instance()
         for key in ("userName", "passWord", "authorization", "deviceType", "osVersion", "loginuuid"):
             db.set_config(key, "")
-        db.set_config("autoLogin", False)
+        db.set_config("rememberPassword", False)
+        db.set_config("stayLoggedIn", False)
 
     def handle_logout(self):
         """处理退出登录请求"""
