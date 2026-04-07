@@ -357,8 +357,7 @@ class TestMkdir:
             "code": 0, "data": {"FileId": 42, "Info": {"FileId": 42}}, "message": "ok"
         })
 
-        with patch.object(pan.session, "post", return_value=resp) as mock_post, \
-             patch.object(pan, "get_dir"):
+        with patch.object(pan.session, "post", return_value=resp):
             result = pan.mkdir("new_folder")
             assert result == 42
 

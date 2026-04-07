@@ -55,9 +55,6 @@ class Pan123:
         self.parent_file_name_list = []
         self.all_file = False
         self.file_page = 0
-        self.file_list = []
-        self.dir_list = []
-        self.name_dict = {}
         # 创建带重试的 session，仅在网络错误时重试
         db = Database.instance()
         retry = Retry(
@@ -186,10 +183,6 @@ class Pan123:
         except Exception as e:
             logger.error("保存账号失败:", e)
 
-    def get_dir(self, save=True):
-        """获取当前目录下的文件列表"""
-        return self.get_dir_by_id(self.parent_file_id, save)
-
     def get_dir_by_id(self, file_id, save=True, all=False, limit=100):
         """按文件夹ID获取文件列表（支持分页）
 
@@ -266,18 +259,6 @@ class Pan123:
 
         return res_code_getdir, lists
 
-    def show(self):
-        """显示文件列表信息到日志"""
-        if not self.all_file:
-            logger.info(f"获取了{len(self.list)}/{self.total}个文件")
-        else:
-            logger.info(f"获取全部{len(self.list)}个文件")
-
-    def link_by_number(self, file_number, showlink=True):
-        """按编号获取文件下载链接"""
-        file_detail = self.list[file_number]
-        return self.link_by_fileDetail(file_detail, showlink)
-
     def link_by_fileDetail(self, file_detail, showlink=True):
         """按文件详情获取下载链接"""
         type_detail = file_detail["Type"]
@@ -321,21 +302,6 @@ class Pan123:
             logger.info(f"获取下载链接成功: {redirect_url}")
 
         return redirect_url
-
-    def get_all_things(self, id):
-        """获取文件夹内所有内容"""
-        self.dir_list.remove(id)
-        all_list = self.get_dir_by_id(id, save=False)[1]
-
-        for i in all_list:
-            if i["Type"] == 0:
-                self.file_list.append(i)
-            else:
-                self.dir_list.append(i["FileId"])
-                self.name_dict[i["FileId"]] = i["FileName"]
-
-        for i in self.dir_list:
-            self.get_all_things(i)
 
     def recycle(self):
         """获取回收站列表"""
@@ -438,54 +404,6 @@ class Pan123:
         share_url = "https://www.123pan.com/s/" + share_key
         return share_url
 
-    def cd(self, dir_num):
-        """进入文件夹"""
-        if dir_num == "..":
-            if len(self.parent_file_list) > 1:
-                self.all_file = False
-                self.file_page = 0
-                self.parent_file_list.pop()
-                self.parent_file_id = self.parent_file_list[-1]
-                self.list = []
-                self.parent_file_name_list.pop()
-                self.get_dir()
-            else:
-                raise RuntimeError("已经是根目录")
-            return
-        if dir_num == "/":
-            self.all_file = False
-            self.file_page = 0
-            self.parent_file_id = 0
-            self.parent_file_list = [0]
-            self.list = []
-            self.parent_file_name_list = []
-            self.get_dir()
-            return
-        if not str(dir_num).isdigit():
-            raise ValueError("文件夹编号必须是数字")
-        dir_num = int(dir_num) - 1
-        if dir_num > (len(self.list) - 1) or dir_num < 0:
-            raise IndexError("文件夹编号超出范围")
-        if self.list[dir_num]["Type"] != 1:
-            raise TypeError("选中项不是文件夹")
-        self.all_file = False
-        self.file_page = 0
-        self.parent_file_id = self.list[dir_num]["FileId"]
-        self.parent_file_list.append(self.parent_file_id)
-        self.parent_file_name_list.append(self.list[dir_num]["FileName"])
-        self.list = []
-        self.get_dir()
-
-    def cdById(self, file_id):
-        """按ID进入文件夹"""
-        self.all_file = False
-        self.file_page = 0
-        self.list = []
-        self.parent_file_id = file_id
-        self.parent_file_list.append(self.parent_file_id)
-        self.get_dir()
-        self.show()
-
     def read_ini(
         self,
         user_name,
@@ -525,10 +443,7 @@ class Pan123:
                     logger.info("文件夹已存在")
                     return i["FileId"]
 
-        result = self._create_directory(self.parent_file_id, dirname)
-        if result:
-            self.get_dir()
-        return result
+        return self._create_directory(self.parent_file_id, dirname)
 
     def _create_directory(self, parent_id, dirname):
         """在指定父目录下创建文件夹。"""
