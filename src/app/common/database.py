@@ -14,7 +14,7 @@ _db_lock = threading.Lock()
 
 UPLOAD_PART_SIZE = 5 * 1024 * 1024  # 5MB — 与 api.py UPLOAD_PART_SIZE 保持一致
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 def _get_db_path():
@@ -143,8 +143,23 @@ class Database:
         """基于 PRAGMA user_version 的 schema 迁移。"""
         version = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if version < CURRENT_SCHEMA_VERSION:
-            # 未来的迁移在这里按版本号顺序添加
-            # if version < 1: ...
+            if version < 2:
+                # autoLogin --> rememberPassword + stayLoggedIn
+                old_row = self._conn.execute(
+                    "SELECT value FROM config WHERE key = 'autoLogin'"
+                ).fetchone()
+                if old_row:
+                    was_auto = json.loads(old_row[0])
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                        ("rememberPassword", json.dumps(bool(was_auto))),
+                    )
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                        ("stayLoggedIn", json.dumps(True)),
+                    )
+                    self._conn.execute("DELETE FROM config WHERE key = 'autoLogin'")
+                self._conn.commit()
             self._conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
 
     def _init_defaults(self):
@@ -152,7 +167,8 @@ class Database:
         defaults = {
             "defaultDownloadPath": str(Path.home() / "Downloads"),
             "askDownloadLocation": True,
-            "autoLogin": False,
+            "rememberPassword": False,
+            "stayLoggedIn": True,
             "maxDownloadThreads": 3,
             "maxUploadThreads": 16,
             "maxConcurrentDownloads": 3,
