@@ -758,18 +758,6 @@ class Pan123:
             "file_targets": file_targets,
         }
 
-    @staticmethod
-    def _compute_file_md5(file_path):
-        """计算文件MD5值"""
-        md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            while True:
-                data = f.read(64 * 1024)
-                if not data:
-                    break
-                md5.update(data)
-        return md5.hexdigest()
-
     def upload_file_stream(
         self, file_path, dup_choice=1, task_id=None, signals=None, task=None,
         speed_tracker=None, resume_info=None, parent_id=0,
@@ -827,18 +815,31 @@ class Pan123:
                 "断点续传: %s/%s 块已完成", len(done_parts), total_parts
             )
         else:
-            # ---- 全新上传 ----
+            # ---- 全新上传：先校验文件 MD5 ----
+            if signals and hasattr(signals, "status"):
+                signals.status.emit("校验中")
             md5 = hashlib.md5()
+            bytes_read = 0
+            last_pct = -1
             with open(file_path, "rb") as f:
                 while True:
-                    data = f.read(64 * 1024)
+                    data = f.read(1024 * 1024)
                     if not data:
                         break
                     md5.update(data)
+                    bytes_read += len(data)
                     if task and getattr(task, "is_cancelled", False):
                         return "已取消"
                     if task and getattr(task, "pause_requested", False):
                         return "已暂停"
+                    if fsize > 0:
+                        pct = int(bytes_read * 100 / fsize)
+                        if pct != last_pct:
+                            last_pct = pct
+                            if signals:
+                                signals.progress.emit(pct)
+                            if speed_tracker:
+                                speed_tracker.record(bytes_read)
             readable_hash = md5.hexdigest()
 
             list_up_request = {
@@ -895,6 +896,14 @@ class Pan123:
                     "up_file_id": up_file_id, "total_parts": total_parts,
                     "block_size": block_size, "etag": readable_hash,
                 })
+
+            # 校验完成，切换到上传状态并重置进度
+            if signals and hasattr(signals, "status"):
+                signals.status.emit("上传中")
+            if signals:
+                signals.progress.emit(0)
+            if speed_tracker:
+                speed_tracker.reset()
 
         # 初始化 multipart upload session（123pan 要求在获取 presigned URL 前调用）
         init_data = {

@@ -79,7 +79,6 @@ username = config.get("userName", "")
 - `cdById(file_id)`: 按 ID 进入文件夹。
 - `read_ini(user_name, pass_word, input_pwd, authorization)`: 从配置文件读取账号信息。
 - `mkdir(dirname, remakedir=False)`: 创建文件夹。
-- `_compute_file_md5(file_path)`: 计算文件 MD5 值。
 - `upload_file_stream(file_path, dup_choice=1, task_id=None, signals=None, task=None)`: 流式上传文件，支持进度和取消。
 
 #### TransferTask 类
@@ -370,20 +369,6 @@ file_id = pan.mkdir("new_folder", remakedir=False)
 - **示例**:
   ```python
   id = pan.mkdir("test")
-  ```
-
-#### _compute_file_md5(file_path)
-```python
-md5 = pan._compute_file_md5("/path/to/file.txt")
-```
-- **参数**:
-  - `file_path`: str, 文件路径。
-- **返回值**: str, MD5 哈希值。
-- **说明**: 计算文件的 MD5 值。
-- **异常**: 如果文件不存在，抛出异常。
-- **示例**:
-  ```python
-  hash = pan._compute_file_md5("file.txt")
   ```
 
 #### upload_file_stream(file_path, dup_choice=1, task_id=None, signals=None, task=None)
