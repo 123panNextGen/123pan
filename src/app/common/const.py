@@ -4,7 +4,7 @@
 
 # 版本信息 — 构建时由 CI 注入，开发环境回退到 git 命令获取
 YEAR = 2026
-ABOUT_URL = "https://github.com/crmmc/123pan"
+ABOUT_URL = "https://github.com/crmmc/123pan-open"
 
 # CI 构建时会替换下面两行的占位符
 _BUILD_COMMIT = "dev"

@@ -1,4 +1,4 @@
-name: Build & Release 123pan
+name: Build & Release 123pan-open
 
 on:
   workflow_dispatch:
@@ -26,24 +26,24 @@ jobs:
         include:
           - name: windows-x64
             runner: windows-latest
-            artifact: 123pan-windows-x64
-            binary: 123pan.exe
+            artifact: 123pan-open-windows-x64
+            binary: 123pan-open.exe
           - name: windows-arm64
             runner: windows-11-arm
-            artifact: 123pan-windows-arm64
-            binary: 123pan.exe
+            artifact: 123pan-open-windows-arm64
+            binary: 123pan-open.exe
           - name: linux-x64
             runner: ubuntu-latest
-            artifact: 123pan-linux-x64
-            binary: 123pan
+            artifact: 123pan-open-linux-x64
+            binary: 123pan-open
           - name: linux-arm64
             runner: ubuntu-24.04-arm
-            artifact: 123pan-linux-arm64
-            binary: 123pan
+            artifact: 123pan-open-linux-arm64
+            binary: 123pan-open
           - name: macos-arm64
             runner: macos-latest
-            artifact: 123pan-macos-arm64
-            binary: 123pan
+            artifact: 123pan-open-macos-arm64
+            binary: 123pan-open
 
     steps:
       - name: Checkout repository
@@ -123,11 +123,11 @@ jobs:
 
             | 平台 | 架构 | 文件 |
             |------|------|------|
-            | Windows | x64 | `123pan-windows-x64.exe` |
-            | Windows | ARM64 | `123pan-windows-arm64.exe` |
-            | Linux | x64 | `123pan-linux-x64` |
-            | Linux | ARM64 | `123pan-linux-arm64` |
-            | macOS | ARM64 (Apple Silicon) | `123pan-macos-arm64` |
+            | Windows | x64 | `123pan-open-windows-x64.exe` |
+            | Windows | ARM64 | `123pan-open-windows-arm64.exe` |
+            | Linux | x64 | `123pan-open-linux-x64` |
+            | Linux | ARM64 | `123pan-open-linux-arm64` |
+            | macOS | ARM64 (Apple Silicon) | `123pan-open-macos-arm64` |
           files: ./artifacts/**/*
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false

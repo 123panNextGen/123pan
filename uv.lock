@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [[package]]
-name = "123pan"
+name = "123pan-open"
 version = "3.0.5"
 source = { virtual = "." }
 dependencies = [

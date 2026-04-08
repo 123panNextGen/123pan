@@ -1,4 +1,4 @@
-# 123Pan 项目 API 文档
+# 123pan-open 项目 API 文档
 
 >[!IMPORTANT]  
 >注意：**此文档由AI生成**
@@ -12,7 +12,7 @@
 
 ### 主要功能
 - 根据操作系统确定配置文件目录（Windows 使用 `APPDATA`，其他使用 `~/.config`）。
-- 定义日志文件路径：`{CONFIG_DIR}/123pan.log`。
+- 定义日志文件路径：`{CONFIG_DIR}/123pan-open.log`。
 - 提供 `get_logger(name)` 函数来获取配置好的日志记录器。
 
 ### 使用示例

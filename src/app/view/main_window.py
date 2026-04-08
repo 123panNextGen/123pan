@@ -23,7 +23,7 @@ from ..common.database import Database
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("123pan")
+        self.setWindowTitle("123pan-open")
         self.resize(900, 600)
         self._last_file_refresh_time = 0.0
         self.login_success = False

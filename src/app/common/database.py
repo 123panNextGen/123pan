@@ -32,7 +32,7 @@ CURRENT_SCHEMA_VERSION = 2
 def _get_db_path():
     from .config import CONFIG_DIR
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    return CONFIG_DIR / "123pan.db"
+    return CONFIG_DIR / "123pan-open.db"
 
 
 def _safe_int(value, default=0, min_val=None, max_val=None):

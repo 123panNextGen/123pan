@@ -36,7 +36,7 @@ class _MockResponse:
 
 
 def _use_temp_db(tmp_path, monkeypatch):
-    db_path = tmp_path / "123pan.db"
+    db_path = tmp_path / "123pan-open.db"
     monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
     monkeypatch.setattr(download_resume, "CONFIG_DIR", tmp_path)
     Database.reset()

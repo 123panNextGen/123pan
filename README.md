@@ -1,21 +1,21 @@
 <div align="center">
 
-# 123pan
+# 123pan-open
 
 **高性能 123 云盘第三方客户端 | 多线程传输 · 断点续传 · 全平台支持**
 
 <div>
-  <a href="https://github.com/crmmc/123pan/stargazers"><img src="https://img.shields.io/github/stars/crmmc/123pan" alt="Stars"></a>
-  <a href="https://github.com/crmmc/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
-  <a href="https://github.com/crmmc/123pan/releases"><img src="https://img.shields.io/github/v/release/crmmc/123pan" alt="Release"></a>
-  <a href="https://github.com/crmmc/123pan/releases"><img src="https://img.shields.io/github/downloads/crmmc/123pan/total" alt="Downloads"></a>
+  <a href="https://github.com/crmmc/123pan-open/stargazers"><img src="https://img.shields.io/github/stars/crmmc/123pan-open" alt="Stars"></a>
+  <a href="https://github.com/crmmc/123pan-open/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
+  <a href="https://github.com/crmmc/123pan-open/releases"><img src="https://img.shields.io/github/v/release/crmmc/123pan-open" alt="Release"></a>
+  <a href="https://github.com/crmmc/123pan-open/releases"><img src="https://img.shields.io/github/downloads/crmmc/123pan-open/total" alt="Downloads"></a>
 </div>
 <div>
   <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PySide6-Fluent%20Design-41CD52?logo=qt&logoColor=white" alt="PySide6">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey" alt="Platform">
-  <a href="https://github.com/crmmc/123pan/actions/workflows/build.yaml"><img src="https://img.shields.io/github/actions/workflow/status/crmmc/123pan/build.yaml?label=build&logo=github" alt="Build"></a>
-  <a href="https://github.com/crmmc/123pan/actions/workflows/test.yaml"><img src="https://img.shields.io/github/actions/workflow/status/crmmc/123pan/test.yaml?label=tests&logo=github" alt="Tests"></a>
+  <a href="https://github.com/crmmc/123pan-open/actions/workflows/build.yaml"><img src="https://img.shields.io/github/actions/workflow/status/crmmc/123pan-open/build.yaml?label=build&logo=github" alt="Build"></a>
+  <a href="https://github.com/crmmc/123pan-open/actions/workflows/test.yaml"><img src="https://img.shields.io/github/actions/workflow/status/crmmc/123pan-open/test.yaml?label=tests&logo=github" alt="Tests"></a>
 </div>
 
 <br>
@@ -76,25 +76,25 @@
 
 ### 下载预构建版本
 
-前往 [Releases](https://github.com/crmmc/123pan/releases) 下载对应平台的可执行文件，下载后直接运行即可：
+前往 [Releases](https://github.com/crmmc/123pan-open/releases) 下载对应平台的可执行文件，下载后直接运行即可：
 
 | 平台 | 架构 | 文件名 |
 |:---|:---|:---|
-| Windows | x64 | `123pan-windows-x64.exe` |
-| Windows | ARM64 | `123pan-windows-arm64.exe` |
-| Linux | x64 | `123pan-linux-x64` |
-| Linux | ARM64 | `123pan-linux-arm64` |
-| macOS | Apple Silicon | `123pan-macos-arm64` |
+| Windows | x64 | `123pan-open-windows-x64.exe` |
+| Windows | ARM64 | `123pan-open-windows-arm64.exe` |
+| Linux | x64 | `123pan-open-linux-x64` |
+| Linux | ARM64 | `123pan-open-linux-arm64` |
+| macOS | Apple Silicon | `123pan-open-macos-arm64` |
 
 ### 从源码运行
 
 需要 [Python 3.12+](https://www.python.org/downloads/) 和 [uv](https://github.com/astral-sh/uv)。
 
 ```bash
-git clone https://github.com/crmmc/123pan.git
-cd 123pan
+git clone https://github.com/crmmc/123pan-open.git
+cd 123pan-open
 uv sync
-uv run src/123pan.py
+uv run src/123pan-open.py
 ```
 
 ## 构建

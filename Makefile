@@ -1,8 +1,8 @@
 SHELL := /bin/bash
-.DEFAULT_GOAL := dist/123pan-source.7z
+.DEFAULT_GOAL := dist/123pan-open-source.7z
 
 SEVEN_Z := $(shell command -v 7zz 2>/dev/null || command -v 7z 2>/dev/null || command -v 7za 2>/dev/null)
-ARCHIVE := dist/123pan-source.7z
+ARCHIVE := dist/123pan-open-source.7z
 PACKAGE_INPUTS := \
 	LICENSE \
 	Makefile \

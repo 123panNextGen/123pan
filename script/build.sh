@@ -14,15 +14,15 @@ rm -f "${CONST_FILE}.bak"
 
 case "$(uname -s)" in
   Linux)
-    OUT_NAME=123pan
+    OUT_NAME=123pan-open
     EXTRA_ARGS=(--lto=yes)
     ;;
   Darwin)
-    OUT_NAME=123pan
+    OUT_NAME=123pan-open
     EXTRA_ARGS=(--macos-create-app-bundle --lto=yes)
     ;;
   *)
-    OUT_NAME=123pan.exe
+    OUT_NAME=123pan-open.exe
     EXTRA_ARGS=(--windows-disable-console --lto=yes)
     ;;
 esac
@@ -30,7 +30,7 @@ esac
 (
   cd "${project}"
 
-  uv run -m nuitka src/123pan.py \
+  uv run -m nuitka src/123pan-open.py \
     --onefile \
     --enable-plugin=pyside6 \
     --assume-yes-for-downloads \

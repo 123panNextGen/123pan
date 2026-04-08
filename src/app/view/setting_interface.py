@@ -179,7 +179,7 @@ class SettingInterface(ScrollArea):
         )
 
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
-        about_text = f"123pan {VERSION} © Copyright {YEAR}"
+        about_text = f"123pan-open {VERSION} © Copyright {YEAR}"
         if BUILD_TIME:
             about_text += f"  |  构建于 {BUILD_TIME}"
         self.aboutCard = PrimaryPushSettingCard(

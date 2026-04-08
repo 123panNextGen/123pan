@@ -5,15 +5,15 @@ from pathlib import Path
 
 # 配置文件路径
 if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "") or (Path.home() / "AppData" / "Roaming")) / "123pan"
+    CONFIG_DIR = Path(os.environ.get("APPDATA", "") or (Path.home() / "AppData" / "Roaming")) / "123pan-open"
 elif platform.system() == "Darwin":
-    CONFIG_DIR = Path.home() / "Library" / "Application Support" / "123pan"
+    CONFIG_DIR = Path.home() / "Library" / "Application Support" / "123pan-open"
 else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
-LOG_FILE = CONFIG_DIR / "123pan.log"
+    CONFIG_DIR = Path.home() / ".config" / "123pan-open"
+LOG_FILE = CONFIG_DIR / "123pan-open.log"
 
 
-def get_logger(name: str = "123pan"):
+def get_logger(name: str = "123pan-open"):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 

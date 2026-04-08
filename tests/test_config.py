@@ -3,7 +3,7 @@ from src.app.common.database import Database
 
 
 def _use_temp_db(tmp_path, monkeypatch):
-    db_path = tmp_path / "123pan.db"
+    db_path = tmp_path / "123pan-open.db"
     monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
     Database.reset()
     return Database.instance()
@@ -63,7 +63,7 @@ class TestAutoLoginMigration:
         conn.close()
 
     def test_migrates_auto_login_true(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "123pan.db"
+        db_path = tmp_path / "123pan-open.db"
         monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
         Database.reset()
 
@@ -77,7 +77,7 @@ class TestAutoLoginMigration:
         assert db.get_config("autoLogin", "NOT_FOUND") == "NOT_FOUND"
 
     def test_migrates_auto_login_false(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "123pan.db"
+        db_path = tmp_path / "123pan-open.db"
         monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
         Database.reset()
 
@@ -91,7 +91,7 @@ class TestAutoLoginMigration:
         assert db.get_config("autoLogin", "NOT_FOUND") == "NOT_FOUND"
 
     def test_no_migration_when_no_auto_login_key(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "123pan.db"
+        db_path = tmp_path / "123pan-open.db"
         monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
         Database.reset()
 

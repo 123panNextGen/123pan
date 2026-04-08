@@ -1,5 +1,5 @@
 [project]
-name = "123pan"
+name = "123pan-open"
 version = "3.0.5"
 description = "第三方123云盘客户端，解决了123云盘电脑客户端限制每日1GB自用流量的问题 "
 readme = "README.md"
