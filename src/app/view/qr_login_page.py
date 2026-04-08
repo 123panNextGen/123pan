@@ -5,7 +5,7 @@ from PIL.ImageQt import ImageQt
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..common.api import Pan123
 from ..common.log import get_logger
@@ -20,9 +20,8 @@ class QRLoginPage(QWidget):
 
     loginSuccess = Signal(object)  # 发射 Pan123 对象
 
-    def __init__(self, cb_stay_logged_in, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._cb_stay_logged_in = cb_stay_logged_in
         self._uni_id = ""
         self._pan_temp = None
         self._consecutive_errors = 0
@@ -59,10 +58,11 @@ class QRLoginPage(QWidget):
 
         layout.addSpacing(16)
 
-        # "保持登录" checkbox（共享实例，通过居中布局添加）
+        # "保持登录" checkbox（QR 页面独立实例，与密码页面通过信号同步）
+        self.cb_stay_logged_in = QCheckBox("保持登录")
         cb_wrapper = QHBoxLayout()
         cb_wrapper.addStretch()
-        cb_wrapper.addWidget(cb_stay_logged_in)
+        cb_wrapper.addWidget(self.cb_stay_logged_in)
         cb_wrapper.addStretch()
         layout.addLayout(cb_wrapper)
 

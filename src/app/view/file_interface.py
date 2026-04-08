@@ -88,6 +88,9 @@ class FileInterface(QWidget):
         # H9: 异步加载请求 ID，防止旧回调覆盖新数据
         self._load_request_id = 0
 
+        # 防止 QRunnable 异步任务的 signals 在回调处理前被 GC
+        self._pending_signals = []
+
         # 排序模式: 0=按名称, 2=按大小
         self.sort_mode = 0
         # 排序方向: True=升序, False=降序
@@ -525,10 +528,16 @@ class FileInterface(QWidget):
         # 创建任务
         task = self.LoadListTask(self.__fetchDirList, self.current_dir_id)
 
-        # 连接信号
-        task.signals.finished.connect(
-            lambda items, err, rid=current_request_id: self.__onLoadListFinished(items, err, rid)
-        )
+        # 持有 signals 引用防止 QRunnable autoDelete 后 signals 被 GC
+        signals = task.signals
+        self._pending_signals.append(signals)
+
+        def _on_finished(items, err, rid=current_request_id, sig=signals):
+            self.__onLoadListFinished(items, err, rid)
+            if sig in self._pending_signals:
+                self._pending_signals.remove(sig)
+
+        signals.finished.connect(_on_finished)
 
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
@@ -740,6 +749,12 @@ class FileInterface(QWidget):
             signals.finished.connect(self.__onCreateFolderFinished)
             task = CreateFolderTask(self.pan, folder_name, self.current_dir_id, signals)
 
+            # 持有 signals 引用防止 GC
+            self._pending_signals.append(signals)
+            signals.finished.connect(lambda *_, sig=signals: (
+                self._pending_signals.remove(sig) if sig in self._pending_signals else None
+            ))
+
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
 
@@ -937,7 +952,12 @@ class FileInterface(QWidget):
             self.current_dir_id,
             [str(path) for path in local_paths],
         )
-        task.signals.finished.connect(self.__onPrepareUploadFinished)
+        signals = task.signals
+        self._pending_signals.append(signals)
+        signals.finished.connect(self.__onPrepareUploadFinished)
+        signals.finished.connect(lambda *_, sig=signals: (
+            self._pending_signals.remove(sig) if sig in self._pending_signals else None
+        ))
         QThreadPool.globalInstance().start(task)
 
     def __onPrepareUploadFinished(
@@ -1152,6 +1172,14 @@ class FileInterface(QWidget):
         current_request_id = self._load_request_id
         task = self.LoadListTask(self.__fetchDirList, target_dir_id)
 
+        # 持有 signals 引用防止 GC
+        signals = task.signals
+        self._pending_signals.append(signals)
+
+        def _cleanup(*_, sig=signals):
+            if sig in self._pending_signals:
+                self._pending_signals.remove(sig)
+
         if select_file_id is not None:
             def on_loaded(file_items, err, rid=current_request_id):
                 self.__onLoadListFinished(file_items, err, rid)
@@ -1162,12 +1190,13 @@ class FileInterface(QWidget):
                             self.fileTable.selectRow(row)
                             self.fileTable.scrollToItem(name_item)
                             break
-            task.signals.finished.connect(on_loaded)
+            signals.finished.connect(on_loaded)
         else:
-            task.signals.finished.connect(
+            signals.finished.connect(
                 lambda items, err, rid=current_request_id: self.__onLoadListFinished(items, err, rid)
             )
 
+        signals.finished.connect(_cleanup)
         QThreadPool.globalInstance().start(task)
 
         tree_item = self.__findTreeItemById(target_dir_id)
@@ -1268,6 +1297,10 @@ class FileInterface(QWidget):
         task = DeleteFilesTask(
             self.pan, delete_list, self.current_dir_id, signals
         )
+        self._pending_signals.append(signals)
+        signals.finished.connect(lambda *_, sig=signals: (
+            self._pending_signals.remove(sig) if sig in self._pending_signals else None
+        ))
         QThreadPool.globalInstance().start(task)
 
     def __onDeleteFilesFinished(
@@ -1410,6 +1443,12 @@ class FileInterface(QWidget):
             self.pan, file_id, old_name, new_name, self.current_dir_id, signals
         )
 
+        # 持有 signals 引用防止 GC
+        self._pending_signals.append(signals)
+        signals.finished.connect(lambda *_, sig=signals: (
+            self._pending_signals.remove(sig) if sig in self._pending_signals else None
+        ))
+
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
 
@@ -1505,6 +1544,10 @@ class FileInterface(QWidget):
         signals = MoveFilesSignals()
         signals.finished.connect(self.__onMoveFilesFinished)
         task = MoveFilesTask(self.pan, file_id_list, target_id, target_name, signals)
+        self._pending_signals.append(signals)
+        signals.finished.connect(lambda *_, sig=signals: (
+            self._pending_signals.remove(sig) if sig in self._pending_signals else None
+        ))
         QThreadPool.globalInstance().start(task)
 
     def __onMoveFilesFinished(self, success, count, target_name, error):
@@ -1555,6 +1598,10 @@ class FileInterface(QWidget):
         signals = FileDetailsSignals()
         signals.finished.connect(self.__onFileDetailsFinished)
         task = FileDetailsTask(self.pan, file_id, file_name, signals)
+        self._pending_signals.append(signals)
+        signals.finished.connect(lambda *_, sig=signals: (
+            self._pending_signals.remove(sig) if sig in self._pending_signals else None
+        ))
         QThreadPool.globalInstance().start(task)
 
     def __onFileDetailsFinished(self, file_name, data, error):
@@ -1674,5 +1721,13 @@ class FileInterface(QWidget):
             return
 
         task = self.StorageTask(self.pan)
-        task.signals.finished.connect(self.update_storage_info)
+        signals = task.signals
+        self._pending_signals.append(signals)
+
+        def _on_finished(info, sig=signals):
+            self.update_storage_info(info)
+            if sig in self._pending_signals:
+                self._pending_signals.remove(sig)
+
+        signals.finished.connect(_on_finished)
         QThreadPool.globalInstance().start(task)

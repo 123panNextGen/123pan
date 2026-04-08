@@ -130,9 +130,17 @@ class LoginDialog(QDialog):
         self.stacked_widget.addWidget(password_page)
 
         # -- 扫码登录页面 (page 1) --
-        self.qr_page = QRLoginPage(self.cb_stay_logged_in, parent=self)
+        self.qr_page = QRLoginPage(parent=self)
         self.qr_page.loginSuccess.connect(self._on_qr_login_success)
         self.stacked_widget.addWidget(self.qr_page)
+
+        # 同步两页面的 "保持登录" checkbox 状态
+        self.cb_stay_logged_in.stateChanged.connect(
+            lambda state: self.qr_page.cb_stay_logged_in.setChecked(bool(state))
+        )
+        self.qr_page.cb_stay_logged_in.stateChanged.connect(
+            lambda state: self.cb_stay_logged_in.setChecked(bool(state))
+        )
 
         # 信号连接
         self.segmented_widget.currentItemChanged.connect(self._on_tab_changed)

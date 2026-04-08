@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from PySide6.QtWidgets import QApplication, QCheckBox
+from PySide6.QtWidgets import QApplication
 
 from src.app.common import database as database_module
 from src.app.common.database import Database
@@ -76,17 +76,18 @@ class TestQRLoginPage:
 
     def _make_page(self):
         from src.app.view.qr_login_page import QRLoginPage
-        cb = QCheckBox("保持登录")
-        page = QRLoginPage(cb)
+        page = QRLoginPage()
         # 模拟已初始化状态
         page._pan_temp = MagicMock()
         page._uni_id = "test-uni-id"
         page._consecutive_errors = 0
+        # 保持 Python 引用防止 C++ 对象被过早删除
+        self._page_ref = page
         return page
 
     def test_poll_login_success_emits_signal(self):
         page = self._make_page()
-        page._pan_temp.qr_poll.return_value = {"loginStatus": 2, "token": "jwt-token"}
+        page._pan_temp.qr_poll.return_value = {"loginStatus": 3, "token": "jwt-token"}
         mock_pan = MagicMock()
         mock_pan.user_info.return_value = {"user": "alice"}
         signals = []

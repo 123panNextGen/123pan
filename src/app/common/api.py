@@ -147,6 +147,9 @@ class Pan123:
         return request_kwargs
 
     def _refresh_token_for_request(self, request_authorization):
+        # 密码为空时无法通过重新登录刷新 token
+        if not self.password:
+            raise RuntimeError("token 过期且无保存密码，无法自动刷新")
         with self._login_lock:
             current_authorization = self.header_logined["authorization"]
             if request_authorization != current_authorization:
