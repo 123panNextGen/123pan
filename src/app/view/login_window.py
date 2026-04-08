@@ -71,8 +71,10 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("登录123云盘")
-        self.resize(460, 400)
-        self.setFixedSize(460, 400)
+        self.setFixedWidth(460)
+        self._password_height = 320
+        self._qr_height = 400
+        self.setFixedHeight(self._password_height)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 30, 40, 30)
@@ -94,8 +96,6 @@ class LoginDialog(QDialog):
         password_layout = QVBoxLayout(password_page)
         password_layout.setContentsMargins(0, 0, 0, 0)
         password_layout.setSpacing(0)
-
-        password_layout.addStretch(1)
 
         # 用户名输入框
         self.le_user = LineEdit()
@@ -132,8 +132,6 @@ class LoginDialog(QDialog):
         h.addWidget(self.btn_ok)
         h.addWidget(self.btn_cancel)
         password_layout.addLayout(h)
-
-        password_layout.addStretch(1)
 
         self.stacked_widget.addWidget(password_page)
 
@@ -174,8 +172,10 @@ class LoginDialog(QDialog):
         if route_key == "password":
             self.stacked_widget.setCurrentIndex(0)
             self.qr_page.stop_polling()
+            self.setFixedHeight(self._password_height)
         else:
             self.stacked_widget.setCurrentIndex(1)
+            self.setFixedHeight(self._qr_height)
             self.qr_page.start_qr_flow()
 
     def _on_qr_login_success(self, pan_object):
