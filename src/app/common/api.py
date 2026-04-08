@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import math
 import os
@@ -29,6 +30,34 @@ INITIAL_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 30.0
 BACKOFF_MULTIPLIER = 2
 MAX_CREATE_DIR_RETRIES = 10
+
+
+class _ProgressIO:
+    """将 bytes 包装为 file-like 对象，按阈值触发进度回调。"""
+    _REPORT_SIZE = 256 * 1024  # 累积 256KB 才汇报一次
+
+    def __init__(self, data, callback):
+        self._buf = io.BytesIO(data)
+        self._cb = callback
+        self._pending = 0
+        self.reported = 0
+
+    def read(self, size=-1):
+        chunk = self._buf.read(size)
+        if chunk:
+            self._pending += len(chunk)
+            if self._pending >= self._REPORT_SIZE:
+                self._cb(self._pending)
+                self.reported += self._pending
+                self._pending = 0
+        elif self._pending > 0:
+            self._cb(self._pending)
+            self.reported += self._pending
+            self._pending = 0
+        return chunk
+
+    def __len__(self):
+        return len(self._buf.getbuffer())
 
 
 class RateLimitError(RuntimeError):
@@ -1019,6 +1048,7 @@ class Pan123:
 
                     retry = 0
                     while retry < MAX_PART_RETRIES:
+                        progress_io = None
                         if _is_stopped():
                             logger.debug("分块 %s 上传中停止", pn)
                             return
@@ -1053,9 +1083,25 @@ class Pan123:
                             with open(file_path, "rb") as f:
                                 f.seek(offset)
                                 block = f.read(size)
-                            resp = requests.put(url, data=block, timeout=60)
+
+                            def _on_chunk(n):
+                                with progress_lock:
+                                    uploaded[0] += n
+                                    if speed_tracker:
+                                        speed_tracker.record(uploaded[0])
+                                    if signals and fsize:
+                                        now = time.time()
+                                        if now - last_progress_time[0] > PROGRESS_INTERVAL:
+                                            signals.progress.emit(
+                                                int(uploaded[0] * 100 / fsize)
+                                            )
+                                            last_progress_time[0] = now
+
+                            progress_io = _ProgressIO(block, _on_chunk)
+                            resp = requests.put(url, data=progress_io, timeout=60)
                             if resp.status_code in RATE_LIMIT_CODES:
                                 with progress_lock:
+                                    uploaded[0] -= progress_io.reported
                                     rate_limit_count[0] += 1
                                     if rate_limit_count[0] > MAX_RATE_LIMITS:
                                         failed[0] = True
@@ -1083,17 +1129,6 @@ class Pan123:
                                 break
                             resp.raise_for_status()
                             part_etag = resp.headers.get("ETag", "")
-                            with progress_lock:
-                                uploaded[0] += len(block)
-                                now = time.time()
-                                if speed_tracker:
-                                    speed_tracker.record(uploaded[0])
-                                if signals and fsize:
-                                    if now - last_progress_time[0] > PROGRESS_INTERVAL:
-                                        signals.progress.emit(
-                                            int(uploaded[0] * 100 / fsize)
-                                        )
-                                        last_progress_time[0] = now
                             if signals and hasattr(signals, "part_done"):
                                 signals.part_done.emit(pn, part_etag)
                             with progress_lock:
@@ -1102,6 +1137,9 @@ class Pan123:
                             logger.debug("分块 %s 上传成功", pn)
                             break
                         except requests.RequestException as exc:
+                            if progress_io is not None and progress_io.reported > 0:
+                                with progress_lock:
+                                    uploaded[0] -= progress_io.reported
                             is_conn_err = isinstance(exc, requests.ConnectionError)
                             if is_conn_err:
                                 with progress_lock:
@@ -1117,10 +1155,14 @@ class Pan123:
                                             "连接被重置，降低并发至 %s",
                                             allowed_workers[0],
                                         )
+                                    if probe_phase[0]:
+                                        probe_failed[0] = True
+                                        probe_phase[0] = False
                                     if signals and hasattr(signals, "conn_info"):
                                         signals.conn_info.emit(
                                             active_workers[0], allowed_workers[0]
                                         )
+                                worker_feedback.set()
                             retry += 1
                             if retry >= MAX_PART_RETRIES:
                                 logger.error(
