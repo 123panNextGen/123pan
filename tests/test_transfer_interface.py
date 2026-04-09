@@ -6,6 +6,37 @@ from src.app.common.database import Database
 from src.app.view.transfer_interface import DownloadTask, TransferInterface
 
 
+class _FakeSignal:
+    def __init__(self):
+        self.connected = []
+        self.disconnected = []
+
+    def connect(self, handler):
+        self.connected.append(handler)
+
+    def disconnect(self, handler):
+        self.disconnected.append(handler)
+        if handler in self.connected:
+            self.connected.remove(handler)
+
+
+class _FakeButton:
+    def __init__(self):
+        self.clicked = _FakeSignal()
+        self.text = None
+        self.enabled = None
+        self.icon = None
+
+    def setText(self, text):
+        self.text = text
+
+    def setEnabled(self, enabled):
+        self.enabled = enabled
+
+    def setIcon(self, icon):
+        self.icon = icon
+
+
 def _use_temp_db(tmp_path, monkeypatch):
     db_path = tmp_path / "123pan-open.db"
     monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
@@ -411,3 +442,41 @@ def test_reload_upload_tasks_drops_persisted_delete_requested_items(tmp_path, mo
 
     assert interface.upload_tasks == []
     assert db.get_upload_task("upload-1") is None
+
+
+def test_bind_button_disconnects_previous_handler_only():
+    interface = TransferInterface.__new__(TransferInterface)
+    button = _FakeButton()
+
+    first = lambda: None
+    second = lambda: None
+
+    interface._TransferInterface__bind_button(button, first)
+    interface._TransferInterface__bind_button(button, second)
+
+    assert button.clicked.disconnected == [first]
+    assert button.clicked.connected == [second]
+
+
+def test_configure_upload_actions_disables_primary_button_without_receivers_call():
+    interface = TransferInterface.__new__(TransferInterface)
+    primary = _FakeButton()
+    secondary = _FakeButton()
+    primary._transfer_click_handler = lambda: None
+    primary.receivers = MagicMock(side_effect=AssertionError("receivers should not be used"))
+    widget = type(
+        "_Widget",
+        (),
+        {"primary_button": primary, "secondary_button": secondary},
+    )()
+    task = type("_Task", (), {"status": "已完成"})()
+
+    interface._TransferInterface__get_or_create_actions = lambda *_args: widget
+    interface._TransferInterface__remove_task = lambda *_args: None
+    interface.uploadTable = object()
+
+    interface._TransferInterface__configure_upload_actions(0, task)
+
+    assert primary.text == ""
+    assert primary.enabled is False
+    assert primary.clicked.disconnected

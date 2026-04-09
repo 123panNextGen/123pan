@@ -98,6 +98,9 @@ class SearchDialog(QDialog):
         super().__init__(parent)
         self.pan = pan
         self._result = None
+        self._search_request_id = 0
+        self._closed = False
+        self._pending_signals = []
 
         self.setWindowTitle("搜索文件")
         self.resize(650, 500)
@@ -133,7 +136,17 @@ class SearchDialog(QDialog):
         self.searchBar.returnPressed.connect(self.searchBar.search)
         self.resultList.itemDoubleClicked.connect(self.__onItemDoubleClicked)
 
+    def reject(self):
+        self._closed = True
+        super().reject()
+
+    def closeEvent(self, event):
+        self._closed = True
+        super().closeEvent(event)
+
     def __doSearch(self, text):
+        self._search_request_id += 1
+        current_request_id = self._search_request_id
         self.resultList.clear()
         self.statusLabel.setText("搜索中...")
 
@@ -157,11 +170,21 @@ class SearchDialog(QDialog):
                     self.signals.finished.emit([], str(e))
 
         self._search_signals = SearchSignals()
-        self._search_signals.finished.connect(self.__onSearchFinished)
+        self._pending_signals.append(self._search_signals)
+        self._search_signals.finished.connect(
+            lambda items, error, rid=current_request_id, sig=self._search_signals:
+            self.__onSearchFinished(items, error, rid, sig)
+        )
         task = SearchTask(self.pan, text, self._search_signals)
         QThreadPool.globalInstance().start(task)
 
-    def __onSearchFinished(self, items, error):
+    def __onSearchFinished(self, items, error, request_id=None, sig=None):
+        if sig and sig in self._pending_signals:
+            self._pending_signals.remove(sig)
+        if self._closed:
+            return
+        if request_id is not None and request_id != self._search_request_id:
+            return
         if error:
             self.statusLabel.setText(f"搜索失败: {error}")
             return
@@ -181,9 +204,9 @@ class SearchDialog(QDialog):
             self.resultList.addItem(item)
 
         if items:
-            self.__fetchPaths(items)
+            self.__fetchPaths(items, request_id)
 
-    def __fetchPaths(self, items):
+    def __fetchPaths(self, items, request_id):
         """按 ParentFileId 分组，取代表文件调 file_details 获取完整路径"""
         # 对每个唯一 ParentFileId，取一个代表文件 ID
         pid_to_sample_fid = {}
@@ -217,12 +240,22 @@ class SearchDialog(QDialog):
                 self.signals.finished.emit(result)
 
         self._path_signals = PathSignals()
-        self._path_signals.finished.connect(self.__onPathsFetched)
+        self._pending_signals.append(self._path_signals)
+        self._path_signals.finished.connect(
+            lambda path_map, rid=request_id, sig=self._path_signals:
+            self.__onPathsFetched(path_map, rid, sig)
+        )
         task = FetchPathsTask(self.pan, pid_to_sample_fid, self._path_signals)
         QThreadPool.globalInstance().start(task)
 
-    def __onPathsFetched(self, path_map):
+    def __onPathsFetched(self, path_map, request_id=None, sig=None):
         """路径获取完成，更新列表项"""
+        if sig and sig in self._pending_signals:
+            self._pending_signals.remove(sig)
+        if self._closed:
+            return
+        if request_id is not None and request_id != self._search_request_id:
+            return
         for i in range(self.resultList.count()):
             item = self.resultList.item(i)
             data = item.data(Qt.ItemDataRole.UserRole)

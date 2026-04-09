@@ -58,6 +58,7 @@ HEADER_LABELS = ["文件名", "大小", "进度", "速度", "剩余时间", "状
 UPLOAD_ACTIVE_STATUSES = frozenset({"校验中", "上传中"})
 DOWNLOAD_ACTIVE_STATUSES = frozenset({"下载中", "校验中", "合并中"})
 RECOVERABLE_DOWNLOAD_STATUSES = frozenset({"校验中", "下载中", "合并中"})
+BUTTON_CLICK_HANDLER_ATTR = "_transfer_click_handler"
 
 
 def format_speed(bps: float) -> str:
@@ -328,10 +329,10 @@ class TransferInterface(QWidget):
         self.__createContent()
         self.__initWidget()
 
-    def set_pan(self, pan):
+    def set_pan(self, pan, force=False):
         self.pan = pan
         account_name = getattr(pan, "user_name", "") if pan else ""
-        if account_name == self.current_account_name:
+        if not force and account_name == self.current_account_name:
             return
         self.current_account_name = account_name
         self.__reload_download_tasks()
@@ -532,7 +533,7 @@ class TransferInterface(QWidget):
         return max(1, min(5, int(Database.instance().get_config("maxConcurrentUploads", 3))))
 
     def __max_concurrent_downloads(self):
-        return max(1, min(5, int(Database.instance().get_config("maxConcurrentDownloads", 3))))
+        return max(1, min(5, int(Database.instance().get_config("maxConcurrentDownloads", 5))))
 
     def __try_start_pending_uploads(self):
         limit = self.__max_concurrent_uploads()
@@ -876,7 +877,7 @@ class TransferInterface(QWidget):
     # ---- pause/resume/retry ----
 
     def __toggle_pause_upload(self, task):
-        if task.status == "已暂停":
+        if task.status == "已暂停" and task.thread is None:
             task.status = "等待中"
             self.__update_upload_table()
             self.__try_start_pending_uploads()
@@ -975,6 +976,8 @@ class TransferInterface(QWidget):
                 task.thread.disconnect()
             except TypeError:
                 pass
+            if task.thread in self.download_threads:
+                self.download_threads.remove(task.thread)
             task.cleanup_on_cancel = True
             task.thread.cancel()
         else:
@@ -1002,11 +1005,24 @@ class TransferInterface(QWidget):
         return item
 
     def __bind_button(self, button, handler):
-        try:
-            button.clicked.disconnect()
-        except RuntimeError:
-            pass
+        self.__clear_button_handler(button)
         button.clicked.connect(handler)
+        setattr(button, BUTTON_CLICK_HANDLER_ATTR, handler)
+
+    def __clear_button_handler(self, button):
+        handler = getattr(button, BUTTON_CLICK_HANDLER_ATTR, None)
+        if handler is None:
+            return
+        try:
+            button.clicked.disconnect(handler)
+        except (RuntimeError, TypeError):
+            pass
+        setattr(button, BUTTON_CLICK_HANDLER_ATTR, None)
+
+    def __disable_button(self, button, text):
+        button.setText(text)
+        button.setEnabled(False)
+        self.__clear_button_handler(button)
 
     def __get_or_create_actions(self, table, row, col):
         w = table.cellWidget(row, col)
@@ -1058,10 +1074,7 @@ class TransferInterface(QWidget):
             sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "upload"))
         else:
-            pb.setText("")
-            pb.setEnabled(False)
-            if pb.receivers(pb.clicked) > 0:
-                pb.clicked.disconnect()
+            self.__disable_button(pb, "")
             sb.setIcon(FIF.DELETE.icon())
             sb.setText("删除")
             sb.setEnabled(True)
@@ -1098,10 +1111,7 @@ class TransferInterface(QWidget):
             sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "download"))
         else:
-            pb.setText(task.status)
-            pb.setEnabled(False)
-            if pb.receivers(pb.clicked) > 0:
-                pb.clicked.disconnect()
+            self.__disable_button(pb, task.status)
             sb.setIcon(FIF.DELETE.icon())
             sb.setText("删除")
             sb.setEnabled(True)

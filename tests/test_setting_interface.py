@@ -60,6 +60,6 @@ def test_setting_interface_clamps_invalid_numeric_config(tmp_path, monkeypatch):
     assert interface.uploadThreadsSpinBox.value() == 16
     assert interface.concurrentDownloadsSpinBox.value() == 1
     assert interface.concurrentUploadsSpinBox.value() == 3
-    assert interface.retryAttemptsSpinBox.value() == 3
+    assert interface.retryAttemptsComboBox.currentIndex() == 3
     assert interface.downloadPartSizeSpinBox.value() == 5
     assert interface.uploadPartSizeSpinBox.value() == 16

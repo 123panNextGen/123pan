@@ -13,14 +13,13 @@ import requests
 from .config import CONFIG_DIR
 from .concurrency import (
     RATE_LIMIT_CODES, MAX_RATE_LIMITS, RATE_LIMIT_BACKOFF,
-    MAX_PART_RETRIES, PROGRESS_INTERVAL, slow_start_scheduler,
+    PROGRESS_INTERVAL, slow_start_scheduler,
 )
-from .database import Database, get_download_part_size
+from .database import Database, get_download_part_size, _safe_int
 from .log import get_logger
 
 logger = get_logger(__name__)
 
-PART_SIZE = 5 * 1024 * 1024  # 默认值，运行时由 get_download_part_size() 覆盖
 MIN_PARALLEL_SIZE = 2 * 1024 * 1024
 IO_CHUNK_SIZE = 1024 * 1024
 MAX_PART_QUEUE_ATTEMPTS = 3
@@ -262,11 +261,14 @@ def _download_part(
     part_path = get_part_path(resume_id, index)
     part_path.parent.mkdir(parents=True, exist_ok=True)
     headers = {"Range": f"bytes={start}-{end}"}
-    retry_count = 0
     queue_attempt = int(part.get("attempt", 0))
     io_chunk_size = min(IO_CHUNK_SIZE, max(8192, int(part["expected_size"] / 100) or 8192))
+    max_retries = _safe_int(
+        Database.instance().get_config("retryMaxAttempts", 3), 3, 0, 5
+    )
 
-    while retry_count < MAX_PART_RETRIES:
+    attempt = 0
+    while True:
         attempt_downloaded = 0
         stop_result = _get_stop_result(task)
         if stop_result:
@@ -314,14 +316,14 @@ def _download_part(
                 part_path, downloaded, progress_lock,
                 attempt_downloaded, signals, total, resume_id, index,
             )
-            retry_count += 1
-            if retry_count >= MAX_PART_RETRIES:
+            if attempt >= max_retries:
                 queue_attempt += 1
                 part["attempt"] = queue_attempt
                 if queue_attempt >= MAX_PART_QUEUE_ATTEMPTS:
                     return "fatal"
                 return "retryable"
-            time.sleep(2 ** retry_count)
+            attempt += 1
+            time.sleep(attempt)
     return "fatal"
 
 
@@ -410,11 +412,15 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                     continue
                 if result == "retryable":
                     part_queue.put(part)
-                    if probe_phase[0]:
-                        with progress_lock:
+                    with progress_lock:
+                        new_limit = max(1, active_workers[0] - 1)
+                        if new_limit < allowed_workers[0]:
+                            allowed_workers[0] = new_limit
+                        if probe_phase[0]:
                             probe_failed[0] = True
                             probe_phase[0] = False
-                        worker_feedback.set()
+                        _notify_conn_info(signals, active_workers[0], allowed_workers[0])
+                    worker_feedback.set()
                     continue
                 with progress_lock:
                     if probe_phase[0]:
@@ -518,6 +524,11 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
             cleanup_temp_dir(resume_id)
             Database.instance().delete_download_task(resume_id)
             raise RuntimeError("整文件校验失败，需要重新下载")
+    elif total and merged_path.stat().st_size != total:
+        # M13: etag 不可用时兜底大小校验
+        cleanup_temp_dir(resume_id)
+        Database.instance().delete_download_task(resume_id)
+        raise RuntimeError(f"文件大小不匹配: 预期 {total}, 实际 {merged_path.stat().st_size}")
 
     # 移动到目标位置
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -533,44 +544,54 @@ def _download_single_stream(redirect_url, out_path, total, signals, task, speed_
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path = temp_dir / f"{uuid.uuid4().hex}_{out_path.name}"
     _notify_status(signals, "下载中")
-    with requests.get(redirect_url, stream=True, timeout=30) as response:
-        response.raise_for_status()
-        done = 0
-        last_t = 0.0
-        with open(temp_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                stop_result = _get_stop_result(task)
-                if stop_result:
-                    f.close()
-                    if temp_path.exists():
-                        temp_path.unlink()
-                    status = "已暂停" if stop_result == "paused" else "已取消"
-                    _notify_status(signals, status)
-                    return status
-                if not chunk:
-                    continue
-                f.write(chunk)
-                done += len(chunk)
-                if speed_tracker:
-                    speed_tracker.record(done)
-                now = time.time()
-                if now - last_t > PROGRESS_INTERVAL:
-                    _notify_progress(signals, total, done)
-                    last_t = now
-    _notify_progress(signals, total, done)
-    if _is_task_paused(task):
+    try:
+        with requests.get(redirect_url, stream=True, timeout=30) as response:
+            response.raise_for_status()
+            done = 0
+            last_t = 0.0
+            with open(temp_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    stop_result = _get_stop_result(task)
+                    if stop_result:
+                        f.close()
+                        if temp_path.exists():
+                            temp_path.unlink()
+                        status = "已暂停" if stop_result == "paused" else "已取消"
+                        _notify_status(signals, status)
+                        return status
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    done += len(chunk)
+                    if speed_tracker:
+                        speed_tracker.record(done)
+                    now = time.time()
+                    if now - last_t > PROGRESS_INTERVAL:
+                        _notify_progress(signals, total, done)
+                        last_t = now
+        _notify_progress(signals, total, done)
+        if _is_task_paused(task):
+            if temp_path.exists():
+                temp_path.unlink()
+            _notify_status(signals, "已暂停")
+            return "已暂停"
+        if _is_task_cancelled(task):
+            if temp_path.exists():
+                temp_path.unlink()
+            _notify_status(signals, "已取消")
+            return "已取消"
+        # H3: 大小校验
+        if total and done != total:
+            temp_path.unlink(missing_ok=True)
+            raise RuntimeError(f"下载大小不匹配: 预期 {total}, 实际 {done}")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        _replace_output_file(temp_path, out_path)
+        return out_path
+    except BaseException:
+        # M14: 异常时清理临时文件
         if temp_path.exists():
-            temp_path.unlink()
-        _notify_status(signals, "已暂停")
-        return "已暂停"
-    if _is_task_cancelled(task):
-        if temp_path.exists():
-            temp_path.unlink()
-        _notify_status(signals, "已取消")
-        return "已取消"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    _replace_output_file(temp_path, out_path)
-    return out_path
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 # ---- entry point ----

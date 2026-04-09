@@ -182,17 +182,16 @@ class LoginDialog(QDialog):
         self.pan = pan_object
         try:
             db = Database.instance()
-            db.set_config("userName", pan_object.user_name)
-            db.set_config("passWord", "")
-            db.set_config("rememberPassword", False)
-            if self.cb_stay_logged_in.isChecked():
-                db.set_config("authorization", pan_object.authorization)
-            else:
-                db.set_config("authorization", "")
-            db.set_config("stayLoggedIn", self.cb_stay_logged_in.isChecked())
-            db.set_config("deviceType", pan_object.devicetype)
-            db.set_config("osVersion", pan_object.osversion)
-            db.set_config("loginuuid", pan_object.loginuuid)
+            db.set_many_config({
+                "userName": pan_object.user_name,
+                "passWord": "",
+                "rememberPassword": False,
+                "authorization": pan_object.authorization if self.cb_stay_logged_in.isChecked() else "",
+                "stayLoggedIn": self.cb_stay_logged_in.isChecked(),
+                "deviceType": pan_object.devicetype,
+                "osVersion": pan_object.osversion,
+                "loginuuid": pan_object.loginuuid,
+            })
         except Exception as e:
             logger.warning(f"保存配置失败: {e}")
         self.accept()
@@ -245,27 +244,16 @@ class LoginDialog(QDialog):
 
         try:
             db = Database.instance()
-            # 始终保存 userName 和设备信息
-            db.set_config("userName", user)
-            db.set_config("deviceType", self.pan.devicetype)
-            db.set_config("osVersion", self.pan.osversion)
-            db.set_config("loginuuid", self.pan.loginuuid)
-
-            # 按用户选择保存密码
-            if self.cb_remember_password.isChecked():
-                db.set_config("passWord", pwd)
-            else:
-                db.set_config("passWord", "")
-
-            # 按用户选择保存 token
-            if self.cb_stay_logged_in.isChecked():
-                db.set_config("authorization", self.pan.authorization)
-            else:
-                db.set_config("authorization", "")
-
-            # 保存 checkbox 状态
-            db.set_config("rememberPassword", self.cb_remember_password.isChecked())
-            db.set_config("stayLoggedIn", self.cb_stay_logged_in.isChecked())
+            db.set_many_config({
+                "userName": user,
+                "deviceType": self.pan.devicetype,
+                "osVersion": self.pan.osversion,
+                "loginuuid": self.pan.loginuuid,
+                "passWord": pwd if self.cb_remember_password.isChecked() else "",
+                "authorization": self.pan.authorization if self.cb_stay_logged_in.isChecked() else "",
+                "rememberPassword": self.cb_remember_password.isChecked(),
+                "stayLoggedIn": self.cb_stay_logged_in.isChecked(),
+            })
         except (IOError, OSError) as e:
             logger.warning(f"保存配置失败: {e}")
         except Exception as e:

@@ -16,10 +16,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .database import Database, UPLOAD_PART_SIZE, _safe_int, get_upload_part_size
+from .database import Database, UPLOAD_PART_SIZE, _safe_int, _safe_float, get_upload_part_size
 from .concurrency import (
     RATE_LIMIT_CODES, MAX_RATE_LIMITS, RATE_LIMIT_BACKOFF,
-    MAX_PART_RETRIES, PROGRESS_INTERVAL, slow_start_scheduler,
+    PROGRESS_INTERVAL, slow_start_scheduler,
 )
 from .const import all_device_type, all_os_versions
 from .log import get_logger
@@ -62,6 +62,10 @@ class _ProgressIO:
 
 class RateLimitError(RuntimeError):
     """API 返回 HTTP 429 限流。"""
+
+
+class TokenExpiredError(RuntimeError):
+    """token 过期且无法自动刷新（QR 登录无密码）。"""
 
 
 def _parse_json_response(response):
@@ -124,6 +128,7 @@ class Pan123:
         self.osversion = random.choice(all_os_versions)
         self.loginuuid = uuid.uuid4().hex
 
+        self.on_token_expired = None  # callback: 通知 UI token 过期需重新登录
         self.recycle_list = None
         self.list = []
         self.total = 0
@@ -133,8 +138,8 @@ class Pan123:
         # 创建带重试的 session，仅在网络错误时重试
         db = Database.instance()
         retry = Retry(
-            total=_safe_int(db.get_config("retryMaxAttempts", 3), default=3, min_val=1, max_val=10),
-            backoff_factor=db.get_config("retryBackoffFactor", 0.5),
+            total=3,
+            backoff_factor=_safe_float(db.get_config("retryBackoffFactor", 0.5), 0.5, 0.1, 10.0),
             allowed_methods=["GET", "POST", "PUT", "HEAD"],
             raise_on_status=False,
             status_forcelist=[500, 502, 503, 504],
@@ -215,7 +220,9 @@ class Pan123:
     def _refresh_token_for_request(self, request_authorization):
         # 密码为空时无法通过重新登录刷新 token
         if not self.password:
-            raise RuntimeError("token 过期且无保存密码，无法自动刷新")
+            if self.on_token_expired:
+                self.on_token_expired()
+            raise TokenExpiredError("token 过期且无保存密码，无法自动刷新")
         with self._login_lock:
             current_authorization = self.header_logined["authorization"]
             if request_authorization != current_authorization:
@@ -1079,6 +1086,9 @@ class Pan123:
             return False
 
         def _upload_worker():
+            max_retries = _safe_int(
+                Database.instance().get_config("retryMaxAttempts", 3), 3, 0, 5
+            )
             with progress_lock:
                 active_workers[0] += 1
                 if signals and hasattr(signals, "conn_info"):
@@ -1114,8 +1124,8 @@ class Pan123:
                         part_queue.qsize(),
                     )
 
-                    retry = 0
-                    while retry < MAX_PART_RETRIES:
+                    attempt = 0
+                    while True:
                         progress_io = None
                         if _is_stopped():
                             logger.debug("分块 %s 上传中停止", pn)
@@ -1238,31 +1248,39 @@ class Pan123:
                                 break
                             if is_conn_err:
                                 with progress_lock:
-                                    transient_failure_count[0] += 1
-                                    if transient_failure_count[0] > MAX_RATE_LIMITS:
-                                        failed[0] = True
-                                        logger.error("连接错误次数过多，上传终止")
-                                        return
-                                    new_limit = max(1, active_workers[0] - 1)
-                                    if new_limit < allowed_workers[0]:
-                                        allowed_workers[0] = new_limit
-                                        logger.info(
-                                            "连接被重置，降低并发至 %s",
-                                            allowed_workers[0],
-                                        )
                                     if probe_phase[0]:
                                         probe_failed[0] = True
                                         probe_phase[0] = False
-                                    if signals and hasattr(signals, "conn_info"):
-                                        signals.conn_info.emit(
-                                            active_workers[0], allowed_workers[0]
-                                        )
                                 worker_feedback.set()
-                            retry += 1
-                            if retry >= MAX_PART_RETRIES:
+                            if attempt >= max_retries:
+                                if is_conn_err:
+                                    with progress_lock:
+                                        transient_failure_count[0] += 1
+                                        if transient_failure_count[0] > MAX_RATE_LIMITS:
+                                            failed[0] = True
+                                            logger.error("连接错误次数过多，上传终止")
+                                            return
+                                        new_limit = max(1, active_workers[0] - 1)
+                                        if new_limit < allowed_workers[0]:
+                                            allowed_workers[0] = new_limit
+                                            logger.info(
+                                                "连接被重置，降低并发至 %s",
+                                                allowed_workers[0],
+                                            )
+                                        if signals and hasattr(signals, "conn_info"):
+                                            signals.conn_info.emit(
+                                                active_workers[0], allowed_workers[0]
+                                            )
+                                    part_queue.put(part)
+                                    worker_feedback.set()
+                                    logger.warning(
+                                        "分块 %s 重试 %s 次仍失败，回队: %s",
+                                        pn, attempt, exc,
+                                    )
+                                    break
                                 logger.error(
                                     "分块 %s 上传失败（已重试 %s 次）: %s",
-                                    pn, retry, exc,
+                                    pn, attempt, exc,
                                 )
                                 with progress_lock:
                                     if probe_phase[0]:
@@ -1271,10 +1289,11 @@ class Pan123:
                                 failed[0] = True
                                 worker_feedback.set()
                                 return
+                            attempt += 1
                             logger.warning(
-                                "分块 %s 第 %s 次重试: %s", pn, retry, exc
+                                "分块 %s 第 %s 次重试: %s", pn, attempt, exc
                             )
-                            time.sleep(2 ** retry)
+                            time.sleep(attempt)
             finally:
                 with progress_lock:
                     active_workers[0] -= 1

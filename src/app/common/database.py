@@ -48,6 +48,19 @@ def _safe_int(value, default=0, min_val=None, max_val=None):
     return result
 
 
+def _safe_float(value, default=0.0, min_val=None, max_val=None):
+    """安全地将配置值转换为 float，防止非法值崩溃。"""
+    try:
+        result = float(value)
+    except (ValueError, TypeError):
+        return default
+    if min_val is not None and result < min_val:
+        return min_val
+    if max_val is not None and result > max_val:
+        return max_val
+    return result
+
+
 class Database:
     """SQLite 单例数据库，WAL 模式，线程安全。"""
 
@@ -163,7 +176,10 @@ class Database:
                     "SELECT value FROM config WHERE key = 'autoLogin'"
                 ).fetchone()
                 if old_row:
-                    was_auto = json.loads(old_row[0])
+                    try:
+                        was_auto = json.loads(old_row[0])
+                    except (json.JSONDecodeError, ValueError):
+                        was_auto = False
                     self._conn.execute(
                         "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
                         ("rememberPassword", json.dumps(bool(was_auto))),

@@ -1,6 +1,6 @@
 import time
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
 from qfluentwidgets import (
@@ -20,7 +20,7 @@ from .setting_interface import SettingInterface
 from .cloud_interface import CloudInterface
 from .login_window import LoginDialog, try_token_probe
 
-from ..common import resource
+from ..common import resource  # noqa: F401 -- 触发 qInitResources()
 from ..common.database import Database
 
 
@@ -64,7 +64,7 @@ class MainWindow(FluentWindow):
 
     def _onPageChanged(self, index):
         widget = self.stackedWidget.widget(index)
-        if widget is self.file_interface and hasattr(self, "pan"):
+        if widget is self.file_interface and self.pan is not None:
             now = time.time()
             if now - self._last_file_refresh_time > 30:
                 self.file_interface.refresh()
@@ -83,8 +83,10 @@ class MainWindow(FluentWindow):
         if self.pan is None:
             dlg = LoginDialog(self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
+                dlg.deleteLater()
                 return
             self.pan = dlg.get_pan()
+            dlg.deleteLater()
 
         self.login_success = True
 
@@ -98,8 +100,29 @@ class MainWindow(FluentWindow):
         # 将 pan 对象传递给 cloud_interface
         self.cloud_interface.set_pan(self.pan)
 
+        # H1: 注册 token 过期回调
+        self.pan.on_token_expired = self._handle_token_expired
+
         # 连接退出登录信号
         self.cloud_interface.logoutRequested.connect(self.handle_logout)
+
+    def _handle_token_expired(self):
+        """H1: token 过期时在主线程弹出登录对话框。"""
+        QTimer.singleShot(0, self._show_relogin_dialog)
+
+    def _show_relogin_dialog(self):
+        msg = MessageBox("登录过期", "登录凭证已过期，请重新登录。", self)
+        msg.exec()
+        dlg = LoginDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.pan = dlg.get_pan()
+            self.pan.on_token_expired = self._handle_token_expired
+            self.file_interface.pan = self.pan
+            self.file_interface.reload()
+            self.transfer_interface.set_pan(self.pan, force=True)
+            self.cloud_interface.set_pan(self.pan)
+        else:
+            self.close()
 
     def _stop_all_transfers(self):
         """取消所有正在进行的传输任务并等待线程退出。"""
@@ -127,13 +150,19 @@ class MainWindow(FluentWindow):
                 task.thread.cancel()
                 threads_to_wait.append(task.thread)
                 seen.add(id(task.thread))
+        # M11: 总超时模式，避免串行等待阻塞 UI
+        deadline = time.monotonic() + 10
         for thread in threads_to_wait:
-            thread.wait(5000)
+            remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+            if remaining_ms <= 0:
+                break
+            thread.wait(remaining_ms)
 
     def closeEvent(self, event):
         """H6: 关闭窗口时取消/等待传输线程。"""
         self._stop_all_transfers()
         event.accept()
+        QApplication.instance().quit()
 
     def clear_login_config(self):
         """清除登录配置信息"""
@@ -148,13 +177,37 @@ class MainWindow(FluentWindow):
         if msg.exec():
             # M8: 退出登录前停止传输
             self._stop_all_transfers()
+            self._force_cleanup_tasks()
             self.clear_login_config()
             dlg = LoginDialog(self)
+            dlg.deleteLater()
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 self.pan = dlg.get_pan()
+                self.pan.on_token_expired = self._handle_token_expired
                 self.file_interface.pan = self.pan
                 self.file_interface.reload()
-                self.transfer_interface.set_pan(self.pan)
+                self.transfer_interface.set_pan(self.pan, force=True)
                 self.cloud_interface.set_pan(self.pan)
             else:
                 self.close()
+
+    def _force_cleanup_tasks(self):
+        """M7: 强制清理所有残留任务状态，防止重登后线程冲突。"""
+        for task in self.transfer_interface.upload_tasks:
+            if task.thread is not None:
+                try:
+                    task.thread.disconnect()
+                except TypeError:
+                    pass
+                task.thread = None
+            task.status = "已取消"
+        for task in self.transfer_interface.download_tasks:
+            if task.thread is not None:
+                try:
+                    task.thread.disconnect()
+                except TypeError:
+                    pass
+                task.thread = None
+            task.status = "已取消"
+        self.transfer_interface.upload_threads.clear()
+        self.transfer_interface.download_threads.clear()

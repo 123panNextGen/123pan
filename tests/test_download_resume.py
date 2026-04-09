@@ -7,11 +7,12 @@ from src.app.common import database as database_module
 from src.app.common import download_resume
 from src.app.common.database import Database
 from src.app.common.download_resume import (
-    PART_SIZE,
     build_resume_id,
     get_part_path,
     stream_download_from_url,
 )
+
+PART_SIZE = 5 * 1024 * 1024  # 测试用常量，与运行时默认分片大小一致
 
 
 class _MockResponse:

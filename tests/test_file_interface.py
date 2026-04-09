@@ -212,6 +212,118 @@ def test_prepare_upload_finished_drops_stale_cross_account_result():
     fi._FileInterface__refreshFileList.assert_not_called()
 
 
+def test_jump_finished_drops_stale_result():
+    fi = FileInterface.__new__(FileInterface)
+    fi._jump_request_id = 2
+    fi.path_stack = [(0, "根目录")]
+    fi.current_dir_id = 0
+    fi._FileInterface__updateBreadcrumb = MagicMock()
+
+    FileInterface._FileInterface__onJumpFinished(
+        fi,
+        detail_paths=[{"fileId": 7, "fileName": "docs"}],
+        target_dir_id=7,
+        select_file_id=None,
+        error="",
+        request_id=1,
+    )
+
+    assert fi.path_stack == [(0, "根目录")]
+    assert fi.current_dir_id == 0
+    fi._FileInterface__updateBreadcrumb.assert_not_called()
+
+
+def test_create_folder_finished_drops_stale_dir_result():
+    fi = FileInterface.__new__(FileInterface)
+    fi.pan = object()
+    fi.current_dir_id = 9
+    fi.transfer_interface = MagicMock(current_account_name="alice")
+    fi._FileInterface__updateFileListUI = MagicMock()
+    fi._FileInterface__updateTreeUI = MagicMock()
+
+    FileInterface._FileInterface__onCreateFolderFinished(
+        fi,
+        result=True,
+        folder_name="docs",
+        error="",
+        file_items=[{"FileId": 1, "FileName": "docs"}],
+        folder_items=[{"FileId": 1, "FileName": "docs"}],
+        context={
+            "pan": fi.pan,
+            "account_name": "alice",
+            "dir_id": 7,
+            "request_id": None,
+        },
+    )
+
+    fi._FileInterface__updateFileListUI.assert_not_called()
+    fi._FileInterface__updateTreeUI.assert_not_called()
+
+
+def test_move_finished_drops_stale_account_result():
+    fi = FileInterface.__new__(FileInterface)
+    fi.pan = object()
+    fi.current_dir_id = 7
+    fi.transfer_interface = MagicMock(current_account_name="current")
+    fi._FileInterface__refreshFileList = MagicMock()
+
+    FileInterface._FileInterface__onMoveFilesFinished(
+        fi,
+        success=True,
+        count=2,
+        target_name="目标目录",
+        error="",
+        context={
+            "pan": fi.pan,
+            "account_name": "old",
+            "dir_id": 7,
+            "request_id": None,
+        },
+    )
+
+    fi._FileInterface__refreshFileList.assert_not_called()
+
+
+@patch("src.app.view.file_interface.MessageBox", side_effect=AssertionError("should not open"))
+def test_file_details_finished_drops_stale_request(_mock_message_box):
+    fi = FileInterface.__new__(FileInterface)
+    fi.pan = object()
+    fi.transfer_interface = MagicMock(current_account_name="alice")
+    fi._file_details_request_id = 2
+
+    FileInterface._FileInterface__onFileDetailsFinished(
+        fi,
+        file_name="demo.txt",
+        data={"paths": [], "fileNum": 1, "dirNum": 0, "totalSize": 1},
+        error="",
+        context={
+            "pan": fi.pan,
+            "account_name": "alice",
+            "dir_id": None,
+            "request_id": 1,
+        },
+    )
+
+
+def test_async_context_helper_marks_stale_storage_result():
+    fi = FileInterface.__new__(FileInterface)
+    fi.pan = object()
+    fi.transfer_interface = MagicMock(current_account_name="alice")
+    fi.current_dir_id = 7
+
+    stale = FileInterface._FileInterface__isAsyncContextStale(
+        fi,
+        {
+            "pan": object(),
+            "account_name": "alice",
+            "dir_id": None,
+            "request_id": None,
+        },
+    )
+
+    assert stale is True
+
+
 def test_create_upload_button_group_uses_split_push_button(monkeypatch):
     created_actions = []
 

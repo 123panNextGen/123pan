@@ -45,15 +45,16 @@ class TestSessionRetryConfig:
         assert adapter.max_retries.total == 3
 
     def test_session_retry_config_custom(self):
+        """urllib3 Retry 固定为 3，不受 retryMaxAttempts 影响"""
         p = self._create_pan_with_config(retry_max=5, backoff=1.0)
         adapter = p.session.get_adapter("https://www.123pan.com")
-        assert adapter.max_retries.total == 5
-        assert adapter.max_retries.backoff_factor == 1.0
+        assert adapter.max_retries.total == 3
 
     def test_session_retry_zero_clamped_to_one(self):
+        """urllib3 Retry 固定为 3，不受 retryMaxAttempts 影响"""
         p = self._create_pan_with_config(retry_max=0)
         adapter = p.session.get_adapter("https://www.123pan.com")
-        assert adapter.max_retries.total == 1  # _safe_int min_val=1
+        assert adapter.max_retries.total == 3
 
     def test_session_retry_status_forcelist(self):
         """5xx 触发重试"""

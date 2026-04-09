@@ -107,10 +107,15 @@ class MoveDialog(QDialog):
                     child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
                     item.addChild(child)
                     self.__addPlaceholder(child)
+                item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+            else:
+                error_item = QTreeWidgetItem(["加载失败"])
+                error_item.setData(0, Qt.ItemDataRole.UserRole, None)
+                item.addChild(error_item)
         except Exception:
-            pass
-
-        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+            error_item = QTreeWidgetItem(["加载失败"])
+            error_item.setData(0, Qt.ItemDataRole.UserRole, None)
+            item.addChild(error_item)
 
     def get_target(self):
         """返回 (dir_id, dir_name)"""

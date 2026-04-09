@@ -1,3 +1,4 @@
+import logging
 import platform
 import sys
 
@@ -9,7 +10,15 @@ from qfluentwidgets import FluentTranslator, Theme, setTheme
 from app.view.main_window import MainWindow
 
 
+def _excepthook(exc_type, exc_value, exc_tb):
+    logging.getLogger("123pan-open").critical(
+        "未捕获异常", exc_info=(exc_type, exc_value, exc_tb),
+    )
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
 def main():
+    sys.excepthook = _excepthook
     # 高 DPI 支持
     QtWidgets.QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

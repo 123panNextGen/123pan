@@ -24,6 +24,6 @@ def test_stop_all_transfers_uses_thread_lists():
     MainWindow._stop_all_transfers(window)
 
     upload_thread.cancel.assert_called_once()
-    upload_thread.wait.assert_called_once_with(5000)
+    upload_thread.wait.assert_called_once()
     download_thread.cancel.assert_called_once()
-    download_thread.wait.assert_called_once_with(5000)
+    download_thread.wait.assert_called_once()

@@ -2,10 +2,9 @@
 import threading
 
 # ---- 并发控制常量 ----
-RATE_LIMIT_CODES = frozenset({429, 503, 401})
+RATE_LIMIT_CODES = frozenset({429, 503})
 MAX_RATE_LIMITS = 50
 RATE_LIMIT_BACKOFF = 2
-MAX_PART_RETRIES = 3
 PROGRESS_INTERVAL = 0.1
 
 

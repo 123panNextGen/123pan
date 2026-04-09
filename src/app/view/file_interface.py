@@ -88,6 +88,8 @@ class FileInterface(QWidget):
 
         # H9: 异步加载请求 ID，防止旧回调覆盖新数据
         self._load_request_id = 0
+        self._jump_request_id = 0
+        self._file_details_request_id = 0
 
         # 防止 QRunnable 异步任务的 signals 在回调处理前被 GC
         self._pending_signals = []
@@ -642,6 +644,33 @@ class FileInterface(QWidget):
 
         return None
 
+    def __currentAccountName(self):
+        if self.transfer_interface:
+            return getattr(self.transfer_interface, "current_account_name", "")
+        return getattr(self.pan, "user_name", "") if self.pan else ""
+
+    def __buildAsyncContext(self, *, dir_id=None, request_id=None):
+        return {
+            "pan": self.pan,
+            "account_name": self.__currentAccountName(),
+            "dir_id": dir_id,
+            "request_id": request_id,
+        }
+
+    def __isAsyncContextStale(self, context, *, require_same_dir=False):
+        if context is None:
+            return False
+        if self.pan is not context["pan"]:
+            logger.info("异步任务结果已过期，丢弃回调")
+            return True
+        if self.__currentAccountName() != context["account_name"]:
+            logger.info("异步任务账号已切换，丢弃回调")
+            return True
+        if require_same_dir and context["dir_id"] is not None and self.current_dir_id != context["dir_id"]:
+            logger.info("异步任务目录已切换，丢弃回调")
+            return True
+        return False
+
     def __setErrorBreadcrumb(self, message):
         self.is_updating_breadcrumb = True
         self.breadcrumbBar.clear()
@@ -747,7 +776,13 @@ class FileInterface(QWidget):
 
             # 创建信号和任务
             signals = CreateFolderSignals()
-            signals.finished.connect(self.__onCreateFolderFinished)
+            context = self.__buildAsyncContext(dir_id=self.current_dir_id)
+            signals.finished.connect(
+                lambda result, created_name, error, file_items, folder_items, ctx=context:
+                self.__onCreateFolderFinished(
+                    result, created_name, error, file_items, folder_items, ctx
+                )
+            )
             task = CreateFolderTask(self.pan, folder_name, self.current_dir_id, signals)
 
             # 持有 signals 引用防止 GC
@@ -760,9 +795,11 @@ class FileInterface(QWidget):
             QThreadPool.globalInstance().start(task)
 
     def __onCreateFolderFinished(
-        self, result, folder_name, error, file_items, folder_items
+        self, result, folder_name, error, file_items, folder_items, context=None
     ):
         """创建文件夹完成后的回调 - 只负责UI更新"""
+        if self.__isAsyncContextStale(context, require_same_dir=True):
+            return
         if result:
             InfoBar.success(
                 title="创建成功",
@@ -878,8 +915,11 @@ class FileInterface(QWidget):
                     self.sort_ascending = True
             # 重新加载当前列表以应用新的排序
             self.__loadCurrentList()
+            # M10: 同步排序指示器方向
+            qt_order = Qt.SortOrder.AscendingOrder if self.sort_ascending else Qt.SortOrder.DescendingOrder
+            self.fileTable.horizontalHeader().setSortIndicator(self.sort_mode, qt_order)
 
-    def __updateTreeUI(self, folder_items):
+    def __updateTreeUI(self, folder_items, remove_missing=True):
         """更新树结构UI - 轻量级操作"""
         # 简单刷新当前目录下的子节点
         current_item = self.__findTreeItemById(self.current_dir_id)
@@ -900,11 +940,12 @@ class FileInterface(QWidget):
                     existing_items[file_id] = child
 
             # M10: 删除不在新 folder_items 中的节点
-            new_ids = {int(f.get("FileId", 0)) for f in folder_items}
-            for file_id, child in list(existing_items.items()):
-                if file_id not in new_ids:
-                    current_item.removeChild(child)
-                    del existing_items[file_id]
+            if remove_missing:
+                new_ids = {int(f.get("FileId", 0)) for f in folder_items}
+                for file_id, child in list(existing_items.items()):
+                    if file_id not in new_ids:
+                        current_item.removeChild(child)
+                        del existing_items[file_id]
 
             # 添加新的文件夹
             for folder in folder_items:
@@ -1004,7 +1045,7 @@ class FileInterface(QWidget):
             added_count += 1
 
         if folder_items and should_refresh_current_dir:
-            self.__updateTreeUI(folder_items)
+            self.__updateTreeUI(folder_items, remove_missing=False)
         if (uploads or folder_items) and should_refresh_current_dir:
             self.__refreshFileList()
 
@@ -1129,6 +1170,8 @@ class FileInterface(QWidget):
 
     def __jumpToFile(self, result):
         """搜索结果跳转：进入文件所在目录并选中"""
+        self._jump_request_id += 1
+        current_request_id = self._jump_request_id
         file_id = int(result.get("FileId", 0))
         file_type = int(result.get("Type", 0))
         parent_id = int(result.get("ParentFileId", 0))
@@ -1163,11 +1206,21 @@ class FileInterface(QWidget):
                     self.signals.finished.emit([], self.target_dir_id, None, str(e))
 
         self._jump_signals = JumpSignals()
-        self._jump_signals.finished.connect(self.__onJumpFinished)
+        self._jump_signals.finished.connect(
+            lambda detail_paths, target_dir_id, selected_file_id, error, rid=current_request_id:
+            self.__onJumpFinished(
+                detail_paths, target_dir_id, selected_file_id, error, rid
+            )
+        )
         task = JumpTask(self.pan, file_id, target_dir_id, select_file_id, self._jump_signals)
         QThreadPool.globalInstance().start(task)
 
-    def __onJumpFinished(self, detail_paths, target_dir_id, select_file_id, error):
+    def __onJumpFinished(
+        self, detail_paths, target_dir_id, select_file_id, error, request_id=None
+    ):
+        if request_id is not None and request_id != self._jump_request_id:
+            logger.info("搜索跳转结果已过期，丢弃回调")
+            return
         if error:
             InfoBar.error(title="跳转失败", content=error, parent=self)
             return
@@ -1292,30 +1345,41 @@ class FileInterface(QWidget):
 
                     item_map = {str(i.get("FileId")): i for i in items}
                     ok_count = 0
-                    for fid, _ in self.delete_list:
+                    errors = []
+                    for fid, fname in self.delete_list:
                         detail = item_map.get(str(fid))
                         if detail:
-                            self.pan.delete_file(detail, by_num=False, operation=True)
-                            ok_count += 1
+                            try:
+                                self.pan.delete_file(detail, by_num=False, operation=True)
+                                ok_count += 1
+                            except Exception as e:
+                                errors.append(f"{fname}: {e}")
 
                     code, items = self.pan.get_dir_by_id(
                         self.current_dir_id, save=False, all=True, limit=100,
                     )
+                    error_msg = "; ".join(errors) if errors else ""
                     if code == 0:
                         folder_items = [
                             {"FileId": i.get("FileId"), "FileName": i.get("FileName")}
                             for i in items if int(i.get("Type", 0)) == 1
                         ]
                         self.signals.finished.emit(
-                            ok_count, len(self.delete_list), "", items, folder_items,
+                            ok_count, len(self.delete_list), error_msg, items, folder_items,
                         )
                     else:
-                        self.signals.finished.emit(ok_count, len(self.delete_list), "", [], [])
+                        self.signals.finished.emit(ok_count, len(self.delete_list), error_msg, [], [])
                 except Exception as e:
                     self.signals.finished.emit(0, len(self.delete_list), str(e), [], [])
 
         signals = DeleteFilesSignals()
-        signals.finished.connect(self.__onDeleteFilesFinished)
+        context = self.__buildAsyncContext(dir_id=self.current_dir_id)
+        signals.finished.connect(
+            lambda ok_count, total, error, file_items, folder_items, ctx=context:
+            self.__onDeleteFilesFinished(
+                ok_count, total, error, file_items, folder_items, ctx
+            )
+        )
         task = DeleteFilesTask(
             self.pan, delete_list, self.current_dir_id, signals
         )
@@ -1326,9 +1390,11 @@ class FileInterface(QWidget):
         QThreadPool.globalInstance().start(task)
 
     def __onDeleteFilesFinished(
-        self, ok_count, total, error, file_items, folder_items
+        self, ok_count, total, error, file_items, folder_items, context=None
     ):
         """批量删除完成回调"""
+        if self.__isAsyncContextStale(context, require_same_dir=True):
+            return
         if error:
             InfoBar.error(
                 title="删除失败", content=f"删除时发生错误: {error}", parent=self,
@@ -1460,7 +1526,13 @@ class FileInterface(QWidget):
 
         # 创建信号和任务
         signals = RenameFileSignals()
-        signals.finished.connect(self.__onRenameFileFinished)
+        context = self.__buildAsyncContext(dir_id=self.current_dir_id)
+        signals.finished.connect(
+            lambda success, old_name, renamed_name, error, file_items, folder_items, ctx=context:
+            self.__onRenameFileFinished(
+                success, old_name, renamed_name, error, file_items, folder_items, ctx
+            )
+        )
         task = RenameFileTask(
             self.pan, file_id, old_name, new_name, self.current_dir_id, signals
         )
@@ -1475,9 +1547,11 @@ class FileInterface(QWidget):
         QThreadPool.globalInstance().start(task)
 
     def __onRenameFileFinished(
-        self, success, old_name, new_name, error, file_items, folder_items
+        self, success, old_name, new_name, error, file_items, folder_items, context=None
     ):
         """重命名文件完成后的回调 - 只负责UI更新"""
+        if self.__isAsyncContextStale(context, require_same_dir=True):
+            return
 
         if success:
             # 显示成功信息
@@ -1564,7 +1638,11 @@ class FileInterface(QWidget):
                     self.signals.finished.emit(False, 0, self.target_name, str(e))
 
         signals = MoveFilesSignals()
-        signals.finished.connect(self.__onMoveFilesFinished)
+        context = self.__buildAsyncContext(dir_id=self.current_dir_id)
+        signals.finished.connect(
+            lambda success, count, moved_target_name, error, ctx=context:
+            self.__onMoveFilesFinished(success, count, moved_target_name, error, ctx)
+        )
         task = MoveFilesTask(self.pan, file_id_list, target_id, target_name, signals)
         self._pending_signals.append(signals)
         signals.finished.connect(lambda *_, sig=signals: (
@@ -1572,8 +1650,10 @@ class FileInterface(QWidget):
         ))
         QThreadPool.globalInstance().start(task)
 
-    def __onMoveFilesFinished(self, success, count, target_name, error):
+    def __onMoveFilesFinished(self, success, count, target_name, error, context=None):
         """移动文件完成回调"""
+        if self.__isAsyncContextStale(context, require_same_dir=True):
+            return
         if error:
             InfoBar.error(
                 title="移动失败", content=f"移动文件时发生错误: {error}", parent=self
@@ -1594,6 +1674,8 @@ class FileInterface(QWidget):
         rows = self.__getSelectedRows()
         if not rows:
             return
+        self._file_details_request_id += 1
+        current_request_id = self._file_details_request_id
 
         name_item = self.fileTable.item(rows[0], 0)
         file_id = name_item.data(Qt.ItemDataRole.UserRole)
@@ -1618,7 +1700,11 @@ class FileInterface(QWidget):
                     self.signals.finished.emit(self.file_name, None, str(e))
 
         signals = FileDetailsSignals()
-        signals.finished.connect(self.__onFileDetailsFinished)
+        context = self.__buildAsyncContext(request_id=current_request_id)
+        signals.finished.connect(
+            lambda detail_name, data, error, ctx=context:
+            self.__onFileDetailsFinished(detail_name, data, error, ctx)
+        )
         task = FileDetailsTask(self.pan, file_id, file_name, signals)
         self._pending_signals.append(signals)
         signals.finished.connect(lambda *_, sig=signals: (
@@ -1626,8 +1712,13 @@ class FileInterface(QWidget):
         ))
         QThreadPool.globalInstance().start(task)
 
-    def __onFileDetailsFinished(self, file_name, data, error):
+    def __onFileDetailsFinished(self, file_name, data, error, context=None):
         """文件详情回调"""
+        if self.__isAsyncContextStale(context):
+            return
+        if context is not None and context["request_id"] != self._file_details_request_id:
+            logger.info("文件详情结果已过期，丢弃回调")
+            return
         if error or data is None:
             InfoBar.error(
                 title="获取详情失败",
@@ -1745,9 +1836,11 @@ class FileInterface(QWidget):
         task = self.StorageTask(self.pan)
         signals = task.signals
         self._pending_signals.append(signals)
+        context = self.__buildAsyncContext()
 
-        def _on_finished(info, sig=signals):
-            self.update_storage_info(info)
+        def _on_finished(info, sig=signals, ctx=context):
+            if not self.__isAsyncContextStale(ctx):
+                self.update_storage_info(info)
             if sig in self._pending_signals:
                 self._pending_signals.remove(sig)
 

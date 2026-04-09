@@ -149,17 +149,19 @@ class SettingInterface(ScrollArea):
         # 重试次数
         self.retryAttemptsCard = SettingCard(
             FIF.SYNC,
-            self.tr("最大重试次数"),
-            self.tr("网络请求失败后的最大重试次数（1-10）"),
+            self.tr("分块重试次数"),
+            self.tr("上传/下载分块失败后的重试次数，每次间隔递增 1 秒"),
             self.musicInThisPCGroup,
         )
-        self.retryAttemptsSpinBox = SpinBox(self.retryAttemptsCard)
-        self.retryAttemptsSpinBox.setRange(1, 10)
-        self.retryAttemptsSpinBox.setValue(
-            _read_int_config("retryMaxAttempts", 3, 1, 10)
+        self.retryAttemptsComboBox = ComboBox(self.retryAttemptsCard)
+        self.retryAttemptsComboBox.addItems(
+            ["0 次", "1 次", "2 次", "3 次", "4 次", "5 次"]
         )
-        self.retryAttemptsSpinBox.setFixedWidth(120)
-        self.retryAttemptsCard.hBoxLayout.addWidget(self.retryAttemptsSpinBox)
+        self.retryAttemptsComboBox.setCurrentIndex(
+            _read_int_config("retryMaxAttempts", 3, 0, 5)
+        )
+        self.retryAttemptsComboBox.setFixedWidth(120)
+        self.retryAttemptsCard.hBoxLayout.addWidget(self.retryAttemptsComboBox)
         self.retryAttemptsCard.hBoxLayout.addSpacing(16)
 
         # 下载分片大小
@@ -175,7 +177,7 @@ class SettingInterface(ScrollArea):
         self.downloadPartSizeSpinBox.setValue(
             _read_int_config("downloadPartSizeMB", 5, 4, 32)
         )
-        self.downloadPartSizeSpinBox.setFixedWidth(120)
+        self.downloadPartSizeSpinBox.setFixedWidth(150)
         self.downloadPartSizeCard.hBoxLayout.addWidget(self.downloadPartSizeSpinBox)
         self.downloadPartSizeCard.hBoxLayout.addSpacing(16)
 
@@ -192,7 +194,7 @@ class SettingInterface(ScrollArea):
         self.uploadPartSizeSpinBox.setValue(
             _read_int_config("uploadPartSizeMB", 5, 5, 16)
         )
-        self.uploadPartSizeSpinBox.setFixedWidth(120)
+        self.uploadPartSizeSpinBox.setFixedWidth(150)
         self.uploadPartSizeCard.hBoxLayout.addWidget(self.uploadPartSizeSpinBox)
         self.uploadPartSizeCard.hBoxLayout.addSpacing(16)
 
@@ -201,9 +203,9 @@ class SettingInterface(ScrollArea):
             FIF.TRANSPARENT,
             self.tr("Mica 效果"),
             self.tr("在窗口和表面上应用半透明效果"),
-            isWin11(),
-            self.personalGroup,
+            parent=self.personalGroup,
         )
+        self.micaCard.setChecked(isWin11())
 
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
 
@@ -327,8 +329,8 @@ class SettingInterface(ScrollArea):
     def __onConcurrentUploadsChanged(self, value):
         Database.instance().set_config("maxConcurrentUploads", value)
 
-    def __onRetryAttemptsChanged(self, value):
-        Database.instance().set_config("retryMaxAttempts", value)
+    def __onRetryAttemptsChanged(self, index):
+        Database.instance().set_config("retryMaxAttempts", index)
 
     def __onDownloadPartSizeChanged(self, value):
         Database.instance().set_config("downloadPartSizeMB", value)
@@ -371,7 +373,7 @@ class SettingInterface(ScrollArea):
         self.concurrentUploadsSpinBox.valueChanged.connect(
             self.__onConcurrentUploadsChanged
         )
-        self.retryAttemptsSpinBox.valueChanged.connect(
+        self.retryAttemptsComboBox.currentIndexChanged.connect(
             self.__onRetryAttemptsChanged
         )
         self.downloadPartSizeSpinBox.valueChanged.connect(
