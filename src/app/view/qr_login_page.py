@@ -173,8 +173,7 @@ class QRLoginPage(QWidget):
             # 微信扫码：需要额外请求 wx_code 换取 token
             try:
                 wx_code = self._pan_temp.qr_wx_code(self._uni_id)
-                # TODO: wxCode 换 token 的流程待确认具体 API
-                # 目前 API 文档未提供 wxCode → token 的完整接口
+                # 当前 API 文档未提供 wxCode -> token 的完整接口
                 logger.warning(f"微信扫码登录获取 wxCode: {wx_code}")
                 self.status_label.setText("微信登录暂不支持，请使用 123云盘 App 扫码")
                 self._show_expired_overlay()

@@ -1,11 +1,15 @@
+import sys
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtWidgets import QApplication
+
+sys.modules.setdefault("qrcode", MagicMock())
 
 from src.app.common import database as database_module
 from src.app.common.database import Database
 from src.app.view.login_window import (
     has_saved_credentials,
+    login_with_credentials,
     try_token_probe,
 )
 
@@ -62,13 +66,31 @@ class TestTryTokenProbe:
         assert result is None
         assert db.get_config("authorization", "") == ""
 
-    def test_clears_token_on_exception(self, tmp_path, monkeypatch):
+    def test_keeps_token_on_exception(self, tmp_path, monkeypatch):
         db = _use_temp_db(tmp_path, monkeypatch)
         db.set_config("authorization", "bad-token")
         with patch("src.app.view.login_window.Pan123", side_effect=Exception("connection error")):
             result = try_token_probe(db)
         assert result is None
-        assert db.get_config("authorization", "") == ""
+        assert db.get_config("authorization", "") == "bad-token"
+
+
+class TestLoginWithCredentials:
+    def test_uses_current_input_password_instead_of_saved_password(self, tmp_path, monkeypatch):
+        _use_temp_db(tmp_path, monkeypatch).set_many_config(
+            {"userName": "alice", "passWord": "old-secret"}
+        )
+        mock_pan = MagicMock()
+        mock_pan.login.return_value = 200
+        with patch("src.app.view.login_window.Pan123", return_value=mock_pan) as mock_ctor:
+            result = login_with_credentials("alice", "new-secret")
+
+        assert result is mock_pan
+        mock_ctor.assert_called_once_with(
+            readfile=False,
+            user_name="alice",
+            password="new-secret",
+        )
 
 
 class TestQRLoginPage:
@@ -151,3 +173,38 @@ class TestQRLoginSuccess:
         with patch.object(dialog, "accept"):
             dialog._on_qr_login_success(mock_pan)
         assert db.get_config("authorization", "") == ""
+
+    def test_qr_login_clears_saved_password_state(self, tmp_path, monkeypatch):
+        dialog, db = self._make_dialog(tmp_path, monkeypatch)
+        db.set_many_config({"passWord": "old-secret", "rememberPassword": True})
+        mock_pan = MagicMock()
+        mock_pan.authorization = "Bearer test-jwt"
+        mock_pan.user_name = "new-user"
+        mock_pan.devicetype = "test-device"
+        mock_pan.osversion = "test-os"
+        mock_pan.loginuuid = "test-uuid"
+        with patch.object(dialog, "accept"):
+            dialog._on_qr_login_success(mock_pan)
+
+        assert db.get_config("passWord", "") == ""
+        assert db.get_config("rememberPassword", None) is False
+
+
+class TestLoginDialogConfig:
+    def test_dialog_loads_stay_logged_in_from_config(self, tmp_path, monkeypatch):
+        db = _use_temp_db(tmp_path, monkeypatch)
+        db.set_config("stayLoggedIn", False)
+        from src.app.view.login_window import LoginDialog
+
+        dialog = LoginDialog()
+
+        assert dialog.cb_stay_logged_in.isChecked() is False
+
+    def test_dialog_does_not_prefill_password_when_not_remembered(self, tmp_path, monkeypatch):
+        db = _use_temp_db(tmp_path, monkeypatch)
+        db.set_many_config({"passWord": "secret", "rememberPassword": False})
+        from src.app.view.login_window import LoginDialog
+
+        dialog = LoginDialog()
+
+        assert dialog.le_pass.text() == ""

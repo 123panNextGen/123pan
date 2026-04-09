@@ -55,6 +55,9 @@ COL_CONN = 6
 COL_ACTION = 7
 NUM_COLS = 8
 HEADER_LABELS = ["文件名", "大小", "进度", "速度", "剩余时间", "状态", "连接数", "操作"]
+UPLOAD_ACTIVE_STATUSES = frozenset({"校验中", "上传中"})
+DOWNLOAD_ACTIVE_STATUSES = frozenset({"下载中", "校验中", "合并中"})
+RECOVERABLE_DOWNLOAD_STATUSES = frozenset({"校验中", "下载中", "合并中"})
 
 
 def format_speed(bps: float) -> str:
@@ -105,7 +108,9 @@ class UploadTask(TransferTask):
         self.thread = None
         self.is_cancelled = False
         self.pause_requested = False
+        self.delete_requested = False
         self.db_task_id = None
+        self.last_error = ""
         # S3 session 字段（断点续传用）
         self.bucket = ""
         self.storage_node = ""
@@ -196,12 +201,13 @@ class UploadThread(QThread):
                 class _SignalProxy:
                     def __init__(self, signal):
                         self.emit = signal.emit
-                def __init__(self_inner, thread):
-                    self_inner.progress = self_inner._SignalProxy(thread.progress_updated)
-                    self_inner.conn_info = self_inner._SignalProxy(thread.conn_info_updated)
-                    self_inner.status = self_inner._SignalProxy(thread.status_updated)
-                    self_inner.session_info = self_inner._SignalProxy(thread.session_info)
-                    self_inner.part_done = self_inner._SignalProxy(thread.part_done)
+
+                def __init__(self, thread):
+                    self.progress = self._SignalProxy(thread.progress_updated)
+                    self.conn_info = self._SignalProxy(thread.conn_info_updated)
+                    self.status = self._SignalProxy(thread.status_updated)
+                    self.session_info = self._SignalProxy(thread.session_info)
+                    self.part_done = self._SignalProxy(thread.part_done)
 
             resume_info = self._build_resume_info()
             result = self.pan.upload_file_stream(
@@ -275,10 +281,11 @@ class DownloadThread(QThread):
                 class _SignalProxy:
                     def __init__(self, signal):
                         self.emit = signal.emit
-                def __init__(self_inner, thread):
-                    self_inner.progress = self_inner._SignalProxy(thread.progress_updated)
-                    self_inner.conn_info = self_inner._SignalProxy(thread.conn_info_updated)
-                    self_inner.status = self_inner._SignalProxy(thread.status_updated)
+
+                def __init__(self, thread):
+                    self.progress = self._SignalProxy(thread.progress_updated)
+                    self.conn_info = self._SignalProxy(thread.conn_info_updated)
+                    self.status = self._SignalProxy(thread.status_updated)
 
             result = _stream_download_from_url(
                 download_url, Path(self.task.save_path),
@@ -468,7 +475,7 @@ class TransferInterface(QWidget):
             )
             task.progress = int(record.get("progress", 0) or 0)
             task.status = status
-            if task.status in ("下载中", "合并中"):
+            if task.status in RECOVERABLE_DOWNLOAD_STATUSES:
                 task.status = "失败"
                 task.last_error = task.last_error or "下载中断，等待重试"
             if task.last_error:
@@ -480,7 +487,8 @@ class TransferInterface(QWidget):
         self.upload_tasks = []
         db = Database.instance()
         for record in db.get_upload_tasks(account_name=self.current_account_name):
-            if record["status"] in ("已完成", "已取消"):
+            if record["status"] in ("已完成", "已取消") or record.get("delete_requested", 0):
+                db.delete_upload_task(record["task_id"])
                 continue
             task = UploadTask(
                 file_name=record["file_name"],
@@ -491,7 +499,8 @@ class TransferInterface(QWidget):
             task.db_task_id = record["task_id"]
             task.progress = record.get("progress", 0)
             task.status = record.get("status", "失败")
-            if task.status == "上传中":
+            task.last_error = record.get("error", "")
+            if task.status in UPLOAD_ACTIVE_STATUSES:
                 task.status = "已暂停"
                 if task.db_task_id:
                     db.update_upload_task(task.db_task_id, status="已暂停")
@@ -509,11 +518,15 @@ class TransferInterface(QWidget):
 
     # ---- concurrency control ----
 
+    @staticmethod
+    def __upload_occupies_slot(task):
+        return getattr(task, "thread", None) is not None or task.status in UPLOAD_ACTIVE_STATUSES
+
     def __active_upload_count(self):
-        return sum(1 for t in self.upload_tasks if t.status == "上传中")
+        return sum(1 for t in self.upload_tasks if self.__upload_occupies_slot(t))
 
     def __active_download_count(self):
-        return sum(1 for t in self.download_tasks if t.status in ("下载中", "校验中", "合并中"))
+        return sum(1 for t in self.download_tasks if t.status in DOWNLOAD_ACTIVE_STATUSES)
 
     def __max_concurrent_uploads(self):
         return max(1, min(5, int(Database.instance().get_config("maxConcurrentUploads", 3))))
@@ -526,6 +539,8 @@ class TransferInterface(QWidget):
         for task in self.upload_tasks:
             if self.__active_upload_count() >= limit:
                 break
+            if task.delete_requested:
+                continue
             if task.status == "等待中" and task.thread is None:
                 self.__start_upload_task(task)
 
@@ -551,6 +566,7 @@ class TransferInterface(QWidget):
             "local_path": local_path,
             "target_dir_id": target_dir_id,
             "status": "等待中",
+            "delete_requested": 0,
         })
         self.upload_tasks.append(task)
         self.__update_upload_table()
@@ -559,8 +575,12 @@ class TransferInterface(QWidget):
         return task
 
     def __start_upload_task(self, task):
+        if not self.pan or task.thread is not None or task.delete_requested:
+            return
         task.is_cancelled = False
         task.pause_requested = False
+        task.delete_requested = False
+        task.last_error = ""
         task.active_workers = 0
         task.max_workers = 0
         task.speed_tracker.reset()
@@ -613,6 +633,8 @@ class TransferInterface(QWidget):
         if not task.resume_metadata_valid:
             self.__mark_download_failed(task, LEGACY_RESUME_TASK_ERROR, notify=True)
             return
+        task.is_cancelled = False
+        task.pause_requested = False
         task.cleanup_on_cancel = False
         task.last_error = ""
         task.speed_tracker.reset()
@@ -669,7 +691,18 @@ class TransferInterface(QWidget):
                     error=task.last_error, progress=task.progress,
                 )
         elif isinstance(task, UploadTask) and task.db_task_id:
-            Database.instance().update_upload_task(task.db_task_id, status=status)
+            if task.delete_requested and terminal:
+                Database.instance().delete_upload_task(task.db_task_id)
+                task.db_task_id = None
+                if task in self.upload_tasks:
+                    self.upload_tasks.remove(task)
+            else:
+                Database.instance().update_upload_task(
+                    task.db_task_id,
+                    status=status,
+                    error=task.last_error,
+                    delete_requested=int(task.delete_requested),
+                )
         self.__refresh_table_for(task)
         if terminal:
             if isinstance(task, UploadTask):
@@ -690,15 +723,13 @@ class TransferInterface(QWidget):
         if not self._speed_timer.isActive():
             self._speed_timer.start()
 
-    _ACTIVE_STATUSES = {"上传中", "下载中", "校验中", "合并中"}
-
     def __tick_speed(self):
         has_active = False
         upload_dirty = False
         download_dirty = False
 
         for task in self.upload_tasks:
-            if task.status in self._ACTIVE_STATUSES:
+            if task.status in UPLOAD_ACTIVE_STATUSES:
                 has_active = True
                 task.speed_tracker.flush()
                 remaining = task.file_size - int(task.file_size * task.progress / 100) if task.file_size else 0
@@ -711,7 +742,7 @@ class TransferInterface(QWidget):
                 upload_dirty = True
 
         for task in self.download_tasks:
-            if task.status in self._ACTIVE_STATUSES:
+            if task.status in DOWNLOAD_ACTIVE_STATUSES:
                 has_active = True
                 task.speed_tracker.flush()
                 remaining = task.file_size - int(task.file_size * task.progress / 100) if task.file_size else 0
@@ -757,6 +788,34 @@ class TransferInterface(QWidget):
         if task.db_task_id:
             Database.instance().record_upload_part(task.db_task_id, part_index, etag)
 
+    def __reset_upload_session(self, task, *, clear_progress):
+        task.bucket = ""
+        task.storage_node = ""
+        task.upload_key = ""
+        task.upload_id_s3 = ""
+        task.up_file_id = 0
+        task.total_parts = 0
+        task.block_size = get_upload_part_size()
+        task.etag = ""
+        if clear_progress:
+            task.progress = 0
+        if task.db_task_id:
+            db = Database.instance()
+            db.delete_upload_parts(task.db_task_id)
+            db.update_upload_task(
+                task.db_task_id,
+                bucket="",
+                storage_node="",
+                upload_key="",
+                upload_id_s3="",
+                up_file_id=0,
+                total_parts=0,
+                block_size=task.block_size,
+                etag="",
+                progress=task.progress,
+                delete_requested=int(task.delete_requested),
+            )
+
     def __refresh_table_for(self, task):
         if isinstance(task, UploadTask):
             self.__update_upload_table()
@@ -769,6 +828,9 @@ class TransferInterface(QWidget):
         task.speed_bps = 0.0
         task.eta_seconds = -1.0
         if task_type == "upload":
+            if task.delete_requested:
+                self.__try_start_pending_uploads()
+                return
             if task.db_task_id:
                 Database.instance().update_upload_task(task.db_task_id, status="已完成", progress=100)
             self.__update_upload_table()
@@ -784,8 +846,18 @@ class TransferInterface(QWidget):
     def __task_error(self, task, error):
         logger.error("任务错误: %s", error)
         if isinstance(task, DownloadTask):
-            self.__mark_download_failed(task, error, notify=True)
+            task.last_error = error
+            InfoBar.error(title="下载失败", content=f"{task.file_name}: {error}", parent=self)
             return
+        task.last_error = error
+        task.status = "失败"
+        if task.db_task_id:
+            Database.instance().update_upload_task(
+                task.db_task_id,
+                status="失败",
+                error=error,
+                progress=task.progress,
+            )
         self.__update_upload_table()
 
     def __mark_download_failed(self, task, error, notify):
@@ -825,8 +897,18 @@ class TransferInterface(QWidget):
         task.status = "等待中"
         task.is_cancelled = False
         task.pause_requested = False
+        task.delete_requested = False
+        task.last_error = ""
         task.active_workers = 0
         task.max_workers = 0
+        self.__reset_upload_session(task, clear_progress=True)
+        if task.db_task_id:
+            Database.instance().update_upload_task(
+                task.db_task_id,
+                status="等待中",
+                error="",
+                progress=task.progress,
+            )
         self.__update_upload_table()
         self.__try_start_pending_uploads()
 
@@ -851,6 +933,8 @@ class TransferInterface(QWidget):
         if not task.resume_metadata_valid:
             self.__mark_download_failed(task, LEGACY_RESUME_TASK_ERROR, notify=True)
             return
+        task.is_cancelled = False
+        task.pause_requested = False
         task.active_workers = 0
         task.max_workers = 0
         task.last_error = ""
@@ -864,18 +948,33 @@ class TransferInterface(QWidget):
     def __remove_task(self, task, task_type):
         if task_type == "upload":
             if task.thread:
-                task.thread.disconnect()
+                task.delete_requested = True
                 task.is_cancelled = True
                 task.pause_requested = False
-            if task.db_task_id:
+                task.status = "已取消"
+                if task.db_task_id:
+                    Database.instance().update_upload_task(
+                        task.db_task_id,
+                        status="已取消",
+                        delete_requested=1,
+                    )
+                self.__update_upload_table()
+            elif task.db_task_id:
                 Database.instance().delete_upload_task(task.db_task_id)
-            if task in self.upload_tasks:
+                task.db_task_id = None
+                if task in self.upload_tasks:
+                    self.upload_tasks.remove(task)
+                    self.__update_upload_table()
+                self.__try_start_pending_uploads()
+            elif task in self.upload_tasks:
                 self.upload_tasks.remove(task)
                 self.__update_upload_table()
-            self.__try_start_pending_uploads()
             return
         if task.thread and task.status in {"下载中", "已暂停", "等待中", "校验中", "合并中"}:
-            task.thread.disconnect()
+            try:
+                task.thread.disconnect()
+            except TypeError:
+                pass
             task.cleanup_on_cancel = True
             task.thread.cancel()
         else:
@@ -903,10 +1002,8 @@ class TransferInterface(QWidget):
         return item
 
     def __bind_button(self, button, handler):
-        try:
+        if button.receivers(button.clicked) > 0:
             button.clicked.disconnect()
-        except TypeError:
-            pass
         button.clicked.connect(handler)
 
     def __get_or_create_actions(self, table, row, col):
@@ -931,51 +1028,81 @@ class TransferInterface(QWidget):
     def __configure_upload_actions(self, row, task):
         w = self.__get_or_create_actions(self.uploadTable, row, COL_ACTION)
         pb, sb = w.primary_button, w.secondary_button
-        if task.status == "上传中":
-            pb.setIcon(FIF.PAUSE.icon()); pb.setText("暂停"); pb.setEnabled(True)
+        if task.status in UPLOAD_ACTIVE_STATUSES:
+            pb.setIcon(FIF.PAUSE.icon())
+            pb.setText("暂停")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__toggle_pause_upload(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("取消"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("取消")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "upload"))
         elif task.status == "已暂停":
-            pb.setIcon(FIF.SYNC.icon()); pb.setText("继续"); pb.setEnabled(True)
+            pb.setIcon(FIF.SYNC.icon())
+            pb.setText("继续")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__toggle_pause_upload(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("取消"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("取消")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "upload"))
         elif task.status == "失败":
-            pb.setIcon(FIF.SYNC.icon()); pb.setText("重试"); pb.setEnabled(True)
+            pb.setIcon(FIF.SYNC.icon())
+            pb.setText("重试")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__retry_upload(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("删除"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("删除")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "upload"))
         else:
-            pb.setText(""); pb.setEnabled(False)
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("删除"); sb.setEnabled(True)
+            pb.setText("")
+            pb.setEnabled(False)
+            if pb.receivers(pb.clicked) > 0:
+                pb.clicked.disconnect()
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("删除")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "upload"))
 
     def __configure_download_actions(self, row, task):
         w = self.__get_or_create_actions(self.downloadTable, row, COL_ACTION)
         pb, sb = w.primary_button, w.secondary_button
         if task.status in ("下载中", "合并中"):
-            pb.setIcon(FIF.PAUSE.icon()); pb.setText("暂停"); pb.setEnabled(True)
+            pb.setIcon(FIF.PAUSE.icon())
+            pb.setText("暂停")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__toggle_pause(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("取消"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("取消")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "download"))
         elif task.status == "已暂停":
-            pb.setIcon(FIF.SYNC.icon()); pb.setText("继续"); pb.setEnabled(True)
+            pb.setIcon(FIF.SYNC.icon())
+            pb.setText("继续")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__toggle_pause(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("取消"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("取消")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "download"))
         elif task.status == "失败":
-            pb.setIcon(FIF.SYNC.icon()); pb.setText("重试"); pb.setEnabled(True)
+            pb.setIcon(FIF.SYNC.icon())
+            pb.setText("重试")
+            pb.setEnabled(True)
             self.__bind_button(pb, lambda _, t=task: self.__retry_download(t))
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("删除"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("删除")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "download"))
         else:
-            pb.setText(task.status); pb.setEnabled(False)
-            try:
+            pb.setText(task.status)
+            pb.setEnabled(False)
+            if pb.receivers(pb.clicked) > 0:
                 pb.clicked.disconnect()
-            except TypeError:
-                pass
-            sb.setIcon(FIF.DELETE.icon()); sb.setText("删除"); sb.setEnabled(True)
+            sb.setIcon(FIF.DELETE.icon())
+            sb.setText("删除")
+            sb.setEnabled(True)
             self.__bind_button(sb, lambda _, t=task: self.__remove_task(t, "download"))
 
     # ---- table updates ----

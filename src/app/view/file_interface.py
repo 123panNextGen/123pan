@@ -37,6 +37,7 @@ from qfluentwidgets import (
     ToolButton,
 )
 
+from ..common.database import Database
 from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
 
@@ -952,17 +953,38 @@ class FileInterface(QWidget):
             self.current_dir_id,
             [str(path) for path in local_paths],
         )
+        context = {
+            "pan": self.pan,
+            "account_name": getattr(self.transfer_interface, "current_account_name", ""),
+            "target_dir_id": self.current_dir_id,
+        }
         signals = task.signals
         self._pending_signals.append(signals)
-        signals.finished.connect(self.__onPrepareUploadFinished)
+        signals.finished.connect(
+            lambda uploads, created_dir_count, folder_items, error, ctx=context:
+            self.__onPrepareUploadFinished(
+                uploads, created_dir_count, folder_items, error, ctx
+            )
+        )
         signals.finished.connect(lambda *_, sig=signals: (
             self._pending_signals.remove(sig) if sig in self._pending_signals else None
         ))
         QThreadPool.globalInstance().start(task)
 
     def __onPrepareUploadFinished(
-        self, uploads, created_dir_count, folder_items, error
+        self, uploads, created_dir_count, folder_items, error, context=None
     ):
+        if context is not None:
+            current_account_name = getattr(
+                self.transfer_interface, "current_account_name", ""
+            )
+            if self.pan is not context["pan"] or current_account_name != context["account_name"]:
+                logger.info("上传准备结果已过期，丢弃回调")
+                return
+            should_refresh_current_dir = self.current_dir_id == context["target_dir_id"]
+        else:
+            should_refresh_current_dir = True
+
         if error and not uploads and not folder_items:
             InfoBar.error(
                 title="上传准备失败",
@@ -981,9 +1003,9 @@ class FileInterface(QWidget):
             )
             added_count += 1
 
-        if folder_items:
+        if folder_items and should_refresh_current_dir:
             self.__updateTreeUI(folder_items)
-        if uploads or folder_items:
+        if (uploads or folder_items) and should_refresh_current_dir:
             self.__refreshFileList()
 
         InfoBar.success(
@@ -1021,11 +1043,11 @@ class FileInterface(QWidget):
             InfoBar.warning(title="下载错误", content="请选择要下载的文件", parent=self)
             return
 
-        from app.common.database import Database
         ask_download_location = Database.instance().get_config("askDownloadLocation", True)
         default_download_path = Database.instance().get_config(
             "defaultDownloadPath", str(Path.home() / "Downloads")
         )
+        single_save_path = ""
 
         # 多选且需要询问位置时，弹一次目录选择
         download_dir = default_download_path

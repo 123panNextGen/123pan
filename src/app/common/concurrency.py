@@ -26,6 +26,10 @@ def slow_start_scheduler(
         workers_launched = 1
         notify_conn_fn(1, allowed_workers[0])
 
+    if workers_launched == 0:
+        probe_phase[0] = False
+        return
+
     while workers_launched < max_workers:
         worker_feedback.wait(timeout=60)
         worker_feedback.clear()

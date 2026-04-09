@@ -26,7 +26,7 @@ def get_download_part_size() -> int:
     mb = _safe_int(Database.instance().get_config("downloadPartSizeMB", 5), 5, 4, 32)
     return mb * 1024 * 1024
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 def _get_db_path():
@@ -61,6 +61,7 @@ class Database:
         self._create_tables()
         self._migrate()
         self._init_defaults()
+        self._apply_log_level()
 
     @classmethod
     def instance(cls) -> "Database":
@@ -137,6 +138,7 @@ class Database:
                 total_parts   INTEGER NOT NULL DEFAULT 0,
                 block_size    INTEGER NOT NULL DEFAULT {UPLOAD_PART_SIZE},
                 etag          TEXT NOT NULL DEFAULT '',
+                delete_requested INTEGER NOT NULL DEFAULT 0,
                 created_at    REAL,
                 updated_at    REAL
             );
@@ -172,6 +174,17 @@ class Database:
                     )
                     self._conn.execute("DELETE FROM config WHERE key = 'autoLogin'")
                 self._conn.commit()
+            if version < 3:
+                columns = {
+                    row[1]
+                    for row in self._conn.execute("PRAGMA table_info(upload_tasks)").fetchall()
+                }
+                if "delete_requested" not in columns:
+                    self._conn.execute(
+                        "ALTER TABLE upload_tasks ADD COLUMN delete_requested "
+                        "INTEGER NOT NULL DEFAULT 0"
+                    )
+                self._conn.commit()
             self._conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
 
     def _init_defaults(self):
@@ -186,9 +199,9 @@ class Database:
             "maxConcurrentDownloads": 5,
             "maxConcurrentUploads": 3,
             "retryMaxAttempts": 3,
-            "retryBackoffFactor": 0.5,
             "uploadPartSizeMB": 5,
             "downloadPartSizeMB": 5,
+            "logLevel": "INFO",
         }
         with self._lock:
             for key, value in defaults.items():
@@ -197,6 +210,12 @@ class Database:
                     (key, json.dumps(value)),
                 )
             self._conn.commit()
+
+    def _apply_log_level(self):
+        """从配置读取并应用日志级别。"""
+        from .log import set_log_level
+        level = self.get_config("logLevel", "INFO")
+        set_log_level(level)
 
     # ---- Config ----
 
@@ -357,8 +376,8 @@ class Database:
                 (task_id, account_name, file_name, file_size, local_path,
                  target_dir_id, status, progress, error, bucket,
                  storage_node, upload_key, upload_id_s3, up_file_id,
-                 total_parts, block_size, etag, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 total_parts, block_size, etag, delete_requested, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     account_name = excluded.account_name,
                     file_name = excluded.file_name,
@@ -376,6 +395,7 @@ class Database:
                     total_parts = excluded.total_parts,
                     block_size = excluded.block_size,
                     etag = excluded.etag,
+                    delete_requested = excluded.delete_requested,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -388,7 +408,8 @@ class Database:
                     task.get("upload_id_s3", ""), task.get("up_file_id", 0),
                     task.get("total_parts", 0),
                     task.get("block_size", UPLOAD_PART_SIZE),
-                    task.get("etag", ""), now, now,
+                    task.get("etag", ""), int(task.get("delete_requested", 0)),
+                    now, now,
                 ),
             )
             self._conn.commit()
@@ -442,6 +463,13 @@ class Database:
                 (task_id, part_index, etag, uploaded)
                 VALUES (?, ?, ?, 1)""",
                 (task_id, part_index, etag),
+            )
+            self._conn.commit()
+
+    def delete_upload_parts(self, task_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM upload_parts WHERE task_id = ?", (task_id,)
             )
             self._conn.commit()
 

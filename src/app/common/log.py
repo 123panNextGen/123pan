@@ -36,3 +36,12 @@ def get_logger(name: str = "123pan-open"):
         logger.addHandler(console_handler)
 
     return logger
+
+
+def set_log_level(level_name: str) -> None:
+    """动态修改日志级别（同时更新所有 handler）。"""
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logger = logging.getLogger("123pan-open")
+    logger.setLevel(level)
+    for handler in logger.handlers:
+        handler.setLevel(level)

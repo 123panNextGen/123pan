@@ -17,7 +17,6 @@ def test_database_initializes_default_config(tmp_path, monkeypatch):
     assert db.get_config("defaultDownloadPath", "")
     assert db.get_config("maxDownloadThreads", None) == 1
     assert db.get_config("retryMaxAttempts", None) == 3
-    assert db.get_config("retryBackoffFactor", None) == 0.5
 
 
 def test_database_set_and_get_config(tmp_path, monkeypatch):

@@ -35,10 +35,7 @@ def has_saved_credentials(db):
 
 
 def login_with_credentials(user, pwd):
-    db = Database.instance()
-    saved_user = db.get_config("userName", "")
-    read_saved_config = saved_user == user
-    pan = Pan123(readfile=read_saved_config, user_name=user, password=pwd)
+    pan = Pan123(readfile=False, user_name=user, password=pwd)
     code = pan.login()
     if code not in {0, 200}:
         raise RuntimeError(f"登录失败，返回码: {code}")
@@ -58,10 +55,11 @@ def try_token_probe(db):
         if user_data is not None:
             logger.info("Token 探测成功，跳过登录")
             return pan
+        logger.warning("Token 探测失败：user_info 未返回有效用户数据")
+        db.set_config("authorization", "")
+        return None
     except Exception as exc:
         logger.warning(f"Token 探测异常: {exc}")
-    # token 无效或过期，清除
-    db.set_config("authorization", "")
     return None
 
 
@@ -158,10 +156,11 @@ class LoginDialog(QDialog):
 
         # 从配置文件中加载用户名
         db = Database.instance()
+        remember_password = bool(db.get_config("rememberPassword", False))
         self.le_user.setText(db.get_config("userName", ""))
-        self.le_pass.setText(db.get_config("passWord", ""))
-        self.cb_remember_password.setChecked(bool(db.get_config("rememberPassword", False)))
-        self.cb_stay_logged_in.setChecked(True)
+        self.le_pass.setText(db.get_config("passWord", "") if remember_password else "")
+        self.cb_remember_password.setChecked(remember_password)
+        self.cb_stay_logged_in.setChecked(bool(db.get_config("stayLoggedIn", True)))
         self.cb_remember_password.stateChanged.connect(self._on_remember_password_changed)
 
     def _on_remember_password_changed(self, state):
@@ -184,6 +183,8 @@ class LoginDialog(QDialog):
         try:
             db = Database.instance()
             db.set_config("userName", pan_object.user_name)
+            db.set_config("passWord", "")
+            db.set_config("rememberPassword", False)
             if self.cb_stay_logged_in.isChecked():
                 db.set_config("authorization", pan_object.authorization)
             else:

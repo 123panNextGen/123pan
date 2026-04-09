@@ -74,6 +74,39 @@ def _parse_json_response(response):
         ) from exc
 
 
+def _calculate_file_md5(
+    file_path, fsize, task=None, signals=None, speed_tracker=None,
+    emit_progress=True,
+):
+    md5 = hashlib.md5()
+    bytes_read = 0
+    last_pct = -1
+    with open(file_path, "rb") as f:
+        while True:
+            data = f.read(1024 * 1024)
+            if not data:
+                break
+            md5.update(data)
+            bytes_read += len(data)
+            if task and getattr(task, "is_cancelled", False):
+                return "已取消", ""
+            if task and getattr(task, "pause_requested", False):
+                return "已暂停", ""
+            if emit_progress and fsize > 0:
+                pct = int(bytes_read * 100 / fsize)
+                if pct != last_pct:
+                    last_pct = pct
+                    if signals:
+                        signals.progress.emit(pct)
+                    if speed_tracker:
+                        speed_tracker.record(bytes_read)
+    return None, md5.hexdigest()
+
+
+def _reset_transient_failure_count(counter):
+    counter[0] = 0
+
+
 class Pan123:
     """123云盘API客户端类"""
 
@@ -215,10 +248,12 @@ class Pan123:
         """将账户信息保存到配置文件"""
         try:
             db = Database.instance()
+            remember_password = bool(db.get_config("rememberPassword", False))
+            stay_logged_in = bool(db.get_config("stayLoggedIn", True))
             db.set_many_config({
                 "userName": self.user_name,
-                "passWord": self.password,
-                "authorization": self.authorization,
+                "passWord": self.password if remember_password else "",
+                "authorization": self.authorization if stay_logged_in else "",
                 "deviceType": self.devicetype,
                 "osVersion": self.osversion,
             })
@@ -395,6 +430,10 @@ class Pan123:
             timeout=10,
         )
         dele_json = _parse_json_response(delete_res)
+        if dele_json.get("code", -1) != 0:
+            raise RuntimeError(
+                "删除文件失败: " + json.dumps(dele_json, ensure_ascii=False)
+            )
         logger.debug(f"删除文件响应: {dele_json}")
         message = dele_json.get("message", "")
         logger.info(f"删除文件消息: {message}")
@@ -758,31 +797,41 @@ class Pan123:
         file_targets = []
         created_dir_count = 1
 
-        for current_root, dir_names, file_names in os.walk(local_dir_path):
-            dir_names.sort()
-            file_names.sort()
-            current_path = Path(current_root)
-            relative_root = current_path.relative_to(local_dir_path)
-            remote_parent_id = dir_id_map[relative_root or Path(".")]
+        try:
+            for current_root, dir_names, file_names in os.walk(local_dir_path):
+                dir_names.sort()
+                file_names.sort()
+                current_path = Path(current_root)
+                relative_root = current_path.relative_to(local_dir_path)
+                remote_parent_id = dir_id_map[relative_root or Path(".")]
 
-            for dir_name in dir_names:
-                child_relative = relative_root / dir_name
-                child_dir_id = self._create_directory_with_backoff(
-                    remote_parent_id,
-                    dir_name,
+                for dir_name in dir_names:
+                    child_relative = relative_root / dir_name
+                    child_dir_id = self._create_directory_with_backoff(
+                        remote_parent_id,
+                        dir_name,
+                    )
+                    if not child_dir_id:
+                        raise RuntimeError(f"创建目录失败: {child_relative}")
+                    dir_id_map[child_relative] = child_dir_id
+                    created_dir_count += 1
+
+                for file_name in file_names:
+                    file_targets.append({
+                        "file_name": file_name,
+                        "local_path": str(current_path / file_name),
+                        "target_dir_id": remote_parent_id,
+                        "file_size": (current_path / file_name).stat().st_size,
+                    })
+        except Exception:
+            try:
+                self.delete_file(
+                    {"FileId": root_dir_id, "Type": 1, "FileName": root_name},
+                    by_num=False,
                 )
-                if not child_dir_id:
-                    raise RuntimeError(f"创建目录失败: {child_relative}")
-                dir_id_map[child_relative] = child_dir_id
-                created_dir_count += 1
-
-            for file_name in file_names:
-                file_targets.append({
-                    "file_name": file_name,
-                    "local_path": str(current_path / file_name),
-                    "target_dir_id": remote_parent_id,
-                    "file_size": (current_path / file_name).stat().st_size,
-                })
+            except Exception as cleanup_exc:
+                logger.warning("回滚上传目录失败: %s", cleanup_exc)
+            raise
 
         return {
             "root_dir_id": root_dir_id,
@@ -805,6 +854,31 @@ class Pan123:
             raise IsADirectoryError("不支持文件夹上传")
         fsize = file_path_obj.stat().st_size
         headers = self.header_logined.copy()
+        readable_hash = None
+
+        if resume_info and resume_info.get("upload_id"):
+            stored_hash = resume_info.get("etag", "")
+            if not stored_hash:
+                logger.warning("断点续传缺少 etag，改为重新上传")
+                resume_info = None
+            else:
+                if signals and hasattr(signals, "status"):
+                    signals.status.emit("校验中")
+                stop_state, readable_hash = _calculate_file_md5(
+                    file_path,
+                    fsize,
+                    task=task,
+                    emit_progress=False,
+                )
+                if stop_state:
+                    return stop_state
+                if readable_hash != stored_hash:
+                    logger.warning("检测到本地文件已变更，放弃旧续传会话并重新上传")
+                    if signals:
+                        signals.progress.emit(0)
+                    if speed_tracker:
+                        speed_tracker.reset()
+                    resume_info = None
 
         if resume_info and resume_info.get("upload_id"):
             # ---- 断点续传：复用已有 S3 session ----
@@ -827,19 +901,24 @@ class Pan123:
                     "uploadId": upload_id,
                     "storageNode": storage_node,
                 }
-                with self._session_lock:
-                    list_res = self.session.post(
-                        "https://www.123pan.com/b/api/file/s3_list_upload_parts",
-                        headers=headers,
-                        data=json.dumps(list_data),
-                        timeout=30,
-                    )
+                list_res = self._api_request(
+                    self.session.post,
+                    "https://www.123pan.com/b/api/file/s3_list_upload_parts",
+                    headers=headers,
+                    data=json.dumps(list_data),
+                    timeout=30,
+                )
                 list_json = _parse_json_response(list_res)
                 if list_json.get("code", -1) == 0:
                     server_parts_data = list_json.get("data", {}).get("parts") or []
                     server_part_numbers = {int(p.get("PartNumber", 0)) for p in server_parts_data}
-                    if server_part_numbers:
-                        done_parts = done_parts & server_part_numbers
+                    done_parts = done_parts & server_part_numbers
+                else:
+                    logger.warning(
+                        "验证服务端已上传分块返回异常，将重新上传所有分块: %s",
+                        json.dumps(list_json, ensure_ascii=False),
+                    )
+                    done_parts = set()
             except Exception as exc:
                 logger.warning("验证服务端已上传分块失败，将重新上传所有分块: %s", exc)
                 done_parts = set()
@@ -847,33 +926,22 @@ class Pan123:
             logger.info(
                 "断点续传: %s/%s 块已完成", len(done_parts), total_parts
             )
+            if signals and hasattr(signals, "status"):
+                signals.status.emit("上传中")
         else:
             # ---- 全新上传：先校验文件 MD5 ----
-            if signals and hasattr(signals, "status"):
-                signals.status.emit("校验中")
-            md5 = hashlib.md5()
-            bytes_read = 0
-            last_pct = -1
-            with open(file_path, "rb") as f:
-                while True:
-                    data = f.read(1024 * 1024)
-                    if not data:
-                        break
-                    md5.update(data)
-                    bytes_read += len(data)
-                    if task and getattr(task, "is_cancelled", False):
-                        return "已取消"
-                    if task and getattr(task, "pause_requested", False):
-                        return "已暂停"
-                    if fsize > 0:
-                        pct = int(bytes_read * 100 / fsize)
-                        if pct != last_pct:
-                            last_pct = pct
-                            if signals:
-                                signals.progress.emit(pct)
-                            if speed_tracker:
-                                speed_tracker.record(bytes_read)
-            readable_hash = md5.hexdigest()
+            if readable_hash is None:
+                if signals and hasattr(signals, "status"):
+                    signals.status.emit("校验中")
+                stop_state, readable_hash = _calculate_file_md5(
+                    file_path,
+                    fsize,
+                    task=task,
+                    signals=signals,
+                    speed_tracker=speed_tracker,
+                )
+                if stop_state:
+                    return stop_state
 
             list_up_request = {
                 "driveId": 0,
@@ -987,7 +1055,7 @@ class Pan123:
         allowed_workers = [1]
         failed = [False]
         uploaded = [done_bytes]
-        rate_limit_count = [0]
+        transient_failure_count = [0]
         progress_lock = threading.Lock()
         last_progress_time = [0.0]
         probe_phase = [True]
@@ -1102,8 +1170,8 @@ class Pan123:
                             if resp.status_code in RATE_LIMIT_CODES:
                                 with progress_lock:
                                     uploaded[0] -= progress_io.reported
-                                    rate_limit_count[0] += 1
-                                    if rate_limit_count[0] > MAX_RATE_LIMITS:
+                                    transient_failure_count[0] += 1
+                                    if transient_failure_count[0] > MAX_RATE_LIMITS:
                                         failed[0] = True
                                         logger.error("限流次数过多，上传终止")
                                         return
@@ -1133,18 +1201,45 @@ class Pan123:
                                 signals.part_done.emit(pn, part_etag)
                             with progress_lock:
                                 probe_success_count[0] += 1
+                                _reset_transient_failure_count(transient_failure_count)
                             worker_feedback.set()
                             logger.debug("分块 %s 上传成功", pn)
                             break
-                        except requests.RequestException as exc:
+                        except Exception as exc:
                             if progress_io is not None and progress_io.reported > 0:
                                 with progress_lock:
                                     uploaded[0] -= progress_io.reported
                             is_conn_err = isinstance(exc, requests.ConnectionError)
+                            is_rate_limit_err = isinstance(exc, RateLimitError)
+                            if is_rate_limit_err:
+                                with progress_lock:
+                                    transient_failure_count[0] += 1
+                                    if transient_failure_count[0] > MAX_RATE_LIMITS:
+                                        failed[0] = True
+                                        logger.error("限流次数过多，上传终止")
+                                        return
+                                    new_limit = max(1, active_workers[0] - 1)
+                                    if new_limit < allowed_workers[0]:
+                                        allowed_workers[0] = new_limit
+                                    if probe_phase[0]:
+                                        probe_failed[0] = True
+                                        probe_phase[0] = False
+                                    if signals and hasattr(signals, "conn_info"):
+                                        signals.conn_info.emit(
+                                            active_workers[0], allowed_workers[0]
+                                        )
+                                part_queue.put(part)
+                                worker_feedback.set()
+                                logger.warning(
+                                    "分块 %s 获取上传链接触发限流，回队重试: %s",
+                                    pn, exc,
+                                )
+                                time.sleep(RATE_LIMIT_BACKOFF)
+                                break
                             if is_conn_err:
                                 with progress_lock:
-                                    rate_limit_count[0] += 1
-                                    if rate_limit_count[0] > MAX_RATE_LIMITS:
+                                    transient_failure_count[0] += 1
+                                    if transient_failure_count[0] > MAX_RATE_LIMITS:
                                         failed[0] = True
                                         logger.error("连接错误次数过多，上传终止")
                                         return

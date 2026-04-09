@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import math
 import queue
@@ -59,6 +60,16 @@ def cleanup_temp_dir(resume_id):
     temp_dir = get_temp_dir(resume_id)
     if temp_dir.exists():
         shutil.rmtree(str(temp_dir), ignore_errors=True)
+
+
+def _replace_output_file(src_path: Path, out_path: Path) -> Path:
+    try:
+        src_path.replace(out_path)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        shutil.move(str(src_path), str(out_path))
+    return out_path
 
 
 # ---- signal helpers ----
@@ -399,6 +410,11 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                     continue
                 if result == "retryable":
                     part_queue.put(part)
+                    if probe_phase[0]:
+                        with progress_lock:
+                            probe_failed[0] = True
+                            probe_phase[0] = False
+                        worker_feedback.set()
                     continue
                 with progress_lock:
                     if probe_phase[0]:
@@ -505,7 +521,7 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
 
     # 移动到目标位置
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(merged_path), str(out_path))
+    _replace_output_file(merged_path, out_path)
     cleanup_temp_dir(resume_id)
     return out_path
 
@@ -553,7 +569,7 @@ def _download_single_stream(redirect_url, out_path, total, signals, task, speed_
         _notify_status(signals, "已取消")
         return "已取消"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(temp_path), str(out_path))
+    _replace_output_file(temp_path, out_path)
     return out_path
 
 
@@ -566,11 +582,8 @@ def stream_download_from_url(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if out_path.exists():
-        if overwrite:
-            out_path.unlink()
-        else:
-            raise FileExistsError(str(out_path))
+    if out_path.exists() and not overwrite:
+        raise FileExistsError(str(out_path))
 
     total, accept_ranges = _probe_download(redirect_url)
     multi_part_enabled = bool(accept_ranges and total and total > MIN_PARALLEL_SIZE)

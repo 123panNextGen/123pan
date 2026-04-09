@@ -203,6 +203,28 @@ def test_stream_download_raises_on_final_hash_mismatch(tmp_path, monkeypatch):
     assert db.get_download_task(task.resume_id) is None
 
 
+def test_stream_download_failure_keeps_existing_output_when_overwriting(tmp_path, monkeypatch):
+    _use_temp_db(tmp_path, monkeypatch)
+    out_path = tmp_path / "existing.bin"
+    out_path.write_bytes(b"keep-me")
+
+    monkeypatch.setattr(download_resume, "_probe_download", lambda _url: (123, False))
+    monkeypatch.setattr(
+        download_resume.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("network boom")),
+    )
+
+    with pytest.raises(RuntimeError, match="network boom"):
+        stream_download_from_url(
+            "https://example.test/download",
+            out_path,
+            overwrite=True,
+        )
+
+    assert out_path.read_bytes() == b"keep-me"
+
+
 def test_stream_download_requeues_part_after_retryable_failure(tmp_path, monkeypatch):
     db = _use_temp_db(tmp_path, monkeypatch)
     db.set_config("maxDownloadThreads", 1)

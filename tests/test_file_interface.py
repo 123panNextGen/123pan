@@ -180,6 +180,38 @@ def test_prepare_upload_task_stops_when_folder_creation_fails(tmp_path):
     assert results[0] == ([], 0, [], "429")
 
 
+def test_prepare_upload_finished_drops_stale_cross_account_result():
+    fi = MagicMock()
+    fi.pan = object()
+    fi.transfer_interface = MagicMock()
+    fi.transfer_interface.current_account_name = "current"
+    fi.current_dir_id = 7
+    fi._FileInterface__updateTreeUI = MagicMock()
+    fi._FileInterface__refreshFileList = MagicMock()
+
+    FileInterface._FileInterface__onPrepareUploadFinished(
+        fi,
+        uploads=[{
+            "file_name": "a.txt",
+            "file_size": 1,
+            "local_path": "/tmp/a.txt",
+            "target_dir_id": 7,
+        }],
+        created_dir_count=0,
+        folder_items=[],
+        error="",
+        context={
+            "pan": object(),
+            "account_name": "old",
+            "target_dir_id": 7,
+        },
+    )
+
+    fi.transfer_interface.add_upload_task.assert_not_called()
+    fi._FileInterface__updateTreeUI.assert_not_called()
+    fi._FileInterface__refreshFileList.assert_not_called()
+
+
 def test_create_upload_button_group_uses_split_push_button(monkeypatch):
     created_actions = []
 

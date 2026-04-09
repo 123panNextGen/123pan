@@ -6,5 +6,9 @@ project=$(realpath $(dirname $0)/..)
 (
   cd $project
 
-  uv run pylint "$@"
-  )
+  if (($# == 0)); then
+    uv run pylint src tests
+  else
+    uv run pylint "$@"
+  fi
+)

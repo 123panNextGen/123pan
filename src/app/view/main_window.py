@@ -11,7 +11,11 @@ from qfluentwidgets import (
 from qfluentwidgets import FluentIcon as FIF
 
 from .file_interface import FileInterface
-from .transfer_interface import TransferInterface
+from .transfer_interface import (
+    DOWNLOAD_ACTIVE_STATUSES,
+    UPLOAD_ACTIVE_STATUSES,
+    TransferInterface,
+)
 from .setting_interface import SettingInterface
 from .cloud_interface import CloudInterface
 from .login_window import LoginDialog, try_token_probe
@@ -100,14 +104,29 @@ class MainWindow(FluentWindow):
     def _stop_all_transfers(self):
         """取消所有正在进行的传输任务并等待线程退出。"""
         threads_to_wait = []
+        seen = set()
+        for thread in list(self.transfer_interface.upload_threads):
+            if thread is None or id(thread) in seen:
+                continue
+            thread.cancel()
+            threads_to_wait.append(thread)
+            seen.add(id(thread))
+        for thread in list(self.transfer_interface.download_threads):
+            if thread is None or id(thread) in seen:
+                continue
+            thread.cancel()
+            threads_to_wait.append(thread)
+            seen.add(id(thread))
         for task in self.transfer_interface.upload_tasks:
-            if task.thread and task.status == "上传中":
+            if task.thread and id(task.thread) not in seen and task.status in UPLOAD_ACTIVE_STATUSES:
                 task.thread.cancel()
                 threads_to_wait.append(task.thread)
+                seen.add(id(task.thread))
         for task in self.transfer_interface.download_tasks:
-            if task.thread and task.status in ("下载中", "校验中", "合并中"):
+            if task.thread and id(task.thread) not in seen and task.status in DOWNLOAD_ACTIVE_STATUSES:
                 task.thread.cancel()
                 threads_to_wait.append(task.thread)
+                seen.add(id(task.thread))
         for thread in threads_to_wait:
             thread.wait(5000)
 

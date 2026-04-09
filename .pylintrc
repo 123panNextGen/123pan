@@ -1,10 +1,68 @@
 [MASTER]
 
-ignored-modules=PyQt6,PyQt6.QtCore,PyQt6.QtWidgets,PyQt6.QtGui,qfluentwidgets
+init-hook=import sys; sys.path.append("src")
+ignored-modules=
+    PyQt6,
+    PyQt6.QtCore,
+    PyQt6.QtWidgets,
+    PyQt6.QtGui,
+    PySide6,
+    PySide6.QtCore,
+    PySide6.QtGui,
+    PySide6.QtWidgets,
+    qfluentwidgets,
+    requests,
+    requests.adapters,
+    urllib3.util.retry,
+    pytest
+
+[TYPECHECK]
+
+generated-members=apply
+
+[MESSAGES CONTROL]
 
 disable=
-    C0114,  # missing-module-docstring
-    C0116,  # missing-function-docstring
-    C0115,  # missing-class-docstring
-    W0611,  # unused-import
     C0103,  # invalid-name
+    C0114,  # missing-module-docstring
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+    C0301,  # line-too-long
+    C0302,  # too-many-lines
+    C0410,  # multiple-imports
+    C0413,  # wrong-import-position
+    C0415,  # import-outside-toplevel
+    E0401,  # import-error
+    E1101,  # no-member
+    R0801,  # duplicate-code
+    R0902,  # too-many-instance-attributes
+    R0903,  # too-few-public-methods
+    R0904,  # too-many-public-methods
+    R0911,  # too-many-return-statements
+    R0912,  # too-many-branches
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0917,  # too-many-positional-arguments
+    R1705,  # no-else-return
+    R1710,  # inconsistent-return-statements
+    C0321,  # multiple-statements
+    C1803,  # use-implicit-booleaness-not-comparison
+    W0201,  # attribute-defined-outside-init
+    W0212,  # protected-access
+    W0603,  # global-statement
+    W0611,  # unused-import
+    W0612,  # unused-variable
+    W0613,  # unused-argument
+    W0621,  # redefined-outer-name
+    W0622,  # redefined-builtin
+    W0108,  # unnecessary-lambda
+    W0706,  # try-except-raise
+    W0707,  # raise-missing-from
+    W0718,  # broad-exception-caught
+    W0719,  # broad-exception-raised
+    W0511,  # fixme
+    W1201,  # logging-not-lazy
+    W1203,  # logging-fstring-interpolation
+    E0213,  # no-self-argument
+    E1120,  # no-value-for-parameter

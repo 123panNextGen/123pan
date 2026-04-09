@@ -1,12 +1,16 @@
 """测试 Pan123 API 业务方法（login, get_dir, delete, rename, share, mkdir 等）"""
+import hashlib
 import json
 import threading
 import time
+from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
 import pytest
 import requests
 
+from src.app.common import database as database_module
+from src.app.common.database import Database
 from src.app.common.api import Pan123, RateLimitError, UPLOAD_PART_SIZE
 from src.app.view.transfer_interface import UploadThread
 
@@ -17,6 +21,13 @@ def _mock_response(status_code=200, json_data=None, headers=None):
     resp.json.return_value = json_data or {"code": 0, "message": "success"}
     resp.headers = headers or {}
     return resp
+
+
+def _use_temp_db(tmp_path, monkeypatch):
+    db_path = tmp_path / "123pan-open.db"
+    monkeypatch.setattr(database_module, "_get_db_path", lambda: db_path)
+    Database.reset()
+    return Database.instance()
 
 
 @pytest.fixture
@@ -92,6 +103,31 @@ class TestLogin:
         with patch.object(pan.session, "post", side_effect=requests.exceptions.ConnectionError("连接失败")):
             with pytest.raises(requests.exceptions.ConnectionError):
                 pan.login()
+
+    def test_save_file_respects_persistence_preferences(self, pan, tmp_path, monkeypatch):
+        db = _use_temp_db(tmp_path, monkeypatch)
+        db.set_many_config({
+            "rememberPassword": False,
+            "stayLoggedIn": False,
+        })
+
+        pan.save_file()
+
+        assert db.get_config("userName", "") == "testuser"
+        assert db.get_config("passWord", "") == ""
+        assert db.get_config("authorization", "") == ""
+
+    def test_save_file_persists_credentials_when_enabled(self, pan, tmp_path, monkeypatch):
+        db = _use_temp_db(tmp_path, monkeypatch)
+        db.set_many_config({
+            "rememberPassword": True,
+            "stayLoggedIn": True,
+        })
+
+        pan.save_file()
+
+        assert db.get_config("passWord", "") == "testpwd"
+        assert db.get_config("authorization", "") == "Bearer token123"
 
 
 class TestGetDir:
@@ -605,7 +641,187 @@ class TestUploadFileStream:
             mock_db.return_value.get_config.return_value = 1
             pan.upload_file_stream(str(local_file), parent_id=999, signals=_Signals())
 
-        assert signal_payloads[0]["block_size"] == UPLOAD_PART_SIZE
+        session = next(p for p in signal_payloads if isinstance(p, dict))
+        assert session["block_size"] == UPLOAD_PART_SIZE
+
+    def test_resume_with_empty_server_parts_reuploads_local_parts(self, pan, tmp_path):
+        local_file = tmp_path / "resume.txt"
+        local_file.write_text("demo", encoding="utf-8")
+        resume_info = {
+            "bucket": "bucket",
+            "storage_node": "node",
+            "upload_key": "key",
+            "upload_id": "upload-id",
+            "up_file_id": 123,
+            "total_parts": 1,
+            "block_size": UPLOAD_PART_SIZE,
+            "done_parts": {1},
+            "etag": hashlib.md5(b"demo").hexdigest(),
+        }
+
+        server_parts_res = _mock_response(200, {"code": 0, "data": {"parts": []}})
+        init_res = _mock_response(200, {"code": 0, "message": "ok"})
+        get_link_res = _mock_response(
+            200,
+            {"code": 0, "data": {"presignedUrls": {"1": "https://upload.example/1"}}},
+        )
+        ok_res = _mock_response(200, {"code": 0, "message": "ok"})
+        put_res = MagicMock()
+        put_res.status_code = 200
+        put_res.headers = {"ETag": '"etag-1"'}
+        put_res.raise_for_status.return_value = None
+
+        with patch.object(
+            pan,
+            "_api_request",
+            side_effect=[server_parts_res, init_res, get_link_res, ok_res, ok_res, ok_res],
+        ), \
+             patch("src.app.common.api.requests.put", return_value=put_res) as mock_put, \
+             patch("src.app.common.api.Database.instance") as mock_db:
+            mock_db.return_value.get_config.return_value = 1
+
+            pan.upload_file_stream(str(local_file), resume_info=resume_info)
+
+        mock_put.assert_called_once()
+
+    def test_resume_with_nonzero_server_code_reuploads_local_parts(self, pan, tmp_path):
+        local_file = tmp_path / "resume.txt"
+        local_file.write_text("demo", encoding="utf-8")
+        resume_info = {
+            "bucket": "bucket",
+            "storage_node": "node",
+            "upload_key": "key",
+            "upload_id": "upload-id",
+            "up_file_id": 123,
+            "total_parts": 1,
+            "block_size": UPLOAD_PART_SIZE,
+            "done_parts": {1},
+            "etag": hashlib.md5(b"demo").hexdigest(),
+        }
+
+        server_parts_res = _mock_response(200, {"code": 2, "message": "expired"})
+        init_res = _mock_response(200, {"code": 0, "message": "ok"})
+        get_link_res = _mock_response(
+            200,
+            {"code": 0, "data": {"presignedUrls": {"1": "https://upload.example/1"}}},
+        )
+        ok_res = _mock_response(200, {"code": 0, "message": "ok"})
+        put_res = MagicMock()
+        put_res.status_code = 200
+        put_res.headers = {"ETag": '"etag-1"'}
+        put_res.raise_for_status.return_value = None
+
+        with patch.object(
+            pan,
+            "_api_request",
+            side_effect=[server_parts_res, init_res, get_link_res, ok_res, ok_res, ok_res],
+        ), \
+             patch("src.app.common.api.requests.put", return_value=put_res) as mock_put, \
+             patch("src.app.common.api.Database.instance") as mock_db:
+            mock_db.return_value.get_config.return_value = 1
+
+            pan.upload_file_stream(str(local_file), resume_info=resume_info)
+
+        mock_put.assert_called_once()
+
+    def test_resume_with_changed_local_file_starts_new_upload(self, pan, tmp_path):
+        local_file = tmp_path / "changed.txt"
+        local_file.write_text("new-content", encoding="utf-8")
+        resume_info = {
+            "bucket": "bucket",
+            "storage_node": "node",
+            "upload_key": "key",
+            "upload_id": "upload-id",
+            "up_file_id": 123,
+            "total_parts": 1,
+            "block_size": UPLOAD_PART_SIZE,
+            "done_parts": {1},
+            "etag": "outdated-hash",
+        }
+        upload_res = _mock_response(200, {"code": 0, "data": {"Reuse": True}})
+
+        with patch.object(pan, "_api_request", side_effect=[upload_res]) as mock_api:
+            result = pan.upload_file_stream(str(local_file), resume_info=resume_info)
+
+        assert result == "复用上传成功"
+        payload = json.loads(mock_api.call_args.kwargs["data"])
+        assert payload["fileName"] == "changed.txt"
+        assert payload["parentFileId"] == 0
+
+    def test_rate_limit_error_when_fetching_presigned_url_requeues_part(self, pan, tmp_path):
+        local_file = tmp_path / "retry.txt"
+        local_file.write_text("demo", encoding="utf-8")
+        upload_res = _mock_response(
+            200,
+            {
+                "code": 0,
+                "data": {
+                    "Reuse": False,
+                    "Bucket": "bucket",
+                    "StorageNode": "node",
+                    "Key": "key",
+                    "UploadId": "upload-id",
+                    "FileId": 123,
+                },
+            },
+        )
+        init_res = _mock_response(200, {"code": 0, "message": "ok"})
+        get_link_res = _mock_response(
+            200,
+            {"code": 0, "data": {"presignedUrls": {"1": "https://upload.example/1"}}},
+        )
+        ok_res = _mock_response(200, {"code": 0, "message": "ok"})
+        put_res = MagicMock()
+        put_res.status_code = 200
+        put_res.headers = {"ETag": '"etag-1"'}
+        put_res.raise_for_status.return_value = None
+
+        with patch.object(
+            pan,
+            "_api_request",
+            side_effect=[
+                upload_res,
+                init_res,
+                RateLimitError("429"),
+                get_link_res,
+                ok_res,
+                ok_res,
+                ok_res,
+            ],
+        ), patch("src.app.common.api.requests.put", return_value=put_res) as mock_put, \
+             patch("src.app.common.api.Database.instance") as mock_db, \
+             patch("src.app.common.api.time.sleep") as mock_sleep:
+            mock_db.return_value.get_config.return_value = 1
+
+            result = pan.upload_file_stream(str(local_file))
+
+        assert result == 123
+        mock_put.assert_called_once()
+        assert any(call.args[0] == 2 for call in mock_sleep.call_args_list)
+
+    def test_prepare_folder_upload_rolls_back_root_on_stat_failure(self, pan, tmp_path):
+        root = tmp_path / "资料"
+        root.mkdir()
+        target_file = root / "a.txt"
+        target_file.write_text("a", encoding="utf-8")
+        original_stat = Path.stat
+
+        def fake_stat(path_obj):
+            if path_obj == target_file:
+                raise OSError("stat failed")
+            return original_stat(path_obj)
+
+        with patch.object(pan, "_get_child_directory_map", return_value={}), \
+             patch.object(pan, "_create_directory_with_backoff", return_value=101), \
+             patch.object(pan, "delete_file") as mock_delete, \
+             patch("src.app.common.api.Path.stat", autospec=True, side_effect=fake_stat):
+            with pytest.raises(OSError, match="stat failed"):
+                pan.prepare_folder_upload(root, 0)
+
+        mock_delete.assert_called_once_with(
+            {"FileId": 101, "Type": 1, "FileName": "资料"},
+            by_num=False,
+        )
 
 
 class TestThreadSafety:

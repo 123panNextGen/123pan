@@ -13,13 +13,20 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     SettingCard,
     SpinBox,
+    ComboBox,
 )
 from qfluentwidgets import FluentIcon as FIF
 
 from ..common.config import isWin11
-from ..common.database import Database
+from ..common.database import Database, _safe_int
+from ..common.log import LOG_FILE, set_log_level
 from ..common.const import YEAR, ABOUT_URL, VERSION, BUILD_TIME
 from ..common.style_sheet import StyleSheet
+
+
+def _read_int_config(key, default, min_val, max_val):
+    value = Database.instance().get_config(key, default)
+    return _safe_int(value, default, min_val, max_val)
 
 
 class SettingInterface(ScrollArea):
@@ -55,6 +62,26 @@ class SettingInterface(ScrollArea):
             Database.instance().get_config("askDownloadLocation", True)
         )
 
+        self.rememberPasswordCard = SwitchSettingCard(
+            FIF.PEOPLE,
+            self.tr("记住密码"),
+            self.tr("保存密码用于下次自动填充登录"),
+            parent=self.musicInThisPCGroup,
+        )
+        self.rememberPasswordCard.setChecked(
+            Database.instance().get_config("rememberPassword", False)
+        )
+
+        self.stayLoggedInCard = SwitchSettingCard(
+            FIF.SYNC,
+            self.tr("保持登录"),
+            self.tr("保存登录状态并在下次启动时尝试复用"),
+            parent=self.musicInThisPCGroup,
+        )
+        self.stayLoggedInCard.setChecked(
+            Database.instance().get_config("stayLoggedIn", True)
+        )
+
         # 下载线程数
         self.downloadThreadsCard = SettingCard(
             FIF.DOWNLOAD,
@@ -65,7 +92,7 @@ class SettingInterface(ScrollArea):
         self.downloadThreadsSpinBox = SpinBox(self.downloadThreadsCard)
         self.downloadThreadsSpinBox.setRange(1, 16)
         self.downloadThreadsSpinBox.setValue(
-            int(Database.instance().get_config("maxDownloadThreads", 3))
+            _read_int_config("maxDownloadThreads", 1, 1, 16)
         )
         self.downloadThreadsSpinBox.setFixedWidth(120)
         self.downloadThreadsCard.hBoxLayout.addWidget(self.downloadThreadsSpinBox)
@@ -81,7 +108,7 @@ class SettingInterface(ScrollArea):
         self.uploadThreadsSpinBox = SpinBox(self.uploadThreadsCard)
         self.uploadThreadsSpinBox.setRange(1, 16)
         self.uploadThreadsSpinBox.setValue(
-            int(Database.instance().get_config("maxUploadThreads", 16))
+            _read_int_config("maxUploadThreads", 16, 1, 16)
         )
         self.uploadThreadsSpinBox.setFixedWidth(120)
         self.uploadThreadsCard.hBoxLayout.addWidget(self.uploadThreadsSpinBox)
@@ -97,7 +124,7 @@ class SettingInterface(ScrollArea):
         self.concurrentDownloadsSpinBox = SpinBox(self.concurrentDownloadsCard)
         self.concurrentDownloadsSpinBox.setRange(1, 5)
         self.concurrentDownloadsSpinBox.setValue(
-            int(Database.instance().get_config("maxConcurrentDownloads", 3))
+            _read_int_config("maxConcurrentDownloads", 5, 1, 5)
         )
         self.concurrentDownloadsSpinBox.setFixedWidth(120)
         self.concurrentDownloadsCard.hBoxLayout.addWidget(self.concurrentDownloadsSpinBox)
@@ -113,7 +140,7 @@ class SettingInterface(ScrollArea):
         self.concurrentUploadsSpinBox = SpinBox(self.concurrentUploadsCard)
         self.concurrentUploadsSpinBox.setRange(1, 5)
         self.concurrentUploadsSpinBox.setValue(
-            int(Database.instance().get_config("maxConcurrentUploads", 3))
+            _read_int_config("maxConcurrentUploads", 3, 1, 5)
         )
         self.concurrentUploadsSpinBox.setFixedWidth(120)
         self.concurrentUploadsCard.hBoxLayout.addWidget(self.concurrentUploadsSpinBox)
@@ -129,7 +156,7 @@ class SettingInterface(ScrollArea):
         self.retryAttemptsSpinBox = SpinBox(self.retryAttemptsCard)
         self.retryAttemptsSpinBox.setRange(1, 10)
         self.retryAttemptsSpinBox.setValue(
-            int(Database.instance().get_config("retryMaxAttempts", 3))
+            _read_int_config("retryMaxAttempts", 3, 1, 10)
         )
         self.retryAttemptsSpinBox.setFixedWidth(120)
         self.retryAttemptsCard.hBoxLayout.addWidget(self.retryAttemptsSpinBox)
@@ -146,7 +173,7 @@ class SettingInterface(ScrollArea):
         self.downloadPartSizeSpinBox.setRange(4, 32)
         self.downloadPartSizeSpinBox.setSuffix(" MB")
         self.downloadPartSizeSpinBox.setValue(
-            int(Database.instance().get_config("downloadPartSizeMB", 5))
+            _read_int_config("downloadPartSizeMB", 5, 4, 32)
         )
         self.downloadPartSizeSpinBox.setFixedWidth(120)
         self.downloadPartSizeCard.hBoxLayout.addWidget(self.downloadPartSizeSpinBox)
@@ -163,7 +190,7 @@ class SettingInterface(ScrollArea):
         self.uploadPartSizeSpinBox.setRange(5, 16)
         self.uploadPartSizeSpinBox.setSuffix(" MB")
         self.uploadPartSizeSpinBox.setValue(
-            int(Database.instance().get_config("uploadPartSizeMB", 5))
+            _read_int_config("uploadPartSizeMB", 5, 5, 16)
         )
         self.uploadPartSizeSpinBox.setFixedWidth(120)
         self.uploadPartSizeCard.hBoxLayout.addWidget(self.uploadPartSizeSpinBox)
@@ -179,6 +206,33 @@ class SettingInterface(ScrollArea):
         )
 
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
+
+        # 日志级别
+        self.logLevelCard = SettingCard(
+            FIF.DOCUMENT,
+            self.tr("日志级别"),
+            self.tr("设置程序日志的详细程度"),
+            self.aboutGroup,
+        )
+        self._LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
+        self.logLevelComboBox = ComboBox(self.logLevelCard)
+        self.logLevelComboBox.addItems(self._LOG_LEVELS)
+        current_level = Database.instance().get_config("logLevel", "INFO")
+        if current_level in self._LOG_LEVELS:
+            self.logLevelComboBox.setCurrentIndex(self._LOG_LEVELS.index(current_level))
+        self.logLevelComboBox.setFixedWidth(120)
+        self.logLevelCard.hBoxLayout.addWidget(self.logLevelComboBox)
+        self.logLevelCard.hBoxLayout.addSpacing(16)
+
+        # 打开日志文件
+        self.openLogFileCard = PushSettingCard(
+            self.tr("打开日志"),
+            FIF.DOCUMENT,
+            self.tr("日志文件"),
+            str(LOG_FILE),
+            self.aboutGroup,
+        )
+
         about_text = f"123pan-open {VERSION} © Copyright {YEAR}"
         if BUILD_TIME:
             about_text += f"  |  构建于 {BUILD_TIME}"
@@ -216,6 +270,8 @@ class SettingInterface(ScrollArea):
         # add cards to group
         self.musicInThisPCGroup.addSettingCard(self.downloadFolderCard)
         self.musicInThisPCGroup.addSettingCard(self.askDownloadLocationCard)
+        self.musicInThisPCGroup.addSettingCard(self.rememberPasswordCard)
+        self.musicInThisPCGroup.addSettingCard(self.stayLoggedInCard)
         self.musicInThisPCGroup.addSettingCard(self.downloadThreadsCard)
         self.musicInThisPCGroup.addSettingCard(self.uploadThreadsCard)
         self.musicInThisPCGroup.addSettingCard(self.concurrentDownloadsCard)
@@ -226,6 +282,8 @@ class SettingInterface(ScrollArea):
 
         self.personalGroup.addSettingCard(self.micaCard)
 
+        self.aboutGroup.addSettingCard(self.logLevelCard)
+        self.aboutGroup.addSettingCard(self.openLogFileCard)
         self.aboutGroup.addSettingCard(self.aboutCard)
 
         # add setting card group to layout
@@ -246,6 +304,16 @@ class SettingInterface(ScrollArea):
     def __onAskDownloadLocationChanged(self, checked):
         """ask download location changed slot"""
         Database.instance().set_config("askDownloadLocation", checked)
+
+    def __onRememberPasswordChanged(self, checked):
+        Database.instance().set_config("rememberPassword", checked)
+        if not checked:
+            Database.instance().set_config("passWord", "")
+
+    def __onStayLoggedInChanged(self, checked):
+        Database.instance().set_config("stayLoggedIn", checked)
+        if not checked:
+            Database.instance().set_config("authorization", "")
 
     def __onDownloadThreadsChanged(self, value):
         Database.instance().set_config("maxDownloadThreads", value)
@@ -268,6 +336,14 @@ class SettingInterface(ScrollArea):
     def __onUploadPartSizeChanged(self, value):
         Database.instance().set_config("uploadPartSizeMB", value)
 
+    def __onLogLevelChanged(self, index):
+        level = self._LOG_LEVELS[index]
+        Database.instance().set_config("logLevel", level)
+        set_log_level(level)
+
+    def __onOpenLogFileClicked(self):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOG_FILE)))
+
     def __connectSignalToSlot(self):
         """connect signal to slot"""
         # cfg.appRestartSig.connect(self.__showRestartTooltip)
@@ -276,6 +352,12 @@ class SettingInterface(ScrollArea):
         self.downloadFolderCard.clicked.connect(self.__onDownloadFolderCardClicked)
         self.askDownloadLocationCard.checkedChanged.connect(
             self.__onAskDownloadLocationChanged
+        )
+        self.rememberPasswordCard.checkedChanged.connect(
+            self.__onRememberPasswordChanged
+        )
+        self.stayLoggedInCard.checkedChanged.connect(
+            self.__onStayLoggedInChanged
         )
         self.downloadThreadsSpinBox.valueChanged.connect(
             self.__onDownloadThreadsChanged
@@ -298,6 +380,10 @@ class SettingInterface(ScrollArea):
         self.uploadPartSizeSpinBox.valueChanged.connect(
             self.__onUploadPartSizeChanged
         )
+        self.logLevelComboBox.currentIndexChanged.connect(
+            self.__onLogLevelChanged
+        )
+        self.openLogFileCard.clicked.connect(self.__onOpenLogFileClicked)
 
         # personalization
         # cfg.themeChanged.connect(setTheme)
