@@ -1066,6 +1066,7 @@ class Pan123:
         progress_lock = threading.Lock()
         last_progress_time = [0.0]
         worker_feedback = threading.Event()
+        probe_thread_name = [None]
 
         # 续传时立即发送已有进度
         if done_bytes > 0 and signals and fsize:
@@ -1086,6 +1087,7 @@ class Pan123:
             max_retries = _safe_int(
                 Database.instance().get_config("retryMaxAttempts", 3), 3, 0, 5
             )
+            probe_promoted = False
             with progress_lock:
                 active_workers[0] += 1
                 if signals and hasattr(signals, "conn_info"):
@@ -1098,7 +1100,8 @@ class Pan123:
                         logger.debug("上传 worker 因任务停止退出")
                         return
                     with progress_lock:
-                        if active_workers[0] > allowed_workers[0] and active_workers[0] > 1:
+                        is_probe = threading.current_thread().name == probe_thread_name[0]
+                        if not is_probe and active_workers[0] > allowed_workers[0] and active_workers[0] > 1:
                             logger.debug(
                                 "上传 worker 为满足并发上限退出: active=%s, allowed=%s",
                                 active_workers[0],
@@ -1160,6 +1163,19 @@ class Pan123:
                                 block = f.read(size)
 
                             def _on_chunk(n):
+                                nonlocal probe_promoted
+                                if not probe_promoted:
+                                    with progress_lock:
+                                        if threading.current_thread().name == probe_thread_name[0]:
+                                            probe_thread_name[0] = None
+                                            if allowed_workers[0] < max_workers:
+                                                allowed_workers[0] += 1
+                                            if signals and hasattr(signals, "conn_info"):
+                                                signals.conn_info.emit(
+                                                    active_workers[0], allowed_workers[0]
+                                                )
+                                    probe_promoted = True
+                                    worker_feedback.set()
                                 with progress_lock:
                                     uploaded[0] += n
                                     if speed_tracker:
@@ -1182,9 +1198,12 @@ class Pan123:
                                         failed[0] = True
                                         logger.error("限流次数过多，上传终止")
                                         return
-                                    new_limit = max(1, active_workers[0] - 1)
-                                    if new_limit < allowed_workers[0]:
-                                        allowed_workers[0] = new_limit
+                                    if threading.current_thread().name == probe_thread_name[0]:
+                                        probe_thread_name[0] = None
+                                    else:
+                                        new_limit = max(1, active_workers[0] - 1)
+                                        if new_limit < allowed_workers[0]:
+                                            allowed_workers[0] = new_limit
                                     if signals and hasattr(signals, "conn_info"):
                                         signals.conn_info.emit(
                                             active_workers[0], allowed_workers[0]
@@ -1204,8 +1223,6 @@ class Pan123:
                             if signals and hasattr(signals, "part_done"):
                                 signals.part_done.emit(pn, part_etag)
                             with progress_lock:
-                                if allowed_workers[0] < max_workers:
-                                    allowed_workers[0] += 1
                                 _reset_transient_failure_count(transient_failure_count)
                             worker_feedback.set()
                             logger.debug("分块 %s 上传成功", pn)
@@ -1223,9 +1240,12 @@ class Pan123:
                                         failed[0] = True
                                         logger.error("限流次数过多，上传终止")
                                         return
-                                    new_limit = max(1, active_workers[0] - 1)
-                                    if new_limit < allowed_workers[0]:
-                                        allowed_workers[0] = new_limit
+                                    if threading.current_thread().name == probe_thread_name[0]:
+                                        probe_thread_name[0] = None
+                                    else:
+                                        new_limit = max(1, active_workers[0] - 1)
+                                        if new_limit < allowed_workers[0]:
+                                            allowed_workers[0] = new_limit
                                     if signals and hasattr(signals, "conn_info"):
                                         signals.conn_info.emit(
                                             active_workers[0], allowed_workers[0]
@@ -1246,7 +1266,10 @@ class Pan123:
                                             failed[0] = True
                                             logger.error("连接错误次数过多，上传终止")
                                             return
-                                        allowed_workers[0] = max(1, allowed_workers[0] - 1)
+                                        if threading.current_thread().name == probe_thread_name[0]:
+                                            probe_thread_name[0] = None
+                                        else:
+                                            allowed_workers[0] = max(1, allowed_workers[0] - 1)
                                         logger.info(
                                             "连接被重置，降低并发至 %s",
                                             allowed_workers[0],
@@ -1276,6 +1299,8 @@ class Pan123:
                             time.sleep(attempt)
             finally:
                 with progress_lock:
+                    if threading.current_thread().name == probe_thread_name[0]:
+                        probe_thread_name[0] = None
                     active_workers[0] -= 1
                     if signals and hasattr(signals, "conn_info"):
                         signals.conn_info.emit(
@@ -1296,6 +1321,7 @@ class Pan123:
             active_workers=active_workers,
             allowed_workers=allowed_workers,
             failed=failed,
+            probe_thread_name=probe_thread_name,
             worker_feedback=worker_feedback,
             is_stopped_fn=_is_stopped,
             notify_conn_fn=_notify_conn,

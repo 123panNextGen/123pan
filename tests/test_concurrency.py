@@ -10,6 +10,7 @@ def test_slow_start_scheduler_returns_immediately_when_queue_is_empty():
     active_workers = [0]
     allowed_workers = [1]
     failed = [False]
+    probe_thread_name = [None]
 
     class _Event:
         def wait(self, timeout=None):
@@ -28,6 +29,7 @@ def test_slow_start_scheduler_returns_immediately_when_queue_is_empty():
         active_workers=active_workers,
         allowed_workers=allowed_workers,
         failed=failed,
+        probe_thread_name=probe_thread_name,
         worker_feedback=worker_feedback,
         is_stopped_fn=lambda: False,
         notify_conn_fn=lambda active, allowed: None,

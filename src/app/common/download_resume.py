@@ -254,6 +254,7 @@ def _probe_download(redirect_url):
 def _download_part(
     redirect_url, part, resume_id, downloaded, progress_lock,
     last_progress_time, signals, total, task, speed_tracker,
+    first_byte_callback=None,
 ):
     index = int(part["index"])
     start = int(part["start"])
@@ -267,6 +268,7 @@ def _download_part(
         Database.instance().get_config("retryMaxAttempts", 3), 3, 0, 5
     )
 
+    first_byte_signaled = False
     attempt = 0
     while True:
         attempt_downloaded = 0
@@ -290,6 +292,9 @@ def _download_part(
                             return stop_result
                         if not chunk:
                             continue
+                        if not first_byte_signaled and first_byte_callback:
+                            first_byte_callback()
+                            first_byte_signaled = True
                         f.write(chunk)
                         md5.update(chunk)
                         attempt_downloaded += len(chunk)
@@ -357,9 +362,20 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
     progress_lock = threading.Lock()
     last_progress_time = [0.0]
     worker_feedback = threading.Event()
+    probe_thread_name = [None]
 
     if speed_tracker and reused_bytes:
         speed_tracker.record(reused_bytes)
+
+    def _try_promote_probe():
+        """当前线程是 probe 且收到首字节 → 转正。"""
+        with progress_lock:
+            if threading.current_thread().name == probe_thread_name[0]:
+                probe_thread_name[0] = None
+                if allowed_workers[0] < max_workers:
+                    allowed_workers[0] += 1
+                _notify_conn_info(signals, active_workers[0], allowed_workers[0])
+        worker_feedback.set()
 
     def worker():
         with progress_lock:
@@ -371,7 +387,8 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                 if stop_result:
                     return
                 with progress_lock:
-                    if active_workers[0] > allowed_workers[0] and active_workers[0] > 1:
+                    is_probe = threading.current_thread().name == probe_thread_name[0]
+                    if not is_probe and active_workers[0] > allowed_workers[0] and active_workers[0] > 1:
                         return
                 try:
                     part = part_queue.get_nowait()
@@ -381,12 +398,10 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                 result = _download_part(
                     redirect_url, part, resume_id, downloaded, progress_lock,
                     last_progress_time, signals, total, task, speed_tracker,
+                    first_byte_callback=_try_promote_probe,
                 )
                 if result == "ok":
                     _save_download_status(resume_id, total, downloaded[0], "下载中")
-                    with progress_lock:
-                        if allowed_workers[0] < max_workers:
-                            allowed_workers[0] += 1
                     worker_feedback.set()
                     continue
                 if result in ("cancelled", "paused"):
@@ -397,9 +412,12 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                         if rate_limit_count[0] > MAX_RATE_LIMITS:
                             failed[0] = True
                             return
-                        new_limit = max(1, active_workers[0] - 1)
-                        if new_limit < allowed_workers[0]:
-                            allowed_workers[0] = new_limit
+                        if threading.current_thread().name == probe_thread_name[0]:
+                            probe_thread_name[0] = None
+                        else:
+                            new_limit = max(1, active_workers[0] - 1)
+                            if new_limit < allowed_workers[0]:
+                                allowed_workers[0] = new_limit
                         _notify_conn_info(signals, active_workers[0], allowed_workers[0])
                     part_queue.put(part)
                     worker_feedback.set()
@@ -408,15 +426,20 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
                 if result == "retryable":
                     part_queue.put(part)
                     with progress_lock:
-                        allowed_workers[0] = max(1, allowed_workers[0] - 1)
+                        if threading.current_thread().name == probe_thread_name[0]:
+                            probe_thread_name[0] = None
+                        else:
+                            allowed_workers[0] = max(1, allowed_workers[0] - 1)
                         _notify_conn_info(signals, active_workers[0], allowed_workers[0])
                     worker_feedback.set()
-                    return  # worker 退出，调度器补充新 worker
+                    return  # worker 退出，调度器补充
                 worker_feedback.set()
                 failed[0] = True
                 return
         finally:
             with progress_lock:
+                if threading.current_thread().name == probe_thread_name[0]:
+                    probe_thread_name[0] = None
                 active_workers[0] -= 1
                 _notify_conn_info(signals, active_workers[0], allowed_workers[0])
             worker_feedback.set()
@@ -432,6 +455,7 @@ def _download_with_resume(redirect_url, out_path, total, signals, task, resume_t
         active_workers=active_workers,
         allowed_workers=allowed_workers,
         failed=failed,
+        probe_thread_name=probe_thread_name,
         worker_feedback=worker_feedback,
         is_stopped_fn=lambda: bool(_get_stop_result(task)),
         notify_conn_fn=lambda a, al: _notify_conn_info(signals, a, al),
