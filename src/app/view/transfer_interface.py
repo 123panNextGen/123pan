@@ -5,7 +5,6 @@ import uuid
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -14,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from qfluentwidgets import (
+    ComboBox,
     InfoBar,
     PushButton,
     SegmentedWidget,
@@ -59,6 +59,7 @@ UPLOAD_ACTIVE_STATUSES = frozenset({"校验中", "上传中"})
 DOWNLOAD_ACTIVE_STATUSES = frozenset({"下载中", "校验中", "合并中"})
 RECOVERABLE_DOWNLOAD_STATUSES = frozenset({"校验中", "下载中", "合并中"})
 BUTTON_CLICK_HANDLER_ATTR = "_transfer_click_handler"
+_SPEED_EXCLUDE_STATUSES = frozenset({"校验中", "合并中"})
 
 
 def format_speed(bps: float) -> str:
@@ -354,7 +355,7 @@ class TransferInterface(QWidget):
         self.topBarLayout.addStretch(1)
 
         self.downloadFilterLabel = QLabel("状态", self.topBarFrame)
-        self.downloadFilterCombo = QComboBox(self.topBarFrame)
+        self.downloadFilterCombo = ComboBox(self.topBarFrame)
         self.downloadFilterCombo.addItems(DOWNLOAD_STATUS_FILTERS)
         self.downloadFilterCombo.setCurrentText(self.download_status_filter)
         self.downloadFilterCombo.setMinimumWidth(120)
@@ -380,9 +381,7 @@ class TransferInterface(QWidget):
         self.uploadTable.setBorderVisible(True)
         uh = self.uploadTable.horizontalHeader()
         if uh:
-            uh.setSectionResizeMode(COL_NAME, uh.ResizeMode.Stretch)
-            for c in range(1, NUM_COLS):
-                uh.setSectionResizeMode(c, uh.ResizeMode.ResizeToContents)
+            self.__setup_transfer_header(self.uploadTable)
         self.uploadSpeedLabel = QLabel("总速度: --", self.uploadFrame)
         self.uploadLayout.addWidget(self.uploadSpeedLabel)
         self.uploadLayout.addWidget(self.uploadTable)
@@ -399,15 +398,30 @@ class TransferInterface(QWidget):
         self.downloadTable.setBorderVisible(True)
         dh = self.downloadTable.horizontalHeader()
         if dh:
-            dh.setSectionResizeMode(COL_NAME, dh.ResizeMode.Stretch)
-            for c in range(1, NUM_COLS):
-                dh.setSectionResizeMode(c, dh.ResizeMode.ResizeToContents)
+            self.__setup_transfer_header(self.downloadTable)
         self.downloadSpeedLabel = QLabel("总速度: --", self.downloadFrame)
         self.downloadLayout.addWidget(self.downloadSpeedLabel)
         self.downloadLayout.addWidget(self.downloadTable)
         self.downloadFrame.hide()
         self.mainLayout.addWidget(self.uploadFrame)
         self.mainLayout.addWidget(self.downloadFrame)
+
+    def __setup_transfer_header(self, table):
+        """设置传输表格 header 为可拖拽 + 双击自适应"""
+        h = table.horizontalHeader()
+        if not h:
+            return
+        h.setSectionResizeMode(h.ResizeMode.Interactive)
+        h.setStretchLastSection(True)
+        h.resizeSection(COL_NAME, 250)
+        h.resizeSection(COL_SIZE, 80)
+        h.resizeSection(COL_PERCENT, 70)
+        h.resizeSection(COL_SPEED, 90)
+        h.resizeSection(COL_ETA, 80)
+        h.resizeSection(COL_STATUS, 70)
+        h.resizeSection(COL_CONN, 60)
+        # COL_ACTION 由 stretchLastSection 填充
+        h.sectionDoubleClicked.connect(lambda idx, t=table: t.resizeColumnToContents(idx))
 
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
@@ -757,11 +771,13 @@ class TransferInterface(QWidget):
 
         if upload_dirty:
             self.__update_upload_table()
-            total = sum(t.speed_bps for t in self.upload_tasks if t.speed_bps > 0)
+            total = sum(t.speed_bps for t in self.upload_tasks
+                        if t.speed_bps > 0 and t.status not in _SPEED_EXCLUDE_STATUSES)
             self.uploadSpeedLabel.setText(f"总速度: {format_speed(total)}")
         if download_dirty:
             self.__update_download_table()
-            total = sum(t.speed_bps for t in self.download_tasks if t.speed_bps > 0)
+            total = sum(t.speed_bps for t in self.download_tasks
+                        if t.speed_bps > 0 and t.status not in _SPEED_EXCLUDE_STATUSES)
             self.downloadSpeedLabel.setText(f"总速度: {format_speed(total)}")
 
         if not has_active:

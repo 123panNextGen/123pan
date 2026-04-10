@@ -29,6 +29,13 @@ class MainWindow(FluentWindow):
         super().__init__()
         self.setWindowTitle("123pan-open")
         self.resize(900, 600)
+
+        # 导航栏始终展开，不允许收起
+        nav = self.navigationInterface
+        nav.setExpandWidth(120)
+        nav.setMinimumExpandWidth(0)
+        nav.setCollapsible(False)
+        nav.setMenuButtonVisible(False)
         self._last_file_refresh_time = 0.0
         self.login_success = False
 
@@ -90,15 +97,13 @@ class MainWindow(FluentWindow):
 
         self.login_success = True
 
-        # 将 pan 对象传递给 file_interface 并刷新文件列表
+        # 先设置各子页面的 pan（含 account_name），再 reload
+        # 避免 reload 中异步任务的 context 捕获到空 account_name
+        self.transfer_interface.set_pan(self.pan)
+        self.cloud_interface.set_pan(self.pan)
+
         self.file_interface.pan = self.pan
         self.file_interface.reload()
-
-        # 将 pan 对象传递给 transfer_interface
-        self.transfer_interface.set_pan(self.pan)
-
-        # 将 pan 对象传递给 cloud_interface
-        self.cloud_interface.set_pan(self.pan)
 
         # H1: 注册 token 过期回调
         self.pan.on_token_expired = self._handle_token_expired
@@ -117,10 +122,10 @@ class MainWindow(FluentWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.pan = dlg.get_pan()
             self.pan.on_token_expired = self._handle_token_expired
-            self.file_interface.pan = self.pan
-            self.file_interface.reload()
             self.transfer_interface.set_pan(self.pan, force=True)
             self.cloud_interface.set_pan(self.pan)
+            self.file_interface.pan = self.pan
+            self.file_interface.reload()
         else:
             self.close()
 
@@ -184,10 +189,10 @@ class MainWindow(FluentWindow):
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 self.pan = dlg.get_pan()
                 self.pan.on_token_expired = self._handle_token_expired
-                self.file_interface.pan = self.pan
-                self.file_interface.reload()
                 self.transfer_interface.set_pan(self.pan, force=True)
                 self.cloud_interface.set_pan(self.pan)
+                self.file_interface.pan = self.pan
+                self.file_interface.reload()
             else:
                 self.close()
 

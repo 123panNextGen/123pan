@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QSplitter,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -168,9 +169,8 @@ class FileInterface(QWidget):
         self.mainLayout.addWidget(self.topBarFrame, 0)
 
     def __createContent(self):
-        self.contentLayout = QHBoxLayout()
-        self.contentLayout.setContentsMargins(0, 0, 0, 0)
-        self.contentLayout.setSpacing(12)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setChildrenCollapsible(False)
 
         self.treeFrame = QFrame(self)
         self.treeFrame.setObjectName("frame")
@@ -181,6 +181,9 @@ class FileInterface(QWidget):
         self.folderTree = TreeWidget(self.treeFrame)
         self.folderTree.setHeaderHidden(True)
         self.folderTree.setUniformRowHeights(True)
+        self.folderTree.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.folderTree.header().setStretchLastSection(False)
+        self.folderTree.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.treeLayout.addWidget(self.folderTree)
 
         # 添加云盘占用大小卡片
@@ -217,7 +220,7 @@ class FileInterface(QWidget):
         self.treeLayout.addWidget(self.storageCard)
 
         self.listFrame = QFrame(self)
-        self.listFrame.setObjectName("frame")
+        self.listFrame.setObjectName("listFrame")
         self.listLayout = QVBoxLayout(self.listFrame)
         self.listLayout.setContentsMargins(0, 8, 0, 0)
         self.listLayout.setSpacing(0)
@@ -238,23 +241,28 @@ class FileInterface(QWidget):
         self.fileTable.setBorderVisible(True)
         header = self.fileTable.horizontalHeader()
         if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-            # 启用列头点击排序
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            header.setStretchLastSection(True)
+            header.resizeSection(0, 400)  # 名称
+            header.resizeSection(1, 100)  # 类型
+            # 列 2（大小）由 stretchLastSection 自动填充
             header.setSectionsClickable(True)
             header.setSortIndicatorShown(True)
             header.sortIndicatorChanged.connect(self.__onHeaderSortIndicatorChanged)
+            header.sectionDoubleClicked.connect(self.__onHeaderDoubleClicked)
         self.listLayout.addWidget(self.fileTable)
 
         self.statusLabel = BodyLabel("", self.listFrame)
         self.statusLabel.setStyleSheet("font-size: 12px; color: gray; padding: 4px 8px;")
         self.listLayout.addWidget(self.statusLabel)
 
-        self.contentLayout.addWidget(self.treeFrame, 1)
-        self.contentLayout.addWidget(self.listFrame, 6)
+        self.splitter.addWidget(self.treeFrame)
+        self.splitter.addWidget(self.listFrame)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 6)
+        self.treeFrame.setMinimumWidth(200)
 
-        self.mainLayout.addLayout(self.contentLayout, 1)
+        self.mainLayout.addWidget(self.splitter, 1)
 
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
@@ -267,6 +275,10 @@ class FileInterface(QWidget):
         self.fileTable.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.fileTable.customContextMenuRequested.connect(self.__onFileTableContextMenu)
         self.__loadPanAndData()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.listFrame.setMinimumWidth(self.width() // 2)
 
     def eventFilter(self, watched, event):
         if watched is self.fileTable.viewport() and self.__handleDropEvent(event):
@@ -411,6 +423,7 @@ class FileInterface(QWidget):
             seen.add(local_file)
             local_paths.append(Path(local_file))
 
+        logger.debug("拖拽提取到 %d 个本地路径: %s", len(local_paths), local_paths)
         return local_paths
 
     def reload(self):
@@ -925,6 +938,10 @@ class FileInterface(QWidget):
 
         return result
 
+    def __onHeaderDoubleClicked(self, logicalIndex):
+        """双击列头自适应列宽"""
+        self.fileTable.resizeColumnToContents(logicalIndex)
+
     def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
         """列头排序指示器改变时的处理"""
         # 只处理名称列（0）和大小列（2）的排序
@@ -942,9 +959,12 @@ class FileInterface(QWidget):
                     self.sort_ascending = True
             # 重新加载当前列表以应用新的排序
             self.__loadCurrentList()
-            # M10: 同步排序指示器方向
+            # M10: 同步排序指示器方向（blockSignals 防递归）
+            header = self.fileTable.horizontalHeader()
             qt_order = Qt.SortOrder.AscendingOrder if self.sort_ascending else Qt.SortOrder.DescendingOrder
-            self.fileTable.horizontalHeader().setSortIndicator(self.sort_mode, qt_order)
+            header.blockSignals(True)
+            header.setSortIndicator(self.sort_mode, qt_order)
+            header.blockSignals(False)
 
     def __updateTreeUI(self, folder_items, remove_missing=True):
         """更新树结构UI - 轻量级操作"""

@@ -155,7 +155,7 @@ class SettingInterface(ScrollArea):
         )
         self.retryAttemptsComboBox = ComboBox(self.retryAttemptsCard)
         self.retryAttemptsComboBox.addItems(
-            ["0 次", "1 次", "2 次", "3 次", "4 次", "5 次"]
+            ["0", "1", "2", "3", "4", "5"]
         )
         self.retryAttemptsComboBox.setCurrentIndex(
             _read_int_config("retryMaxAttempts", 3, 0, 5)
@@ -173,11 +173,10 @@ class SettingInterface(ScrollArea):
         )
         self.downloadPartSizeSpinBox = SpinBox(self.downloadPartSizeCard)
         self.downloadPartSizeSpinBox.setRange(4, 32)
-        self.downloadPartSizeSpinBox.setSuffix(" MB")
         self.downloadPartSizeSpinBox.setValue(
             _read_int_config("downloadPartSizeMB", 5, 4, 32)
         )
-        self.downloadPartSizeSpinBox.setFixedWidth(150)
+        self.downloadPartSizeSpinBox.setFixedWidth(120)
         self.downloadPartSizeCard.hBoxLayout.addWidget(self.downloadPartSizeSpinBox)
         self.downloadPartSizeCard.hBoxLayout.addSpacing(16)
 
@@ -190,11 +189,10 @@ class SettingInterface(ScrollArea):
         )
         self.uploadPartSizeSpinBox = SpinBox(self.uploadPartSizeCard)
         self.uploadPartSizeSpinBox.setRange(5, 16)
-        self.uploadPartSizeSpinBox.setSuffix(" MB")
         self.uploadPartSizeSpinBox.setValue(
             _read_int_config("uploadPartSizeMB", 5, 5, 16)
         )
-        self.uploadPartSizeSpinBox.setFixedWidth(150)
+        self.uploadPartSizeSpinBox.setFixedWidth(120)
         self.uploadPartSizeCard.hBoxLayout.addWidget(self.uploadPartSizeSpinBox)
         self.uploadPartSizeCard.hBoxLayout.addSpacing(16)
 
