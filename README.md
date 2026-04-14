@@ -24,60 +24,65 @@
 ## 项目源码结构
 
 ```
-123pan
-├── config
-├── doc
-│   ├── api.md
-│   ├── image.png  (lfs)
-│   └── todo.md
-├── script
-│   ├── build.sh
-│   └── lint.sh
-├── src
-│   ├── app
-│   │   ├── common
-│   │   │   ├── api.py
-│   │   │   ├── config.py
-│   │   │   ├── const.py
-│   │   │   ├── log.py
-│   │   │   ├── resource.py
-│   │   │   └── style_sheet.py
-│   │   ├── resource
-│   │   │   ├── qss
-│   │   │   │   ├── dark
-│   │   │   │   │   ├── gallery_interface.qss
-│   │   │   │   │   ├── home_interface.qss
-│   │   │   │   │   ├── icon_interface.qss
-│   │   │   │   │   ├── link_card.qss
-│   │   │   │   │   ├── navigation_view_interface.qss
-│   │   │   │   │   ├── sample_card.qss
-│   │   │   │   │   ├── setting_interface.qss
-│   │   │   │   │   └── view_interface.qss
-│   │   │   │   └── light
-│   │   │   │       ├── gallery_interface.qss
-│   │   │   │       ├── home_interface.qss
-│   │   │   │       ├── icon_interface.qss
-│   │   │   │       ├── link_card.qss
-│   │   │   │       ├── navigation_view_interface.qss
-│   │   │   │       ├── sample_card.qss
-│   │   │   │       ├── setting_interface.qss
-│   │   │   │       └── view_interface.qss
-│   │   │   └── resource.qrc
-│   │   └── view
-│   │       ├── cloud_interface.py
-│   │       ├── file_interface.py
-│   │       ├── login_window.py
-│   │       ├── main_window.py
-│   │       ├── newfolder_window.py
-│   │       ├── rename_window.py
-│   │       ├── setting_interface.py
-│   │       └── transfer_interface.py
-│   ├── 123pan.pro
-│   └── 123pan.py
-├── LICENSE
-├── README.md
-├── pyproject.toml
-└── uv.lock
+src
+├── 123pan.pro
+├── 123pan.py
+└── app
+    ├── common
+    │   ├── api.py
+    │   ├── config.py
+    │   ├── const.py
+    │   ├── log.py
+    │   ├── __pycache__
+    │   │   ├── api.cpython-314.pyc
+    │   │   ├── config.cpython-314.pyc
+    │   │   ├── const.cpython-314.pyc
+    │   │   ├── log.cpython-314.pyc
+    │   │   ├── resource.cpython-314.pyc
+    │   │   └── style_sheet.cpython-314.pyc
+    │   ├── resource.py
+    │   └── style_sheet.py
+    ├── resource
+    │   ├── qss
+    │   │   ├── dark
+    │   │   │   ├── gallery_interface.qss
+    │   │   │   ├── home_interface.qss
+    │   │   │   ├── icon_interface.qss
+    │   │   │   ├── link_card.qss
+    │   │   │   ├── navigation_view_interface.qss
+    │   │   │   ├── sample_card.qss
+    │   │   │   ├── setting_interface.qss
+    │   │   │   └── view_interface.qss
+    │   │   └── light
+    │   │       ├── gallery_interface.qss
+    │   │       ├── home_interface.qss
+    │   │       ├── icon_interface.qss
+    │   │       ├── link_card.qss
+    │   │       ├── navigation_view_interface.qss
+    │   │       ├── sample_card.qss
+    │   │       ├── setting_interface.qss
+    │   │       └── view_interface.qss
+    │   └── resource.qrc
+    └── view
+        ├── cloud_interface.py
+        ├── file_interface.py
+        ├── login_window.py
+        ├── main_window.py
+        ├── newfolder_window.py
+        ├── __pycache__
+        │   ├── cloud_interface.cpython-314.pyc
+        │   ├── file_interface.cpython-314.pyc
+        │   ├── login_window.cpython-314.pyc
+        │   ├── main_window.cpython-314.pyc
+        │   ├── newfolder_window.cpython-314.pyc
+        │   ├── rename_window.cpython-314.pyc
+        │   ├── setting_interface.cpython-314.pyc
+        │   └── transfer_interface.cpython-314.pyc
+        ├── rename_window.py
+        ├── setting_interface.py
+        └── transfer_interface.py
+
+10 directories, 47 files
 ```
 
 ## 使用
@@ -116,7 +121,7 @@ uv run src/123pan.py
 
 ## 技术说明
 
-默认会在系统`C:\Users%USERNAME%\AppData\Roaming\123pannextgen\123pan`或`~/.config/123pannextgen/123pan`创建配置文件和日志。
+默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pannextgen\123pan`或`~/.config/123pannextgen/123pan`创建配置文件和日志。
 
 ```json
 {
