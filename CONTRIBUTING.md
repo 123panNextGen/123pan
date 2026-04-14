@@ -8,3 +8,5 @@
 - 不要向main分支提交pr
 
 我们还提供了开发交流群，可以在用户交流群中联系管理员获得。
+
+关于API文档，请在[WIKI](github.com/123panNextGen/123pan/wiki)页面查看
