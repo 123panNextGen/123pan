@@ -24,65 +24,64 @@
 ## 项目源码结构
 
 ```
-src
-├── 123pan.pro
-├── 123pan.py
-└── app
-    ├── common
-    │   ├── api.py
-    │   ├── config.py
-    │   ├── const.py
-    │   ├── log.py
-    │   ├── __pycache__
-    │   │   ├── api.cpython-314.pyc
-    │   │   ├── config.cpython-314.pyc
-    │   │   ├── const.cpython-314.pyc
-    │   │   ├── log.cpython-314.pyc
-    │   │   ├── resource.cpython-314.pyc
-    │   │   └── style_sheet.cpython-314.pyc
-    │   ├── resource.py
-    │   └── style_sheet.py
-    ├── resource
-    │   ├── qss
-    │   │   ├── dark
-    │   │   │   ├── gallery_interface.qss
-    │   │   │   ├── home_interface.qss
-    │   │   │   ├── icon_interface.qss
-    │   │   │   ├── link_card.qss
-    │   │   │   ├── navigation_view_interface.qss
-    │   │   │   ├── sample_card.qss
-    │   │   │   ├── setting_interface.qss
-    │   │   │   └── view_interface.qss
-    │   │   └── light
-    │   │       ├── gallery_interface.qss
-    │   │       ├── home_interface.qss
-    │   │       ├── icon_interface.qss
-    │   │       ├── link_card.qss
-    │   │       ├── navigation_view_interface.qss
-    │   │       ├── sample_card.qss
-    │   │       ├── setting_interface.qss
-    │   │       └── view_interface.qss
-    │   └── resource.qrc
-    └── view
-        ├── cloud_interface.py
-        ├── file_interface.py
-        ├── login_window.py
-        ├── main_window.py
-        ├── newfolder_window.py
-        ├── __pycache__
-        │   ├── cloud_interface.cpython-314.pyc
-        │   ├── file_interface.cpython-314.pyc
-        │   ├── login_window.cpython-314.pyc
-        │   ├── main_window.cpython-314.pyc
-        │   ├── newfolder_window.cpython-314.pyc
-        │   ├── rename_window.cpython-314.pyc
-        │   ├── setting_interface.cpython-314.pyc
-        │   └── transfer_interface.cpython-314.pyc
-        ├── rename_window.py
-        ├── setting_interface.py
-        └── transfer_interface.py
+123pan
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── doc
+│   └── image.png
+├── LICENSE
+├── pyproject.toml
+├── README.md
+├── script
+│   ├── build.sh
+│   ├── lint.sh
+│   └── mypy.sh
+├── SECURITY.md
+├── src
+│   ├── 123pan.pro
+│   ├── 123pan.py
+│   └── app
+│       ├── common
+│       │   ├── api.py
+│       │   ├── config.py
+│       │   ├── const.py
+│       │   ├── log.py
+│       │   ├── resource.py
+│       │   └── style_sheet.py
+│       ├── resource
+│       │   ├── qss
+│       │   │   ├── dark
+│       │   │   │   ├── gallery_interface.qss
+│       │   │   │   ├── home_interface.qss
+│       │   │   │   ├── icon_interface.qss
+│       │   │   │   ├── link_card.qss
+│       │   │   │   ├── navigation_view_interface.qss
+│       │   │   │   ├── sample_card.qss
+│       │   │   │   ├── setting_interface.qss
+│       │   │   │   └── view_interface.qss
+│       │   │   └── light
+│       │   │       ├── gallery_interface.qss
+│       │   │       ├── home_interface.qss
+│       │   │       ├── icon_interface.qss
+│       │   │       ├── link_card.qss
+│       │   │       ├── navigation_view_interface.qss
+│       │   │       ├── sample_card.qss
+│       │   │       ├── setting_interface.qss
+│       │   │       └── view_interface.qss
+│       │   └── resource.qrc
+│       └── view
+│           ├── cloud_interface.py
+│           ├── file_interface.py
+│           ├── login_window.py
+│           ├── main_window.py
+│           ├── newfolder_window.py
+│           ├── rename_window.py
+│           ├── setting_interface.py
+│           └── transfer_interface.py
+├── TODO.md
+└── uv.lock
 
-10 directories, 47 files
+11 directories, 45 files
 ```
 
 ## 使用
@@ -147,10 +146,32 @@ uv run src/123pan.py
 
 我们将在第一时间解决。
 
+## 社区讨论：
+
+你可以在社区讨论相关问题
+
+- Github：https://github.com/123panNextGen/123pan/discussions
+- QQ群：群号同上
+
 ## 使用协议
 
 本程序使用[Apache 2.0](./LICENSE)协议。  
-**本工具仅用于学习研究，请勿用于商业用途，使用者需遵守123云盘用户协议，滥用可能导致账号限制。**
+
+## 免责声明
+
+本项目为**个人学习与技术研究目的开发，与 123 云盘官方无任何关联。**使用本软件即表示您已**知晓并同意**以下内容：
+
+- **本软件按「现状」提供，不提供任何明示或暗示的保证**
+- **开发者不对因使用本软件导致的任何直接或间接损失承担责任，包括但不限于数据丢失、账号封禁、服务中断等**
+- **使用者应自行承担使用本软件的全部风险，并遵守 123 云盘用户协议及相关法律法规**
+- **请勿将本软件用于商业用途**
+
+### Fork版本推荐
+
+>[!IMPORTANT]
+>以下Fork项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
+
+- https://github.com/crmmc/123pan-open
 
 ---
 
