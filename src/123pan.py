@@ -2,7 +2,8 @@ import sys
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt
-from qfluentwidgets import FluentTranslator, Theme, setTheme
+from qfluentwidgets import FluentTranslator, Theme, SystemThemeListener, qconfig, setTheme
+from qfluentwidgets.common.style_sheet import updateStyleSheet
 
 from app.view.main_window import MainWindow
 
@@ -19,11 +20,21 @@ def main():
     translator = FluentTranslator()
     app.installTranslator(translator)
 
-    # # 跟随系统深色/浅色
-    # 临时使用 浅色
-    setTheme(Theme.LIGHT)
+    # 跟随系统深色/浅色主题
+    setTheme(Theme.AUTO)
+    listener = SystemThemeListener()
+
+    def on_system_theme_changed():
+        if qconfig.themeMode.value == Theme.AUTO:
+            qconfig.theme = Theme.AUTO
+            updateStyleSheet()
+            qconfig.themeChangedFinished.emit()
+
+    listener.systemThemeChanged.connect(on_system_theme_changed)
+    listener.start()
 
     window = MainWindow()
+    window.themeListener = listener
     window.show()
     sys.exit(app.exec())
 

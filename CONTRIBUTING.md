@@ -9,4 +9,4 @@
 
 我们还提供了开发交流群，可以在用户交流群中联系管理员获得。
 
-关于API文档，请在[WIKI](github.com/123panNextGen/123pan/wiki)页面查看
+关于API文档，请在[WIKI](https://github.com/123panNextGen/123pan/wiki/API)页面查看
