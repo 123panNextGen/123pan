@@ -11,8 +11,6 @@ from qfluentwidgets import (
     SwitchSettingCard,
     ScrollArea,
     PrimaryPushSettingCard,
-    OptionsSettingCard,
-    qconfig,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -63,19 +61,6 @@ class SettingInterface(ScrollArea):
             self.personalGroup,
         )
 
-        self.themeModeCard = OptionsSettingCard(
-            qconfig.themeMode,
-            FIF.SETTING,
-            self.tr("主题模式"),
-            self.tr("手动切换深色、浅色或跟随系统"),
-            texts=[
-                self.tr("浅色"),
-                self.tr("深色"),
-                self.tr("跟随系统"),
-            ],
-            parent=self.personalGroup,
-        )
-
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
         self.aboutCard = PrimaryPushSettingCard(
             self.tr("项目页面"),
@@ -113,7 +98,6 @@ class SettingInterface(ScrollArea):
         self.musicInThisPCGroup.addSettingCard(self.askDownloadLocationCard)
 
         self.personalGroup.addSettingCard(self.micaCard)
-        self.personalGroup.addSettingCard(self.themeModeCard)
 
         self.aboutGroup.addSettingCard(self.aboutCard)
 
