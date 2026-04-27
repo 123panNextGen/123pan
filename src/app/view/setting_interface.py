@@ -57,9 +57,9 @@ class SettingInterface(ScrollArea):
             FIF.TRANSPARENT,
             self.tr("Mica 效果"),
             self.tr("在窗口和表面上应用半透明效果"),
-            isWin11(),
-            self.personalGroup,
+            parent=self.personalGroup,
         )
+        self.micaCard.setChecked(isWin11())
 
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
         self.aboutCard = PrimaryPushSettingCard(
