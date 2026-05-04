@@ -42,7 +42,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync && uv sync --extra build
+          uv sync --locked --all-extras --all-groups --dev
 
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
