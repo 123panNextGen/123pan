@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pyqt6>=6.10.2",
-    "pyqt6-fluent-widgets[full]>=1.11.1",
+    "pyqt6-fluent-widgets>=1.11.1",
     "requests>=2.32.5",
     "zstandard>=0.25.0",
 ]

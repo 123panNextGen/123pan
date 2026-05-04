@@ -26,6 +26,7 @@ fi
 
   uv run -m nuitka src/123pan.py \
     --enable-plugin=pyqt6 \
+    --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter \
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --remove-output \

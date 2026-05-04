@@ -41,9 +41,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        working-directory: src
         run: |
-          uv sync --locked --all-extras --all-groups --dev
+          uv sync && uv sync --extra build
 
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
