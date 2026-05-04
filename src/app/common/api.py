@@ -119,6 +119,7 @@ class Pan123:
                     "authorization": self.authorization,
                     "deviceType": self.devicetype,
                     "osVersion": self.osversion,
+                    "loginuuid": self.loginuuid,
                 }
             )
             ConfigManager.save_config(config)
