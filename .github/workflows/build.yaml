@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (例如: v3.0.3)'
+        description: "版本号 (例如: v3.0.3)"
         required: true
         type: string
       prerelease:
-        description: '是否为预发布版本'
+        description: "是否为预发布版本"
         required: false
         type: boolean
         default: false
@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-    
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
@@ -39,7 +39,6 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          python-version-file: ".python-version"
 
       - name: Install dependencies
         working-directory: src
@@ -50,9 +49,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
+          sudo apt-get install -y \
+            libxcb-cursor0 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            zip
 
-      - name: Run mypy to check type errors
+      - name: Run mypy
         run: |
           bash script/mypy.sh
         shell: bash
@@ -62,38 +72,50 @@ jobs:
           bash script/build.sh
         shell: bash
 
-      # Windows artifact upload
+      - name: Package Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path 123pan.dist/* `
+            -DestinationPath 123pan-windows.zip `
+            -Force
+
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        run: |
+          cd 123pan.dist
+          zip -r ../123pan-linux.zip .
+
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v6
         with:
           name: 123pan-windows
-          path: 123pan.exe
+          path: 123pan-windows.zip
 
-      # Linux artifact upload
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v6
         with:
           name: 123pan-linux
-          path: 123pan
+          path: 123pan-linux.zip
 
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Download Windows artifact
-        if: runner.os == 'Linux'
         uses: actions/download-artifact@v6
         with:
           name: 123pan-windows
           path: ./artifacts/windows
 
       - name: Download Linux artifact
-        if: runner.os == 'Linux'
         uses: actions/download-artifact@v6
         with:
           name: 123pan-linux
@@ -101,11 +123,13 @@ jobs:
 
       - name: Set version for manual trigger
         if: github.event_name == 'workflow_dispatch'
-        run: echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+        run: |
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
       - name: Set version for push trigger
         if: github.event_name == 'push'
-        run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+        run: |
+          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -113,7 +137,7 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}
           files: |
-            ./artifacts/windows/123pan.exe
-            ./artifacts/linux/123pan
+            ./artifacts/windows/123pan-windows.zip
+            ./artifacts/linux/123pan-linux.zip
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false
