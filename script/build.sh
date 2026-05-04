@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -25,13 +24,16 @@ fi
   cd "$project"
 
   uv run -m nuitka src/123pan.py \
+    --onefile\
     --enable-plugin=pyqt6 \
-    --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter \
+    --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,email,html,http,xml,pydoc \
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
+    --python-flag=no_asserts \
+    --noinclude-setuptools-mode=nofollow \
+    --nofollow-import-to=setuptools,wheel,pip \
     --remove-output \
     "${EXTRA_ARGS[@]}" \
     --output-filename="$OUT_NAME" \
     "$@"
 )
-```

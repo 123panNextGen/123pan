@@ -38,11 +38,11 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Install dependencies
         run: |
-          uv sync --locked --all-extras --all-groups --dev
+          uv sync --extra build --extra lint
 
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -76,15 +76,14 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path 123pan.dist/* `
+            -Path 123pan.exe `
             -DestinationPath 123pan-windows.zip `
             -Force
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         run: |
-          cd 123pan.dist
-          zip -r ../123pan-linux.zip .
+          zip -9 123pan-linux.zip 123pan
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
