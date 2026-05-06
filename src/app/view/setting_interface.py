@@ -17,7 +17,7 @@ from qfluentwidgets import FluentIcon as FIF
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
-
+from ..common.log import open_log_file
 
 class SettingInterface(ScrollArea):
     """设置页面"""
@@ -61,6 +61,15 @@ class SettingInterface(ScrollArea):
         )
         self.micaCard.setChecked(isWin11())
 
+        self.debugGroup = SettingCardGroup(self.tr("调试"), self.scrollWidget)
+        self.openLogFolderCard = PushSettingCard(
+            self.tr("打开文件"),
+            FIF.FOLDER,
+            self.tr("日志文件"),
+            self.tr("打开应用日志文件"),
+            self.debugGroup,
+        )
+
         self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
         self.aboutCard = PrimaryPushSettingCard(
             self.tr("项目页面"),
@@ -99,6 +108,8 @@ class SettingInterface(ScrollArea):
 
         self.personalGroup.addSettingCard(self.micaCard)
 
+        self.debugGroup.addSettingCard(self.openLogFolderCard)
+
         self.aboutGroup.addSettingCard(self.aboutCard)
 
         # add setting card group to layout
@@ -106,6 +117,7 @@ class SettingInterface(ScrollArea):
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
         self.expandLayout.addWidget(self.musicInThisPCGroup)
         self.expandLayout.addWidget(self.personalGroup)
+        self.expandLayout.addWidget(self.debugGroup)
         self.expandLayout.addWidget(self.aboutGroup)
 
     def __onDownloadFolderCardClicked(self):
@@ -144,6 +156,11 @@ class SettingInterface(ScrollArea):
         # cfg.themeChanged.connect(setTheme)
         # self.themeColorCard.colorChanged.connect(lambda c: setThemeColor(c))
         # self.micaCard.checkedChanged.connect(signalBus.micaEnableChanged)
+
+        #debug
+        self.openLogFolderCard.clicked.connect(
+            lambda: open_log_file()
+        )
 
         # about
         self.aboutCard.clicked.connect(

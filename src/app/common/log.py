@@ -1,6 +1,7 @@
 import logging
 import os
 import platform
+import subprocess
 from pathlib import Path
 
 # 配置文件路径
@@ -35,3 +36,11 @@ def get_logger(name: str = "123pan"):
         logger.addHandler(console_handler)
 
     return logger
+
+def open_log_file():
+    if platform.system() == "Windows":
+        os.startfile(LOG_FILE)
+    elif platform.system() == "Darwin":  # macOS
+        subprocess.Popen(["open", LOG_FILE])
+    else:  # Linux
+        subprocess.Popen(["xdg-open", LOG_FILE])
