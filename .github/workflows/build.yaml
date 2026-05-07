@@ -43,7 +43,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra build --extra lint
-
+      
+      - name: Install UPX (Windows)
+        if: runner.os == 'windows'
+        run: choco install upx -y
+      
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -59,7 +63,9 @@ jobs:
             libxcb-shape0 \
             libxcb-xfixes0 \
             libxcb-xinerama0 \
-            zip
+            zip \
+            upx \
+            ccache
 
       - name: Run mypy
         run: |
