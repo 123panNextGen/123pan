@@ -23,7 +23,7 @@ fi
 (
   cd "$project"
 
-  venv/bin/python3 -m nuitka src/123pan.py \
+  uv run -m nuitka src/123pan.py \
     --onefile\
     --enable-plugin=pyqt6 \
     --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,pydoc,setuptools,wheel,pip,distutils \
