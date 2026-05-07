@@ -23,10 +23,11 @@ fi
 (
   cd "$project"
 
-  uv run -m nuitka src/123pan.py \
+  venv/bin/python3 -m nuitka src/123pan.py \
     --onefile\
     --enable-plugin=pyqt6 \
-    --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,email,html,http,xml,pydoc \
+    --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,pydoc,setuptools,wheel,pip,distutils \
+    --plugin-enable=upx \
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
