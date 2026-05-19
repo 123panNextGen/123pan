@@ -43,10 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra build --extra lint
-      
-      - name: Install UPX (Windows)
-        if: runner.os == 'windows'
-        run: choco install upx -y
+    
       
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
