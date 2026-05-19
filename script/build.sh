@@ -6,14 +6,16 @@ project=$(realpath "$(dirname "$0")/..")
 if [ "$(uname -s)" = "Linux" ]; then
   OUT_NAME=123pan
   EXTRA_ARGS=(
+    --onefile
     --standalone
     --lto=yes
   )
 else
   OUT_NAME=123pan.exe
   EXTRA_ARGS=(
+    --onefile-no-compression
     --standalone
-    --windows-disable-console
+    --windows-console-mode=disable
     --msvc=latest
     --static-libpython=no
     --lto=yes
@@ -24,7 +26,6 @@ fi
   cd "$project"
 
   uv run -m nuitka src/123pan.py \
-    --onefile\
     --enable-plugin=pyqt6 \
     --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,pydoc,setuptools,wheel,pip,distutils \
     --plugin-enable=upx \

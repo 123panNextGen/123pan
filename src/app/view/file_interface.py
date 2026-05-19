@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QMenu,
     QApplication,
+    QInputDialog,
 )
 from PyQt6.QtGui import QAction, QClipboard
 
@@ -1138,6 +1139,11 @@ class FileInterface(QWidget):
         copy_link_action.triggered.connect(self.__copyDownloadLink)
         menu.addAction(copy_link_action)
 
+        # 添加分享菜单项
+        share_action = QAction(FIF.LINK.icon(), "分享", self)
+        share_action.triggered.connect(self.__shareFile)
+        menu.addAction(share_action)
+
         # 添加重命名菜单项
         rename_action = QAction(FIF.EDIT.icon(), "重命名", self)
         rename_action.triggered.connect(self.__renameFile)
@@ -1199,6 +1205,38 @@ class FileInterface(QWidget):
             InfoBar.error(
                 title="复制链接失败", content=f"发生错误: {str(e)}", parent=self
             )
+
+    def __shareFile(self):
+        """为选中文件/文件夹生成分享链接并复制到剪贴板（可选设置密码）。"""
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            InfoBar.warning(title="分享失败", content="请选择一个文件或文件夹", parent=self)
+            return
+
+        row = selected_items[0].row()
+        name_item = self.fileTable.item(row, 0)
+        file_id = name_item.data(Qt.ItemDataRole.UserRole)
+        file_name = name_item.text()
+
+        # 询问是否设置分享密码（可选）
+        pwd, ok = QInputDialog.getText(self, "设置分享密码(可选)", "分享密码 (留空则无密码):")
+        if not ok:
+            return
+
+        try:
+            share_url = self.pan.share([int(file_id)], share_pwd=pwd or "")
+            if isinstance(share_url, str) and share_url:
+                QApplication.clipboard().setText(share_url)
+                InfoBar.success(
+                    title="分享成功",
+                    content=f"已生成分享链接并复制到剪贴板：{share_url}",
+                    parent=self,
+                )
+            else:
+                InfoBar.error(title="分享失败", content="生成分享链接失败", parent=self)
+        except Exception as e:
+            logger.error(f"生成分享链接失败: {e}")
+            InfoBar.error(title="分享失败", content=str(e), parent=self)
 
     def update_storage_info(self, used_text):
         """更新云盘存储信息"""

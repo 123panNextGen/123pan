@@ -84,7 +84,7 @@ class LoginDialog(QDialog):
         user = self.le_user.text().strip()
         pwd = self.le_pass.text()
         if not user or not pwd:
-            MessageBox.information(self, "提示", "请输入用户名和密码。")
+            MessageBox("提示", "请输入用户名和密码。", self).exec()
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -105,12 +105,12 @@ class LoginDialog(QDialog):
             if code != 200 and code != 0:
                 self.login_error = f"登录失败，返回码: {code}"
                 QApplication.restoreOverrideCursor()
-                MessageBox.critical(self, "登录失败", self.login_error)
+                MessageBox("登录失败", self.login_error, self).exec()
                 return
         except Exception as e:
             self.login_error = str(e)
             QApplication.restoreOverrideCursor()
-            MessageBox.critical(self, "登录异常", "登录时发生异常:\n" + str(e))
+            MessageBox("登录异常", "登录时发生异常:\n" + str(e), self).exec()
             return
         finally:
             QApplication.restoreOverrideCursor()
