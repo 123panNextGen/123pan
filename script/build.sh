@@ -9,11 +9,12 @@ if [ "$(uname -s)" = "Linux" ]; then
     --onefile
     --standalone
     --lto=yes
+    --plugin-enable=upx
   )
 else
   OUT_NAME=123pan.exe
   EXTRA_ARGS=(
-    --onefile-no-compression
+    --onefile
     --standalone
     --windows-console-mode=disable
     --msvc=latest
@@ -28,7 +29,6 @@ fi
   uv run -m nuitka src/123pan.py \
     --enable-plugin=pyqt6 \
     --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,pydoc,setuptools,wheel,pip,distutils \
-    --plugin-enable=upx \
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
