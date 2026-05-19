@@ -94,7 +94,7 @@
 - Github: https://github.com/123panNextGen/123pan/releases/
 - Website(CloudFlare CDN, 更新可能不及时): https://download.123panng.top/
 
->[!TIPS]
+>[!TIP]
 >Windows下如果无法运行，可以尝试打开兼容模式。杀毒软件有可能报毒，请放行。
 
 >[!IMPORTANT]
