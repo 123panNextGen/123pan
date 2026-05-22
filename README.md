@@ -126,7 +126,7 @@ uv run src/123pan.py
 
 ## 技术说明
 
-默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pannextgen\123pan`或`~/.config/123pannextgen/123pan`创建配置文件和日志。
+默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pannextgen`或`~/.config/123pannextgen`创建配置文件和日志。
 
 ```json
 {
