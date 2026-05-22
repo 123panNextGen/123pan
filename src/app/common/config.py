@@ -19,7 +19,7 @@ def isWin11():
 if platform.system() == "Windows":
     CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "Qxyz17" / "123pan"
 else:
-    CONFIG_DIR = Path.home() / ".config" / "Qxyz17" / "123pan"
+    CONFIG_DIR = Path.home() / ".config" / "123pan"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
