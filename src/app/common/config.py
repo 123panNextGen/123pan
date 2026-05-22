@@ -4,8 +4,6 @@ import platform
 import sys
 from pathlib import Path
 
-
-
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -17,9 +15,9 @@ def isWin11():
 
 # 配置文件路径
 if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "Qxyz17" / "123pan"
+    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pannextgen"
 else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
+    CONFIG_DIR = Path.home() / ".config" / "123pannextgen"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
