@@ -6,9 +6,9 @@ from pathlib import Path
 
 # 配置文件路径
 if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "Qxyz17" / "123pan"
+    CONFIG_DIR = Path(os.environ.get("APPDATA", ""))  / "123pan"
 else:
-    CONFIG_DIR = Path.home() / ".config" / "Qxyz17" / "123pan"
+    CONFIG_DIR = Path.home() / ".config" / "123pan"
 LOG_FILE = CONFIG_DIR / "123pan.log"
 
 
