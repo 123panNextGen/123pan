@@ -126,18 +126,23 @@ uv run src/123pan.py
 
 ## 技术说明
 
-默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pannextgen\123pan`或`~/.config/123pannextgen/123pan`创建配置文件和日志。
+默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pan`或`~/.config/123pan`创建配置文件和日志。
 
 ```json
 {
-  "userName": "账号",
-  "passWord": "密码",
-  "authorization": "令牌",
-  "deviceType": "驱动类型",
-  "osVersion": "安卓版本",
-  "loginuuid": "登陆UUID" ,
+  "currentAccount": "账号",
+  "accounts": {
+    "账号": {
+      "userName": "账号",
+      "passWord": "密码",
+      "authorization": "令牌",
+      "deviceType": "模拟设备类型",
+      "osVersion": "模拟设备系统",
+      "loginuuid": "登陆id"
+    }
+  },
   "settings": {
-    "defaultDownloadPath": "默认下载路径",
+    "defaultDownloadPath": "默认下载位置",
     "askDownloadLocation": true
   }
 }

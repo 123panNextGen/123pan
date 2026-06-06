@@ -27,6 +27,7 @@ class CloudInterface(QWidget):
 
     # 定义退出登录信号
     logoutRequested = pyqtSignal()
+    switchAccountRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -62,6 +63,17 @@ class CloudInterface(QWidget):
         self.username_card.hBoxLayout.addWidget(self.username_label, 0, Qt.AlignmentFlag.AlignRight)
         self.username_card.hBoxLayout.addSpacing(16)
         self.accountGroup.addSettingCard(self.username_card)
+
+        # 添加切换账号卡片
+        self.switch_card = PushSettingCard(
+            "切换账号",
+            FIF.SYNC,
+            "切换登录账号",
+            "从已保存账号或新账号登录",
+            self.accountGroup,
+        )
+        self.switch_card.clicked.connect(self.switchAccountRequested.emit)
+        self.accountGroup.addSettingCard(self.switch_card)
 
         # 添加退出登录卡片
         self.logout_card = PushSettingCard(
