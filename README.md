@@ -130,14 +130,19 @@ uv run src/123pan.py
 
 ```json
 {
-  "userName": "账号",
-  "passWord": "密码",
-  "authorization": "令牌",
-  "deviceType": "驱动类型",
-  "osVersion": "安卓版本",
-  "loginuuid": "登陆UUID" ,
+  "currentAccount": "账号",
+  "accounts": {
+    "账号": {
+      "userName": "账号",
+      "passWord": "密码",
+      "authorization": "令牌",
+      "deviceType": "模拟设备类型",
+      "osVersion": "模拟设备系统",
+      "loginuuid": "登陆id"
+    }
+  },
   "settings": {
-    "defaultDownloadPath": "默认下载路径",
+    "defaultDownloadPath": "默认下载位置",
     "askDownloadLocation": true
   }
 }
