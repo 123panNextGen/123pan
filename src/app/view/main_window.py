@@ -71,10 +71,9 @@ class MainWindow(FluentWindow):
 
     def _startup_login_flow(self):
         cfg_loaded = False
-        cfg = ConfigManager.load_config()
-        if ConfigManager.get_setting(
-                "userName"
-        ) and ConfigManager.get_setting("passWord"):
+        current_account = ConfigManager.get_current_account_name()
+        current_info = ConfigManager.get_account(current_account) if current_account else {}
+        if current_info.get("passWord"):
             try:
                 self.pan = Pan123(readfile=True, input_pwd=False)
                 res_code = self.pan.get_dir(save=False)[0]
@@ -103,20 +102,13 @@ class MainWindow(FluentWindow):
         # 将 pan 对象传递给 cloud_interface
         self.cloud_interface.set_pan(self.pan)
 
-        # 连接退出登录信号
+        # 连接退出登录和切换账号信号
         self.cloud_interface.logoutRequested.connect(self.handle_logout)
+        self.cloud_interface.switchAccountRequested.connect(self.handle_switch_account)
 
     def clear_login_config(self):
-        """清除登录配置信息"""
-        config = ConfigManager.load_config()
-        # 清除登录相关的信息
-        config["userName"] = ""
-        config["passWord"] = ""
-        config["authorization"] = ""
-        config["deviceType"] = ""
-        config["osVersion"] = ""
-        config["loginuuid"] = ""
-        ConfigManager.save_config(config)
+        """清除当前登录状态，但保留已保存账户"""
+        ConfigManager.set_current_account("")
 
     def handle_logout(self):
         """处理退出登录请求"""
@@ -138,3 +130,13 @@ class MainWindow(FluentWindow):
             else:
                 # 用户取消登录，关闭程序
                 self.close()
+
+    def handle_switch_account(self):
+        """处理切换账号请求"""
+        dlg = LoginDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.pan = dlg.get_pan()
+            self.file_interface.pan = self.pan
+            self.file_interface._FileInterface__loadPanAndData()
+            self.transfer_interface.set_pan(self.pan)
+            self.cloud_interface.set_pan(self.pan)

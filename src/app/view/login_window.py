@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QFormLayout, QHBoxLayout, QDialog
+from PyQt6.QtWidgets import QApplication, QVBoxLayout, QFormLayout, QHBoxLayout, QDialog, QComboBox
 
 from qfluentwidgets import (
     LineEdit,
@@ -39,10 +39,12 @@ class LoginDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(15)
 
-        # 用户名输入框
-        self.le_user = LineEdit()
-        self.le_user.setPlaceholderText("请输入用户名")
-        form.addRow("用户名", self.le_user)
+        # 账户选择下拉框
+        self.cbo_accounts = QComboBox()
+        self.cbo_accounts.setEditable(True)
+        self.cbo_accounts.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.cbo_accounts.lineEdit().setPlaceholderText("选择或输入账户")
+        form.addRow("账户", self.cbo_accounts)
 
         # 密码输入框
         self.le_pass = LineEdit()
@@ -73,32 +75,48 @@ class LoginDialog(QDialog):
         self.pan = None
         self.login_error = None
 
-        # 从配置文件中加载用户名
-        config = ConfigManager.load_config()
-        self.le_user.setText(config.get("userName", ""))
-        self.le_pass.setText(config.get("passWord", ""))
+        # 从配置文件中加载已保存账户
+        account_names = ConfigManager.get_account_names()
+        for account_name in account_names:
+            self.cbo_accounts.addItem(account_name)
+
+        current_account = ConfigManager.get_current_account_name()
+        if current_account:
+            if self.cbo_accounts.findText(current_account) >= 0:
+                self.cbo_accounts.setCurrentText(current_account)
+            else:
+                self.cbo_accounts.addItem(current_account)
+                self.cbo_accounts.setCurrentText(current_account)
+
+        self.cbo_accounts.currentTextChanged.connect(self.on_account_selected)
+        self.on_account_selected(self.cbo_accounts.currentText())
+
+    def on_account_selected(self, account_name):
+        """切换账户时加载保存的信息"""
+        account_name = account_name.strip()
+        if not account_name:
+            return
+        account = ConfigManager.get_account(account_name)
+        if account:
+            self.le_pass.setText(account.get("passWord", ""))
 
     def on_ok(self):
         """登录处理"""
 
-        user = self.le_user.text().strip()
+        user = self.cbo_accounts.currentText().strip()
         pwd = self.le_pass.text()
         if not user or not pwd:
             MessageBox("提示", "请输入用户名和密码。", self).exec()
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            # 读取配置文件中的用户名，判断是否是换账号登录
-            config = ConfigManager.load_config()
-            saved_user = config.get("userName", "")
-
-            # 如果是不同的账号，或者需要强制重新登录，则不使用旧的 authorization
-            if saved_user != user:
-                # 换账号登录，使用新的用户名密码，不读取旧的 authorization
-                self.pan = Pan123(readfile=False, user_name=user, password=pwd)
-            else:
-                # 同账号登录，优先读取已保存的设备信息，避免每次创建新设备
+            account = ConfigManager.get_account(user)
+            if account:
+                # 有保存账户信息时，优先读取该账户的设备信息和授权信息
                 self.pan = Pan123(readfile=True, user_name=user, password=pwd)
+            else:
+                # 新账户登录，不读取旧账号信息
+                self.pan = Pan123(readfile=False, user_name=user, password=pwd)
 
             # 无论是否换账号，都尝试登录以确保 authorization 有效
             code = self.pan.login()

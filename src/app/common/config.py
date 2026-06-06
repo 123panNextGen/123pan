@@ -34,12 +34,8 @@ class ConfigManager:
         """加载配置"""
         ConfigManager.ensure_config_dir()
         default_config = {
-            "userName": "",
-            "passWord": "",
-            "authorization": "",
-            "deviceType": "",
-            "osVersion": "",
-            "loginuuid": "",
+            "currentAccount": "",
+            "accounts": {},
             "settings": {
                 "defaultDownloadPath": str(Path.home() / "Downloads"),
                 "askDownloadLocation": True,
@@ -47,13 +43,37 @@ class ConfigManager:
         }
 
         if CONFIG_FILE.exists():
+            migrated = False
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                    # 确保新版本配置兼容性
+                    # 兼容旧版本配置
                     if "settings" not in config:
                         config["settings"] = default_config["settings"]
-                    # 兼容旧版本配置
+                        migrated = True
+
+                    if "accounts" not in config:
+                        config["accounts"] = {}
+
+                    old_user = config.get("userName", "")
+                    if old_user:
+                        config["accounts"].setdefault(old_user, {
+                            "userName": old_user,
+                            "passWord": config.get("passWord", ""),
+                            "authorization": config.get("authorization", ""),
+                            "deviceType": config.get("deviceType", ""),
+                            "osVersion": config.get("osVersion", ""),
+                            "loginuuid": config.get("loginuuid", ""),
+                        })
+                        migrated = True
+
+                    if "currentAccount" not in config or not config.get("currentAccount", ""):
+                        config["currentAccount"] = config.get("userName", "")
+                        if not config["currentAccount"] and config["accounts"]:
+                            config["currentAccount"] = next(iter(config["accounts"]))
+                        migrated = True
+
+                    # 删除重复的顶层账号字段，只保留 accounts 区块
                     for k in [
                         "userName",
                         "passWord",
@@ -62,8 +82,12 @@ class ConfigManager:
                         "osVersion",
                         "loginuuid",
                     ]:
-                        if k not in config:
-                            config[k] = default_config.get(k, "")
+                        if k in config:
+                            del config[k]
+                            migrated = True
+
+                    if migrated:
+                        ConfigManager.save_config(config)
                     return config
             except Exception as e:
                 logger.error(f"加载配置失败: {e}")
@@ -89,7 +113,58 @@ class ConfigManager:
             return False
 
     @staticmethod
+    def get_current_account_name():
+        config = ConfigManager.load_config()
+        return config.get("currentAccount", "")
+
+    @staticmethod
+    def get_account(user_name=None):
+        config = ConfigManager.load_config()
+        accounts = config.get("accounts", {})
+        if user_name:
+            return accounts.get(user_name, {})
+        current = config.get("currentAccount", "")
+        return accounts.get(current, {})
+
+    @staticmethod
+    def get_account_names():
+        return list(ConfigManager.load_config().get("accounts", {}).keys())
+
+    @staticmethod
+    def save_account(user_name, account_info, set_current=True):
+        config = ConfigManager.load_config()
+        if "accounts" not in config:
+            config["accounts"] = {}
+        config["accounts"][user_name] = account_info
+        if set_current:
+            config["currentAccount"] = user_name
+        return ConfigManager.save_config(config)
+
+    @staticmethod
+    def set_current_account(user_name):
+        config = ConfigManager.load_config()
+        if user_name and user_name not in config.get("accounts", {}):
+            return False
+        config["currentAccount"] = user_name
+        return ConfigManager.save_config(config)
+
+    @staticmethod
     def get_setting(key, default=None):
         """获取特定设置"""
         config = ConfigManager.load_config()
-        return config.get("settings", {}).get(key, default)
+        if key in config.get("settings", {}):
+            return config["settings"][key]
+
+        if key in [
+            "userName",
+            "passWord",
+            "authorization",
+            "deviceType",
+            "osVersion",
+            "loginuuid",
+        ]:
+            account = ConfigManager.get_account()
+            if account:
+                return account.get(key, default)
+
+        return config.get(key, default)

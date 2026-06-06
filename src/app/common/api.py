@@ -111,18 +111,15 @@ class Pan123:
     def save_file(self):
         """将账户信息保存到配置文件"""
         try:
-            config = ConfigManager.load_config()
-            config.update(
-                {
-                    "userName": self.user_name,
-                    "passWord": self.password,
-                    "authorization": self.authorization,
-                    "deviceType": self.devicetype,
-                    "osVersion": self.osversion,
-                    "loginuuid": self.loginuuid,
-                }
-            )
-            ConfigManager.save_config(config)
+            account_info = {
+                "userName": self.user_name,
+                "passWord": self.password,
+                "authorization": self.authorization,
+                "deviceType": self.devicetype,
+                "osVersion": self.osversion,
+                "loginuuid": self.loginuuid,
+            }
+            ConfigManager.save_account(self.user_name, account_info)
             logger.info("账号已保存")
         except Exception as e:
             logger.error("保存账号失败:", e)
@@ -645,18 +642,43 @@ class Pan123:
         """从配置文件读取账号信息"""
         try:
             config = ConfigManager.load_config()
-            deviceType = config.get("deviceType", "")
-            osVersion = config.get("osVersion", "")
-            loginuuid = config.get("loginuuid", "")
-            if deviceType:
-                self.devicetype = deviceType
-            if osVersion:
-                self.osversion = osVersion
-            if loginuuid:
-                self.loginuuid = loginuuid
-            user_name = config.get("userName", user_name)
-            password = config.get("passWord", password)
-            authorization = config.get("authorization", authorization)
+            account = None
+            if user_name:
+                account = config.get("accounts", {}).get(user_name)
+            if not account:
+                current = config.get("currentAccount", "")
+                account = config.get("accounts", {}).get(current, {})
+
+            if account:
+                deviceType = account.get("deviceType", "")
+                osVersion = account.get("osVersion", "")
+                loginuuid = account.get("loginuuid", "")
+                if deviceType:
+                    self.devicetype = deviceType
+                if osVersion:
+                    self.osversion = osVersion
+                if loginuuid:
+                    self.loginuuid = loginuuid
+                if not password:
+                    password = account.get("passWord", password)
+                if not authorization:
+                    authorization = account.get("authorization", authorization)
+            else:
+                # 如果配置是旧版本且还保留了顶层账号字段，作为最后回退
+                deviceType = config.get("deviceType", "")
+                osVersion = config.get("osVersion", "")
+                loginuuid = config.get("loginuuid", "")
+                if deviceType:
+                    self.devicetype = deviceType
+                if osVersion:
+                    self.osversion = osVersion
+                if loginuuid:
+                    self.loginuuid = loginuuid
+                user_name = config.get("userName", user_name)
+                if not password:
+                    password = config.get("passWord", password)
+                if not authorization:
+                    authorization = config.get("authorization", authorization)
         except Exception as e:
             logger.error(f"获取配置失败: {e}")
             if user_name == "" or password == "":

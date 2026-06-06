@@ -1238,8 +1238,10 @@ class FileInterface(QWidget):
             logger.error(f"生成分享链接失败: {e}")
             InfoBar.error(title="分享失败", content=str(e), parent=self)
 
-    def update_storage_info(self, used_text):
+    def update_storage_info(self, used_text="0 B"):
         """更新云盘存储信息"""
+        if used_text is None:
+            used_text = "0 B"
         max_capacity = MAX_STORAGE_CAPACITY
         total_text = format_file_size(max_capacity)
 
