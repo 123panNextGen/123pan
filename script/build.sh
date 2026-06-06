@@ -21,9 +21,9 @@ fi
   cd "$project"
 
   uv run -m nuitka src/123pan.py \
-    --lto=yes
-    --onefile
-    --standalone
+    --lto=yes \
+    --onefile \
+    --standalone \
     --enable-plugin=pyqt6 \
     --nofollow-import-to=pytest,pylint,mypy,unittest,tkinter,pydoc,setuptools,wheel,pip,distutils \
     --assume-yes-for-downloads \
