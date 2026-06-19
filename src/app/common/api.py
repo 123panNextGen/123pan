@@ -261,7 +261,7 @@ class Pan123:
         if temp_path.exists():
             temp_path.unlink()
 
-        down = requests.get(url, stream=True, timeout=10)
+        down = self._session.transfer.get(url, stream=True, timeout=10)
         file_size = int(down.headers.get("Content-Length", 0) or 0)
 
         with open(temp_path, "wb") as f:
@@ -478,7 +478,7 @@ class Pan123:
                 upload_url = get_link_res_json["data"]["presignedUrls"][
                     str(part_number_start)
                 ]
-                requests.put(upload_url, data=data, timeout=10)
+                self._session.transfer.put(upload_url, data=data, timeout=10)
 
                 part_number_start = part_number_start + 1
 
@@ -681,13 +681,17 @@ class Pan123:
         total = 0
         accept_ranges = False
         try:
-            head = requests.head(redirect_url, allow_redirects=True, timeout=30)
+            head = self._session.transfer.head(
+                redirect_url, allow_redirects=True, timeout=30
+            )
             head.raise_for_status()
             total = int(head.headers.get("Content-Length", 0) or 0)
             accept_ranges = head.headers.get("Accept-Ranges", "").lower() == "bytes"
         except Exception:
             try:
-                with requests.get(redirect_url, stream=True, timeout=30) as r:
+                with self._session.transfer.get(
+                    redirect_url, stream=True, timeout=30
+                ) as r:
                     r.raise_for_status()
                     total = int(r.headers.get("Content-Length", 0) or 0)
                     accept_ranges = (
@@ -724,7 +728,7 @@ class Pan123:
                     part_path = Path(str(temp) + f".part{index}")
                     headers = {"Range": f"bytes={start}-{end}"}
                     try:
-                        with requests.get(
+                        with self._session.transfer.get(
                             redirect_url, headers=headers, stream=True, timeout=30
                         ) as r:
                             r.raise_for_status()
@@ -840,7 +844,9 @@ class Pan123:
                 temp.replace(out_path)
                 return out_path
             else:
-                with requests.get(redirect_url, stream=True, timeout=30) as r:
+                with self._session.transfer.get(
+                    redirect_url, stream=True, timeout=30
+                ) as r:
                     r.raise_for_status()
                     done = 0
                     with open(temp, "wb") as f:
@@ -968,7 +974,7 @@ class Pan123:
                 upload_url = get_link_res_json["data"]["presignedUrls"][
                     str(part_number)
                 ]
-                requests.put(upload_url, data=block, timeout=60)
+                self._session.transfer.put(upload_url, data=block, timeout=60)
                 total_sent += len(block)
                 if signals and fsize:
                     signals.progress.emit(int(total_sent * 100 / fsize))

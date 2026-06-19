@@ -237,7 +237,9 @@ class DownloadThread(QThread):
         # 发送请求
         logger.debug(f"下载URL: {url}")
         try:
-            with requests.get(url, stream=True, timeout=30) as response:
+            with self.pan._session.transfer.get(
+                url, stream=True, timeout=30
+            ) as response:
                 response.raise_for_status()
                 total_size = int(response.headers.get("Content-Length", 0))
                 downloaded_size = 0

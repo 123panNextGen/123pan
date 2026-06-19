@@ -36,10 +36,25 @@ class NetSession:
             "x-app-version": "2.4.0",
         })
 
+        # 传输专用会话：用于下载（CDN）与上传（S3）。
+        # 不携带 123pan 鉴权头，并扩大连接池以适配多线程分片传输，
+        # 复用 TCP/TLS 连接，避免每个分片都重新握手。
+        self._transfer = requests.Session()
+        transfer_adapter = requests.adapters.HTTPAdapter(
+            pool_connections=16, pool_maxsize=32
+        )
+        self._transfer.mount("https://", transfer_adapter)
+        self._transfer.mount("http://", transfer_adapter)
+
     @property
     def http(self) -> requests.Session:
         """公开的 requests.Session 实例，供外部直接发起 HTTP 请求。"""
         return self._http
+
+    @property
+    def transfer(self) -> requests.Session:
+        """传输专用 Session（下载/上传 CDN 与 S3），不携带鉴权头。"""
+        return self._transfer
 
     @property
     def user_info(self) -> Optional[UserInfoModel]:
@@ -370,7 +385,7 @@ class NetSession:
         对应 Flutter 中用 dart:io HttpClient 手动跟随重定向的逻辑。
         """
         try:
-            resp = requests.get(url, timeout=10, allow_redirects=False)
+            resp = self._transfer.get(url, timeout=10, allow_redirects=False)
             text = resp.text
             url_pattern = re.compile(r"href='(https?://[^']+)'")
             match = url_pattern.search(text)
