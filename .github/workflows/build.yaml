@@ -65,6 +65,12 @@ jobs:
             clang \
             ccache
 
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install upx -y
+
       - name: Run mypy
         run: |
           bash script/mypy.sh
