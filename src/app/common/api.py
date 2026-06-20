@@ -40,7 +40,6 @@ class Pan123:
         self.osversion = random.choice(all_os_versions)
         self.loginuuid = uuid.uuid4().hex
 
-        self.cookies = None
         self.recycle_list = None
         self.list = []
         self.total = 0
@@ -58,21 +57,9 @@ class Pan123:
             self.user_name = user_name
             self.password = password
             self.authorization = authorization
-        self.header_logined = self._session.http.headers
-        self._session.http.headers.update({
-            "user-agent": "123pan/v2.4.0(" + self.osversion + ";Xiaomi)",
-            "authorization": self.authorization,
-            "accept-encoding": "gzip",
-            "content-type": "application/json",
-            "osversion": self.osversion,
-            "loginuuid": self.loginuuid,
-            "platform": "android",
-            "devicetype": self.devicetype,
-            "devicename": "Xiaomi",
-            "host": "www.123pan.com",
-            "app-version": "61",
-            "x-app-version": "2.4.0",
-        })
+
+        # 将账户/设备信息同步到 NetSession，自动设置动态请求头
+        # 静态请求头（platform, devicename, host 等）已在 NetSession.__init__ 中设置
         self._sync_to_session()
         self.parent_file_id = 0
         self.parent_file_list = [0]
@@ -97,13 +84,10 @@ class Pan123:
         """登录123云盘账户并获取授权令牌"""
         result = self._session.login(self.user_name, self.password)
         if result.code not in (200, 0):
-            logger.error("code = 1 Error:" + str(result.code))
-            logger.error(result.msg)
+            logger.error("登录失败: code=%s, msg=%s", result.code, result.msg)
             return result.code
         token_data = result.data
-        self.cookies = token_data["cookies"]
         self.authorization = token_data["authorization"]
-        self.header_logined["authorization"] = self.authorization
         self.save_file()
         return 200
 
@@ -132,12 +116,11 @@ class Pan123:
 
         Args:
             file_id: 文件夹ID
-            save: 是否保存结果到列表
+            save: 是否保存结果到 self.list
             all: 是否强制获取所有文件
             limit: 每页限制数量
         """
         get_pages = 3
-        res_code_getdir = 0
         page = self.file_page * get_pages + 1
         lenth_now = len(self.list)
         if all:
@@ -148,58 +131,36 @@ class Pan123:
         total = -1
         times = 0
         while (lenth_now < total or total == -1) and (times < get_pages or all):
-            base_url = "https://www.123pan.com/api/file/list/new"
-            params = {
-                "driveId": 0,
-                "limit": limit,
-                "next": 0,
-                "orderBy": "file_id",
-                "orderDirection": "desc",
-                "parentFileId": str(file_id),
-                "trashed": False,
-                "SearchData": "",
-                "Page": str(page),
-                "OnlyLookAbnormalFile": 0,
-            }
-            try:
-                a = self._session.http.get(
-                    base_url, params=params, timeout=30
-                )
-            except requests.exceptions.Timeout:
-                logger.error(f"请求超时: {base_url}")
-                return -1, []
-            except requests.exceptions.ConnectionError as e:
-                logger.error(f"连接失败: {e}")
-                return -1, []
-            except requests.exceptions.RequestException as e:
-                logger.error(f"请求异常: {e}")
-                return -1, []
-            text = a.json()
-            res_code_getdir = text["code"]
-            if res_code_getdir != 0:
-                if res_code_getdir == 2:
-                    logger.warning("token 过期，正在尝试重新登录")
-                    login_code = self.login()
-                    if login_code == 0 or login_code == 200:
-                        return self.get_dir_by_id(file_id, save, all, limit)
-                logger.error("code = 2 Error:" + str(res_code_getdir))
-                logger.error(text.get("message", ""))
-                return res_code_getdir, []
-            lists_page = text["data"]["InfoList"]
+            result = self._session.get_file_list(
+                file_id=file_id, page=page, limit=limit, retry_login=False
+            )
+            if result.code == 2:
+                # token 过期，重新登录后重试
+                logger.warning("token 过期，正在尝试重新登录")
+                login_code = self.login()
+                if login_code == 200:
+                    return self.get_dir_by_id(file_id, save, all, limit)
+                logger.error("重新登录失败")
+                return result.code, []
+            if result.code != 0:
+                logger.error("获取文件列表失败: code=%s, msg=%s", result.code, result.msg)
+                return result.code, []
+
+            file_list_data = result.data.data
+            # 转换为旧格式 dict 以保持与现有代码的兼容性
+            lists_page = [item.to_json() for item in file_list_data.info_list]
             lists += lists_page
-            total = text["data"]["Total"]
+            total = file_list_data.total
             lenth_now += len(lists_page)
             page += 1
             times += 1
             if times % 5 == 0:
-                logger.warning(
-                    "警告：文件夹内文件过多：" + str(lenth_now) + "/" + str(total)
-                )
+                logger.warning("警告：文件夹内文件过多：%s/%s", lenth_now, total)
                 logger.info("为防止对服务器造成影响，暂停3秒")
                 time.sleep(3)
 
         if lenth_now < total:
-            logger.warning("文件夹内文件过多：" + str(lenth_now) + "/" + str(total))
+            logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
             self.all_file = False
         else:
             self.all_file = True
@@ -208,7 +169,7 @@ class Pan123:
         if save:
             self.list = self.list + lists
 
-        return res_code_getdir, lists
+        return 0, lists
 
     def show(self):
         """显示文件列表信息到日志"""
@@ -310,17 +271,13 @@ class Pan123:
 
     def recycle(self):
         """获取回收站列表"""
-        recycle_id = 0
-        url = (
-            "https://www.123pan.com/a/api/file/list/new?driveId=0&limit=100&next=0"
-            "&orderBy=fileId&orderDirection=desc&parentFileId="
-            + str(recycle_id)
-            + "&trashed=true&&Page=1"
-        )
-        recycle_res = self._session.http.get(url, timeout=10)
-        json_recycle = recycle_res.json()
-        recycle_list = json_recycle["data"]["InfoList"]
-        self.recycle_list = recycle_list
+        result = self._session.get_trash_list()
+        if result.code != 0:
+            logger.error("获取回收站失败: code=%s, msg=%s", result.code, result.msg)
+            self.recycle_list = []
+            return
+        file_list_data = result.data.data
+        self.recycle_list = [item.to_json() for item in file_list_data.info_list]
 
     def delete_file(self, file, by_num=True, operation=True):
         """删除或恢复文件"""
@@ -584,6 +541,14 @@ class Pan123:
                 account = config.get("accounts", {}).get(current, {})
 
             if account:
+                # 从账户配置中恢复用户名（修复多账户切换后 user_name 为空的问题）
+                if not user_name:
+                    user_name = account.get("userName", user_name)
+                if not password:
+                    password = account.get("passWord", password)
+                if not authorization:
+                    authorization = account.get("authorization", authorization)
+
                 deviceType = account.get("deviceType", "")
                 osVersion = account.get("osVersion", "")
                 loginuuid = account.get("loginuuid", "")
@@ -593,10 +558,6 @@ class Pan123:
                     self.osversion = osVersion
                 if loginuuid:
                     self.loginuuid = loginuuid
-                if not password:
-                    password = account.get("passWord", password)
-                if not authorization:
-                    authorization = account.get("authorization", authorization)
             else:
                 deviceType = config.get("deviceType", "")
                 osVersion = config.get("osVersion", "")

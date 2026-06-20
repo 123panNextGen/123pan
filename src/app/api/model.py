@@ -50,19 +50,19 @@ class FileItemModel:
     starred_status: bool
 
     def from_json(self, json: dict[str, Any]):
-        self.file_id = json['FileId']
-        self.file_name = json['FileName']
-        self._type = json['Type']
-        self.size = json['Size']
-        self.create_at = datetime.fromtimestamp(json['CreateAt'])
-        self.update_at = datetime.fromtimestamp(json['UpdateAt'])
-        self.hidden = json['Hidden']
-        self.etag = json['Etag']
-        self.s3key_flag = json['S3KeyFlag']
-        self.content_type = json['ContentType']
-        self.parent_file_id = json['ParentFileId']
-        self.pin_yin = json['PinYin']
-        self.starred_status = json['StarredStatus']
+        self.file_id = int(json['FileId'])
+        self.file_name = str(json['FileName'])
+        self._type = int(json['Type'])
+        self.size = int(json['Size'])
+        self.create_at = self._parse_timestamp(json['CreateAt'])
+        self.update_at = self._parse_timestamp(json['UpdateAt'])
+        self.hidden = bool(json['Hidden'])
+        self.etag = str(json['Etag'])
+        self.s3key_flag = str(json['S3KeyFlag'])
+        self.content_type = str(json['ContentType'])
+        self.parent_file_id = int(json['ParentFileId'])
+        self.pin_yin = str(json['PinYin'])
+        self.starred_status = bool(json['StarredStatus'])
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -84,22 +84,36 @@ class FileItemModel:
     def is_dir(self):
         return self._type == 1
 
+    @staticmethod
+    def _parse_timestamp(value) -> datetime:
+        """安全解析时间戳，兼容 Unix 时间戳(int/float/str)和 ISO 8601 字符串。"""
+        if value is None or value == 0 or value == "":
+            return datetime.fromtimestamp(0)
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value)
+        s = str(value).strip()
+        if not s:
+            return datetime.fromtimestamp(0)
+        if 'T' in s or '-' in s:
+            return datetime.fromisoformat(s)
+        return datetime.fromtimestamp(float(s))
+
     @classmethod
     def from_dict(cls, json: dict[str, Any]) -> 'FileItemModel':
         return cls(
-            file_id=json.get('FileId', json.get('fileId', 0)),
-            file_name=json.get('FileName', json.get('fileName', '')),
-            _type=json.get('Type', json.get('type', 0)),
-            size=json.get('Size', json.get('size', 0)),
-            create_at=datetime.fromtimestamp(json.get('CreateAt', json.get('createAt', 0))),
-            update_at=datetime.fromtimestamp(json.get('UpdateAt', json.get('updateAt', 0))),
-            hidden=json.get('Hidden', json.get('hidden', False)),
-            etag=json.get('Etag', json.get('etag', '')),
-            s3key_flag=json.get('S3KeyFlag', json.get('s3keyFlag', '')),
-            content_type=json.get('ContentType', json.get('contentType', '')),
-            parent_file_id=json.get('ParentFileId', json.get('parentFileId', 0)),
-            pin_yin=json.get('PinYin', json.get('pinYin', '')),
-            starred_status=json.get('StarredStatus', json.get('starredStatus', False)),
+            file_id=int(json.get('FileId', json.get('fileId', 0))),
+            file_name=str(json.get('FileName', json.get('fileName', ''))),
+            _type=int(json.get('Type', json.get('type', 0))),
+            size=int(json.get('Size', json.get('size', 0))),
+            create_at=cls._parse_timestamp(json.get('CreateAt', json.get('createAt', 0))),
+            update_at=cls._parse_timestamp(json.get('UpdateAt', json.get('updateAt', 0))),
+            hidden=bool(json.get('Hidden', json.get('hidden', False))),
+            etag=str(json.get('Etag', json.get('etag', ''))),
+            s3key_flag=str(json.get('S3KeyFlag', json.get('s3keyFlag', ''))),
+            content_type=str(json.get('ContentType', json.get('contentType', ''))),
+            parent_file_id=int(json.get('ParentFileId', json.get('parentFileId', 0))),
+            pin_yin=str(json.get('PinYin', json.get('pinYin', ''))),
+            starred_status=bool(json.get('StarredStatus', json.get('starredStatus', False))),
         )
 
 
@@ -116,9 +130,9 @@ class FileListData:
         info = json.get('InfoList', json.get('infoList', []))
         return cls(
             next=str(json.get('Next', json.get('next', '-1'))),
-            len=json.get('Len', json.get('len', 0)),
-            total=json.get('Total', json.get('total', 0)),
-            is_first=json.get('IsFirst', json.get('isFirst', False)),
+            len=int(json.get('Len', json.get('len', 0))),
+            total=int(json.get('Total', json.get('total', 0))),
+            is_first=bool(json.get('IsFirst', json.get('isFirst', False))),
             info_list=[FileItemModel.from_dict(item) for item in info],
         )
 
@@ -132,7 +146,7 @@ class FileListResponse:
     @classmethod
     def from_dict(cls, json: dict[str, Any]) -> 'FileListResponse':
         return cls(
-            code=json.get('code', json.get('Code', -1)),
-            message=json.get('message', json.get('Message', '')),
+            code=int(json.get('code', json.get('Code', -1))),
+            message=str(json.get('message', json.get('Message', ''))),
             data=FileListData.from_dict(json.get('data', json.get('Data', {}))),
         )
