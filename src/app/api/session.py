@@ -1,6 +1,11 @@
+import concurrent.futures
 import json
+import os
 import re
-from typing import Any, Optional
+import time
+import threading
+from pathlib import Path
+from typing import Any, Optional, Callable
 from urllib.parse import urljoin
 
 import requests
@@ -46,6 +51,18 @@ class NetSession:
         self._transfer.mount("https://", transfer_adapter)
         self._transfer.mount("http://", transfer_adapter)
 
+        # 多线程下载配置
+        self._multi_thread_enabled: bool = True
+        self._num_threads: int = 4
+        self._chunk_size: int = 1024 * 1024  # 每个分片 1MB
+
+        # 速度限制器引用（由外部注入）
+        self._download_limiter = None
+        self._upload_limiter = None
+
+        # 进度回调
+        self._progress_callback: Optional[Callable[[int, int], None]] = None
+
     @property
     def http(self) -> requests.Session:
         """公开的 requests.Session 实例，供外部直接发起 HTTP 请求。"""
@@ -75,6 +92,237 @@ class NetSession:
         """设置用户信息并刷新请求头。"""
         self._user_info = user_info
         self._update_headers()
+
+    # ---- 多线程 / 速度 / 代理 配置 ----
+
+    def set_multi_thread(self, enabled: bool, num_threads: int = 4):
+        """启用或关闭多线程下载。
+
+        Args:
+            enabled: 是否启用多线程下载。
+            num_threads: 线程数，默认 4。
+        """
+        self._multi_thread_enabled = enabled
+        self._num_threads = max(1, min(num_threads, 16))
+
+    def set_speed_limiter(self, limiter, is_upload: bool = False):
+        """设置速度限制器。
+
+        Args:
+            limiter: SpeedLimiter 实例。
+            is_upload: 是否为上传限速器。
+        """
+        if is_upload:
+            self._upload_limiter = limiter
+        else:
+            self._download_limiter = limiter
+
+    def set_progress_callback(self, callback: Optional[Callable[[int, int], None]]):
+        """设置传输进度回调。
+
+        Args:
+            callback: 回调函数 (downloaded_bytes, total_bytes)。
+        """
+        self._progress_callback = callback
+
+    def set_proxy(self, proxy_url: str):
+        """设置代理。
+
+        Args:
+            proxy_url: 代理 URL，如 'http://127.0.0.1:8080' 或 'socks5://127.0.0.1:1080'。
+                       传空字符串则清除代理。
+        """
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        # 清除现有代理适配器
+        self._http.adapters.clear()
+        self._transfer.adapters.clear()
+        if proxy_url:
+            # 为带代理的 session 重新挂载适配器
+            for session in (self._http, self._transfer):
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=16, pool_maxsize=32
+                )
+                session.mount("https://", adapter)
+                session.mount("http://", adapter)
+        else:
+            # 恢复无代理状态
+            for session in (self._http, self._transfer):
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=16, pool_maxsize=32
+                )
+                session.mount("https://", adapter)
+                session.mount("http://", adapter)
+        self._http.proxies = proxies or {}
+        self._transfer.proxies = proxies or {}
+
+    def set_proxy_auth(self, proxy_type: str, host: str, port: int,
+                       username: str = "", password: str = ""):
+        """通过参数设置代理。
+
+        Args:
+            proxy_type: 代理类型 'http' 或 'socks5'。
+            host: 代理主机。
+            port: 代理端口。
+            username: 用户名（可选）。
+            password: 密码（可选）。
+        """
+        if not host or port <= 0:
+            self.set_proxy("")
+            return
+
+        auth = f"{username}:{password}@" if username and password else ""
+        proxy_url = f"{proxy_type}://{auth}{host}:{port}"
+        self.set_proxy(proxy_url)
+
+    # ---- 多线程下载 ----
+
+    def download_file_multithread(
+        self,
+        url: str,
+        file_path: Path,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> bool:
+        """多线程分片下载文件。
+
+        先发送 HEAD 请求检查服务器是否支持 Range，
+        若支持且文件大于分片阈值则使用多线程，否则回退到单线程。
+
+        Args:
+            url: 下载链接。
+            file_path: 保存路径。
+            file_size: 文件总大小（字节）。
+            progress_callback: 进度回调 (downloaded, total)。
+
+        Returns:
+            是否下载成功。
+        """
+        if not self._multi_thread_enabled or self._num_threads <= 1:
+            return self._download_single(url, file_path, file_size, progress_callback)
+
+        # 检查服务器是否支持 Range
+        supports_range = self._check_range_support(url)
+        min_chunk = 5 * 1024 * 1024  # 小于 5MB 不分片
+
+        if not supports_range or file_size < min_chunk:
+            return self._download_single(url, file_path, file_size, progress_callback)
+
+        return self._download_chunked(url, file_path, file_size, progress_callback)
+
+    def _check_range_support(self, url: str) -> bool:
+        """检查 URL 是否支持 Range 请求。"""
+        try:
+            resp = self._transfer.head(url, timeout=10, allow_redirects=True)
+            return resp.headers.get("Accept-Ranges") == "bytes"
+        except requests.RequestException:
+            return False
+
+    def _download_single(
+        self,
+        url: str,
+        file_path: Path,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> bool:
+        """单线程流式下载。"""
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        try:
+            with self._transfer.get(url, stream=True, timeout=30) as resp:
+                resp.raise_for_status()
+                downloaded = 0
+                with open(temp_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if self._download_limiter:
+                                wait = self._download_limiter.consume(len(chunk))
+                                if wait > 0:
+                                    time.sleep(wait)
+                            if progress_callback:
+                                progress_callback(downloaded, file_size)
+            if temp_path.exists():
+                if file_path.exists():
+                    file_path.unlink()
+                temp_path.rename(file_path)
+            return True
+        except Exception:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+
+    def _download_chunked(
+        self,
+        url: str,
+        file_path: Path,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> bool:
+        """多线程分片下载。"""
+        chunk_size = max(self._chunk_size, file_size // self._num_threads)
+        ranges = []
+        start = 0
+        while start < file_size:
+            end = min(start + chunk_size - 1, file_size - 1)
+            ranges.append((start, end))
+            start = end + 1
+
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        progress_lock = threading.Lock()
+        downloaded_bytes = [0] * len(ranges)
+
+        def _report_progress():
+            if progress_callback:
+                total = sum(downloaded_bytes)
+                progress_callback(total, file_size)
+
+        def _download_chunk(idx: int, byte_range: tuple):
+            headers = {"Range": f"bytes={byte_range[0]}-{byte_range[1]}"}
+            try:
+                with self._transfer.get(
+                    url, headers=headers, stream=True, timeout=60
+                ) as resp:
+                    resp.raise_for_status()
+                    chunk_data = bytearray()
+                    for data in resp.iter_content(chunk_size=8192):
+                        if data:
+                            chunk_data.extend(data)
+                            if self._download_limiter:
+                                wait = self._download_limiter.consume(len(data))
+                                if wait > 0:
+                                    time.sleep(wait)
+                            with progress_lock:
+                                downloaded_bytes[idx] += len(data)
+                                _report_progress()
+                    return bytes(chunk_data), byte_range[0]
+            except Exception:
+                return None, byte_range[0]
+
+        # 使用线程池并行下载
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self._num_threads
+        ) as executor:
+            futures = {
+                executor.submit(_download_chunk, i, r): i
+                for i, r in enumerate(ranges)
+            }
+            results = {}
+            for future in concurrent.futures.as_completed(futures):
+                data, offset = future.result()
+                if data is None:
+                    raise RuntimeError(f"分片下载失败: offset={offset}")
+                results[offset] = data
+
+        # 按顺序写入文件
+        with open(temp_path, "wb") as f:
+            for byte_range in ranges:
+                f.write(results[byte_range[0]])
+
+        if temp_path.exists():
+            if file_path.exists():
+                file_path.unlink()
+            temp_path.rename(file_path)
+        return True
 
     def _build_headers(self) -> dict[str, str]:
         """构建设备伪装请求头。"""

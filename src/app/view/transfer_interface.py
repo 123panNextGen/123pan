@@ -26,6 +26,8 @@ from qfluentwidgets import (
 
 from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
+from ..common.config import ConfigManager
+from ..common.speed_limiter import SpeedLimiter
 
 from ..common.log import get_logger
 
@@ -62,7 +64,7 @@ class DownloadTask(TransferTask):
 
 
 class UploadThread(QThread):
-    """上传线程"""
+    """上传线程（支持速度限制）"""
 
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
@@ -76,8 +78,16 @@ class UploadThread(QThread):
 
     def run(self):
         try:
-            # 更新状态为上传中
             self.status_updated.emit("上传中")
+
+            # 读取上传速度限制
+            ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
+            if ul_limit > 0:
+                self.pan._session.set_speed_limiter(
+                    SpeedLimiter(ul_limit), is_upload=True
+                )
+            else:
+                self.pan._session.set_speed_limiter(None, is_upload=True)
 
             # 保存当前目录
             current_parent_id = self.pan.parent_file_id
@@ -91,7 +101,6 @@ class UploadThread(QThread):
             # 恢复当前目录
             self.pan.parent_file_id = current_parent_id
 
-            # 更新状态为完成
             self.progress_updated.emit(100)
             self.status_updated.emit("已完成")
             self.finished.emit()
@@ -101,7 +110,7 @@ class UploadThread(QThread):
 
 
 class DownloadThread(QThread):
-    """下载线程"""
+    """下载线程（支持多线程分片和速度限制）"""
 
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
@@ -118,101 +127,66 @@ class DownloadThread(QThread):
             # 更新状态为下载中
             self.status_updated.emit("下载中")
 
-            # 记录调试信息
-            from ..common.log import get_logger
+            # 读取配置：多线程开关和速度限制
+            multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
+            dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
 
-            logger = get_logger(__name__)
+            # 配置 NetSession
+            session = self.pan._session
+            session.set_multi_thread(multi_thread)
+
+            if dl_limit > 0:
+                limiter = SpeedLimiter(dl_limit)
+                session.set_speed_limiter(limiter, is_upload=False)
+            else:
+                session.set_speed_limiter(None, is_upload=False)
+
+            # 设置进度回调
+            def _on_progress(downloaded, total):
+                if total > 0:
+                    pct = int(downloaded * 100 / total)
+                    self.progress_updated.emit(pct)
+
+            session.set_progress_callback(_on_progress)
+
             logger.debug(
-                f"下载任务: {self.task.file_name}, file_id: {self.task.file_id}, type: {type(self.task.file_id)}"
+                f"下载任务: {self.task.file_name}, file_id: {self.task.file_id}"
             )
-            logger.debug(f"当前目录ID: {self.task.current_dir_id}")
 
-            # 直接使用文件ID下载，不需要查找索引
-            # 先在当前文件夹中查找文件
-            target_file = None
-
-            # 尝试在当前目录中查找
-            code, files = self.pan.get_dir_by_id(
-                self.task.current_dir_id, save=False, all=True, limit=1000
-            )
-            if code == 0:
-                logger.debug(
-                    f"在当前目录中查找文件，当前目录ID: {self.task.current_dir_id}"
-                )
-                for file in files:
-                    file_id = file.get("FileId")
-                    if str(file_id) == str(self.task.file_id):
-                        target_file = file
-                        logger.debug(
-                            f"在当前目录中找到文件: {target_file.get('FileName')}"
-                        )
-                        break
-
-            # 如果还是找不到，尝试从Pan123的list属性中查找
-            if not target_file:
-                logger.debug("在当前目录中找不到文件，尝试从Pan123的list属性中查找")
-                for file in self.pan.list:
-                    file_id = file.get("FileId")
-                    if str(file_id) == str(self.task.file_id):
-                        target_file = file
-                        logger.debug(
-                            f"从Pan123的list属性中找到文件: {target_file.get('FileName')}"
-                        )
-                        break
-
-            # 如果还是找不到，尝试获取根目录的所有文件，然后查找
-            if not target_file:
-                logger.debug("从Pan123的list属性中找不到文件，尝试获取根目录的所有文件")
-                code, files = self.pan.get_dir_by_id(
-                    0, save=False, all=True, limit=1000
-                )
-                if code == 0:
-                    for file in files:
-                        file_id = file.get("FileId")
-                        if str(file_id) == str(self.task.file_id):
-                            target_file = file
-                            logger.debug(
-                                f"从根目录的所有文件中找到文件: {target_file.get('FileName')}"
-                            )
-                            break
+            # 查找文件信息
+            target_file = self._find_file_info()
 
             if not target_file:
-                # 如果还是找不到，尝试直接使用文件ID构造文件详情
-                logger.debug("所有搜索方法都找不到文件，尝试直接使用文件ID构造文件详情")
-                # 这里我们尝试直接使用文件ID获取文件详情
-                # 注意：这种方法可能不适用，因为link_by_fileDetail需要完整的文件详情
-                # 但我们可以尝试构造一个基本的文件详情对象
                 target_file = {
                     "FileId": self.task.file_id,
                     "FileName": self.task.file_name,
-                    "Type": 0,  # 假设是文件
+                    "Type": 0,
                     "Size": self.task.file_size,
-                    "Etag": "",  # 空ETag
-                    "S3KeyFlag": False,  # 假设不是S3存储
+                    "Etag": "",
+                    "S3KeyFlag": False,
                 }
                 logger.debug(f"构造文件详情: {target_file}")
 
-            # 执行下载
-            class ProgressSignals:
-                def __init__(self, thread):
-                    self.thread = thread
-
-                def emit(self, value):
-                    self.thread.progress_updated.emit(value)
-
-            signals = ProgressSignals(self)
-
-            # 使用文件详情获取下载链接
-            logger.debug(f"开始下载文件: {target_file.get('FileName')}")
+            # 获取下载链接
             download_url = self.pan.link_by_fileDetail(target_file, showlink=False)
             if isinstance(download_url, int):
-                logger.error(f"获取下载链接失败，返回码: {download_url}")
                 raise RuntimeError(f"获取下载链接失败，返回码: {download_url}")
 
-            # 直接从URL下载
-            self.__download_from_url(
-                download_url, self.task.save_path, self.task.file_name, signals
+            # 确保保存路径存在
+            file_path = Path(self.task.save_path)
+            save_dir = file_path.parent
+            if not save_dir.exists():
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+            # 使用多线程下载
+            file_size = int(target_file.get("Size", self.task.file_size) or 0)
+            success = session.download_file_multithread(
+                download_url, file_path, file_size,
+                progress_callback=_on_progress,
             )
+
+            if not success:
+                raise RuntimeError("下载失败")
 
             # 更新状态为完成
             self.progress_updated.emit(100)
@@ -223,58 +197,33 @@ class DownloadThread(QThread):
             self.error.emit(str(e))
             self.status_updated.emit("失败")
 
-    def __download_from_url(self, url, save_path, file_name, signals):
-        """从URL下载文件"""
+    def _find_file_info(self):
+        """在多个数据源中查找文件信息。"""
+        # 在当前目录中查找
+        code, files = self.pan.get_dir_by_id(
+            self.task.current_dir_id, save=False, all=True, limit=1000
+        )
+        if code == 0:
+            for f in files:
+                if str(f.get("FileId")) == str(self.task.file_id):
+                    logger.debug(f"在当前目录中找到: {f.get('FileName')}")
+                    return f
 
-        # 确保保存路径存在
-        file_path = Path(save_path)
-        save_dir = file_path.parent
-        if not save_dir.exists():
-            save_dir.mkdir(parents=True, exist_ok=True)
+        # 从 Pan123 list 中查找
+        for f in self.pan.list:
+            if str(f.get("FileId")) == str(self.task.file_id):
+                logger.debug(f"从 list 中找到: {f.get('FileName')}")
+                return f
 
-        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        # 从根目录查找
+        code, files = self.pan.get_dir_by_id(0, save=False, all=True, limit=1000)
+        if code == 0:
+            for f in files:
+                if str(f.get("FileId")) == str(self.task.file_id):
+                    logger.debug(f"从根目录找到: {f.get('FileName')}")
+                    return f
 
-        # 发送请求
-        logger.debug(f"下载URL: {url}")
-        try:
-            with self.pan._session.transfer.get(
-                url, stream=True, timeout=30
-            ) as response:
-                response.raise_for_status()
-                total_size = int(response.headers.get("Content-Length", 0))
-                downloaded_size = 0
-                last_progress = 0
-
-                # 写入文件
-                with open(temp_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            if total_size > 0:
-                                progress = int(downloaded_size * 100 / total_size)
-                                # 只在进度变化时发送信号，减少信号发射频率
-                                if progress != last_progress:
-                                    signals.emit(progress)
-                                    last_progress = progress
-
-            # 重命名临时文件
-            if temp_path.exists():
-                if file_path.exists():
-                    file_path.unlink()
-                temp_path.rename(file_path)
-            else:
-                raise Exception("临时文件不存在")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"下载请求失败: {url} -> {e}")
-            if temp_path.exists():
-                temp_path.unlink()
-            raise RuntimeError(f"下载请求失败: {e}")
-        except Exception as e:
-            # 清理临时文件
-            if temp_path.exists():
-                temp_path.unlink()
-            raise e
+        return None
 
 
 class TransferInterface(QWidget):
@@ -301,6 +250,48 @@ class TransferInterface(QWidget):
     def set_pan(self, pan):
         """设置Pan123实例"""
         self.pan = pan
+        # 应用代理和速度限制配置
+        self._apply_proxy_settings()
+        self._apply_speed_settings()
+
+    def _apply_proxy_settings(self):
+        """从配置读取并应用代理设置。"""
+        if not self.pan:
+            return
+        enabled = ConfigManager.get_setting("proxyEnabled", False)
+        if enabled:
+            proxy_type = ConfigManager.get_setting("proxyType", "http")
+            host = ConfigManager.get_setting("proxyHost", "")
+            port = ConfigManager.get_setting("proxyPort", 0)
+            username = ConfigManager.get_setting("proxyUsername", "")
+            password = ConfigManager.get_setting("proxyPassword", "")
+            if host and port > 0:
+                self.pan._session.set_proxy_auth(
+                    proxy_type, host, port, username, password
+                )
+                logger.info(f"代理已启用: {proxy_type}://{host}:{port}")
+        else:
+            self.pan._session.set_proxy("")
+
+    def _apply_speed_settings(self):
+        """从配置读取并应用速度限制设置。"""
+        if not self.pan:
+            return
+        dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
+        ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
+        multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
+
+        self.pan._session.set_multi_thread(multi_thread)
+
+        if dl_limit > 0:
+            self.pan._session.set_speed_limiter(SpeedLimiter(dl_limit), is_upload=False)
+        else:
+            self.pan._session.set_speed_limiter(None, is_upload=False)
+
+        if ul_limit > 0:
+            self.pan._session.set_speed_limiter(SpeedLimiter(ul_limit), is_upload=True)
+        else:
+            self.pan._session.set_speed_limiter(None, is_upload=True)
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)

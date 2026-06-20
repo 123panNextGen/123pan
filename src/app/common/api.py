@@ -532,16 +532,12 @@ class Pan123:
     ):
         """从配置文件读取账号信息"""
         try:
-            config = ConfigManager.load_config()
-            account = None
-            if user_name:
-                account = config.get("accounts", {}).get(user_name)
+            # 使用 ConfigManager.get_account() 以支持密码解密
+            account = ConfigManager.get_account(user_name) if user_name else {}
             if not account:
-                current = config.get("currentAccount", "")
-                account = config.get("accounts", {}).get(current, {})
+                account = ConfigManager.get_account(None)  # 当前账户
 
             if account:
-                # 从账户配置中恢复用户名（修复多账户切换后 user_name 为空的问题）
                 if not user_name:
                     user_name = account.get("userName", user_name)
                 if not password:
@@ -559,6 +555,8 @@ class Pan123:
                 if loginuuid:
                     self.loginuuid = loginuuid
             else:
+                # 兼容旧版：从顶层字段读取
+                config = ConfigManager.load_config()
                 deviceType = config.get("deviceType", "")
                 osVersion = config.get("osVersion", "")
                 loginuuid = config.get("loginuuid", "")

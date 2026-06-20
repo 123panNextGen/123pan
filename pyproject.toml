@@ -1,6 +1,6 @@
 [project]
 name = "123pan"
-version = "3.0.10"
+version = "3.1.0"
 description = "第三方123云盘客户端，解决了123云盘电脑客户端限制每日1GB自用流量的问题 "
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,6 +9,7 @@ dependencies = [
     "pyqt6-fluent-widgets>=1.11.1",
     "requests>=2.32.5",
     "zstandard>=0.25.0",
+    "cryptography>=44.0.0",
 ]
 
 [project.optional-dependencies]
