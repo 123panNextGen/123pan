@@ -24,7 +24,7 @@
 ## 项目源码结构
 
 ```
-123pan
+123pan/
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
 ├── doc
@@ -41,12 +41,17 @@
 │   ├── 123pan.pro
 │   ├── 123pan.py
 │   └── app
+│       ├── api
+│       │   ├── model.py
+│       │   └── session.py
 │       ├── common
 │       │   ├── api.py
 │       │   ├── config.py
 │       │   ├── const.py
+│       │   ├── credential.py
 │       │   ├── log.py
 │       │   ├── resource.py
+│       │   ├── speed_limiter.py
 │       │   └── style_sheet.py
 │       ├── resource
 │       │   ├── qss
@@ -81,7 +86,7 @@
 ├── TODO.md
 └── uv.lock
 
-11 directories, 45 files
+12 directories, 49 files
 ```
 
 ## 使用
@@ -128,6 +133,8 @@ uv run src/123pan.py
 
 默认会在系统`C:\Users\%USERNAME%\AppData\Roaming\123pan`或`~/.config/123pan`创建配置文件和日志。
 
+密码使用 AES-256-GCM 加密存储，密钥基于机器标识派生，存储于 `~/.config/123pan/.keyfile`（权限 600）。
+
 ```json
 {
   "currentAccount": "账号",
@@ -143,10 +150,35 @@ uv run src/123pan.py
   },
   "settings": {
     "defaultDownloadPath": "默认下载位置",
-    "askDownloadLocation": true
+    "askDownloadLocation": true,
+    "multiThreadDownload": true,
+    "downloadSpeedLimit": 0,
+    "uploadSpeedLimit": 0,
+    "proxyEnabled": false,
+    "proxyType": "http",
+    "proxyHost": "",
+    "proxyPort": 0,
+    "proxyUsername": "",
+    "proxyPassword": ""
   }
 }
 ```
+
+### 设置项说明
+
+| 设置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `defaultDownloadPath` | string | `~/Downloads` | 默认下载目录 |
+| `askDownloadLocation` | bool | `true` | 每次下载前是否询问保存位置 |
+| `multiThreadDownload` | bool | `true` | 是否启用多线程分片下载 |
+| `downloadSpeedLimit` | int | `0` | 下载速度限制（KB/s），`0` 表示不限制 |
+| `uploadSpeedLimit` | int | `0` | 上传速度限制（KB/s），`0` 表示不限制 |
+| `proxyEnabled` | bool | `false` | 是否启用网络代理 |
+| `proxyType` | string | `"http"` | 代理类型：`"http"` 或 `"socks5"` |
+| `proxyHost` | string | `""` | 代理服务器地址 |
+| `proxyPort` | int | `0` | 代理服务器端口 |
+| `proxyUsername` | string | `""` | 代理认证用户名（可选） |
+| `proxyPassword` | string | `""` | 代理认证密码（可选） |
 
 ## 问题反馈
 
@@ -177,10 +209,10 @@ uv run src/123pan.py
 - **使用者应自行承担使用本软件的全部风险，并遵守 123 云盘用户协议及相关法律法规**
 - **请勿将本软件用于商业用途**
 
-## Fork版本推荐
+## 其他版本推荐
 
 >[!IMPORTANT]
->以下Fork项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
+>以下项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
 
 - https://github.com/crmmc/123pan-open
 

@@ -62,6 +62,7 @@ jobs:
             libxcb-xinerama0 \
             zip \
             upx \
+            clang \
             ccache
 
       - name: Run mypy

@@ -39,6 +39,18 @@ class ConfigManager:
             "settings": {
                 "defaultDownloadPath": str(Path.home() / "Downloads"),
                 "askDownloadLocation": True,
+                # 多线程下载开关
+                "multiThreadDownload": True,
+                # 速度限制（0 表示不限制，单位 KB/s）
+                "downloadSpeedLimit": 0,
+                "uploadSpeedLimit": 0,
+                # 代理配置
+                "proxyEnabled": False,
+                "proxyType": "http",
+                "proxyHost": "",
+                "proxyPort": 0,
+                "proxyUsername": "",
+                "proxyPassword": "",
             },
         }
 
@@ -86,6 +98,12 @@ class ConfigManager:
                             del config[k]
                             migrated = True
 
+                    # 补齐缺失的 settings 默认值
+                    for key, val in default_config["settings"].items():
+                        if key not in config.get("settings", {}):
+                            config["settings"][key] = val
+                            migrated = True
+
                     if migrated:
                         ConfigManager.save_config(config)
                     return config
@@ -122,9 +140,17 @@ class ConfigManager:
         config = ConfigManager.load_config()
         accounts = config.get("accounts", {})
         if user_name:
-            return accounts.get(user_name, {})
-        current = config.get("currentAccount", "")
-        return accounts.get(current, {})
+            account = accounts.get(user_name, {})
+        else:
+            current = config.get("currentAccount", "")
+            account = accounts.get(current, {})
+
+        # 解密密码（惰性导入避免循环依赖）
+        if account and account.get("passWord", "").startswith("enc:"):
+            from .credential import decrypt_credential
+            account = dict(account)
+            account["passWord"] = decrypt_credential(account["passWord"])
+        return account
 
     @staticmethod
     def get_account_names():
@@ -135,7 +161,15 @@ class ConfigManager:
         config = ConfigManager.load_config()
         if "accounts" not in config:
             config["accounts"] = {}
-        config["accounts"][user_name] = account_info
+
+        # 加密密码后存储（惰性导入避免循环依赖）
+        info = dict(account_info)
+        pwd = info.get("passWord", "")
+        if pwd and not pwd.startswith("enc:"):
+            from .credential import encrypt_credential
+            info["passWord"] = encrypt_credential(pwd)
+
+        config["accounts"][user_name] = info
         if set_current:
             config["currentAccount"] = user_name
         return ConfigManager.save_config(config)
@@ -168,3 +202,12 @@ class ConfigManager:
                 return account.get(key, default)
 
         return config.get(key, default)
+
+    @staticmethod
+    def set_setting(key, value):
+        """设置特定设置项并保存"""
+        config = ConfigManager.load_config()
+        if "settings" not in config:
+            config["settings"] = {}
+        config["settings"][key] = value
+        return ConfigManager.save_config(config)
