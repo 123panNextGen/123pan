@@ -24,7 +24,7 @@
 ## 项目源码结构
 
 ```
-123pan
+123pan/
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
 ├── doc
@@ -41,12 +41,17 @@
 │   ├── 123pan.pro
 │   ├── 123pan.py
 │   └── app
+│       ├── api
+│       │   ├── model.py
+│       │   └── session.py
 │       ├── common
 │       │   ├── api.py
 │       │   ├── config.py
 │       │   ├── const.py
+│       │   ├── credential.py
 │       │   ├── log.py
 │       │   ├── resource.py
+│       │   ├── speed_limiter.py
 │       │   └── style_sheet.py
 │       ├── resource
 │       │   ├── qss
@@ -81,7 +86,7 @@
 ├── TODO.md
 └── uv.lock
 
-11 directories, 45 files
+12 directories, 49 files
 ```
 
 ## 使用
@@ -204,10 +209,10 @@ uv run src/123pan.py
 - **使用者应自行承担使用本软件的全部风险，并遵守 123 云盘用户协议及相关法律法规**
 - **请勿将本软件用于商业用途**
 
-## Fork版本推荐
+## 其他版本推荐
 
 >[!IMPORTANT]
->以下Fork项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
+>以下项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
 
 - https://github.com/crmmc/123pan-open
 
