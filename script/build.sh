@@ -22,6 +22,7 @@ else
     --windows-console-mode=disable
     --msvc=latest
     --static-libpython=no
+    --onefile-no-compression
   )
 fi
 
@@ -53,7 +54,6 @@ NOFOLLOW=(
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
-    --python-flag=no_annotations \
     --python-flag=no_site \
     --noinclude-setuptools-mode=nofollow \
     --remove-output \
