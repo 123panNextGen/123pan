@@ -208,3 +208,8 @@ __marimo__/
 
 # AI Tools
 .marscode/
+
+123pan.dist
+123pan-linux.tar.xz
+123pan-windows.zip
+nuitka-crash-report.xml
