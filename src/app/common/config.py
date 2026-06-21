@@ -186,22 +186,8 @@ class ConfigManager:
     def get_setting(key, default=None):
         """获取特定设置"""
         config = ConfigManager.load_config()
-        if key in config.get("settings", {}):
-            return config["settings"][key]
-
-        if key in [
-            "userName",
-            "passWord",
-            "authorization",
-            "deviceType",
-            "osVersion",
-            "loginuuid",
-        ]:
-            account = ConfigManager.get_account()
-            if account:
-                return account.get(key, default)
-
-        return config.get(key, default)
+        settings = config.get("settings", {})
+        return settings.get(key, default)
 
     @staticmethod
     def set_setting(key, value):

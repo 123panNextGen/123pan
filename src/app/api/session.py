@@ -1,5 +1,4 @@
 import concurrent.futures
-import json
 import os
 import re
 import time
@@ -348,7 +347,7 @@ class NetSession:
         url = urljoin(BASE_URL, "/b/api/user/sign_in")
         data = {"type": 1, "passport": user_name, "password": password}
         try:
-            resp = self._http.post(url, data=data, timeout=(3, 5))
+            resp = self._http.post(url, json=data, timeout=(3, 5))
         except requests.RequestException as e:
             return ApiReturnModel(
                 code=-1,
@@ -490,7 +489,7 @@ class NetSession:
         }
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -531,7 +530,7 @@ class NetSession:
         }
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -599,7 +598,7 @@ class NetSession:
                 }
         try:
             resp = self._http.post(
-                url, data=json.dumps(request_data), timeout=10
+                url, json=request_data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -650,7 +649,7 @@ class NetSession:
         data = {"driveId": 0, "fileId": file_id, "fileName": new_name}
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(

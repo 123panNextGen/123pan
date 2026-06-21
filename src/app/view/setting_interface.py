@@ -26,17 +26,18 @@ from ..common.style_sheet import StyleSheet
 from ..common.log import open_log_file
 
 
-class _SpeedLimitCard(SettingCard):
-    """自定义速度限制设置卡片（带 SpinBox）"""
+class _SpinBoxCard(SettingCard):
+    """通用数值输入设置卡片（带 SpinBox）"""
 
-    def __init__(self, icon, title, content, value=0, parent=None):
+    def __init__(self, icon, title, content, value=0, parent=None,
+                 min_val=0, max_val=1048576, step=1, suffix="", special_text=""):
         super().__init__(icon, title, content, parent)
         self.spinBox = QSpinBox(self)
-        self.spinBox.setRange(0, 1048576)  # 0 ~ 1TB/s (KB)
-        self.spinBox.setSingleStep(100)
+        self.spinBox.setRange(min_val, max_val)
+        self.spinBox.setSingleStep(step)
         self.spinBox.setValue(value)
-        self.spinBox.setSuffix(" KB/s")
-        self.spinBox.setSpecialValueText("不限制")
+        self.spinBox.setSuffix(suffix)
+        self.spinBox.setSpecialValueText(special_text)
         self.spinBox.setMinimumWidth(140)
         self.spinBox.valueChanged.connect(self._onValueChanged)
         self.hBoxLayout.addWidget(self.spinBox, 0, Qt.AlignmentFlag.AlignRight)
@@ -48,6 +49,15 @@ class _SpeedLimitCard(SettingCard):
 
     def setValue(self, val):
         self.spinBox.setValue(val)
+
+
+class _SpeedLimitCard(_SpinBoxCard):
+    """速度限制设置卡片"""
+
+    def __init__(self, icon, title, content, value=0, parent=None):
+        super().__init__(icon, title, content, value, parent,
+                         min_val=0, max_val=1048576, step=100,
+                         suffix=" KB/s", special_text="不限制")
 
 
 class _ProxyHostCard(SettingCard):
@@ -183,17 +193,14 @@ class SettingInterface(ScrollArea):
             self.proxyGroup,
         )
 
-        self.proxyPortCard = _SpeedLimitCard(
+        self.proxyPortCard = _SpinBoxCard(
             FIF.GLOBE,
             self.tr("代理端口"),
             self.tr("代理服务器端口"),
             ConfigManager.get_setting("proxyPort", 0),
             self.proxyGroup,
+            min_val=0, max_val=65535, step=1,
         )
-        self.proxyPortCard.spinBox.setRange(0, 65535)
-        self.proxyPortCard.spinBox.setSingleStep(1)
-        self.proxyPortCard.spinBox.setSuffix("")
-        self.proxyPortCard.spinBox.setSpecialValueText("")
 
         self.proxyUserCard = _ProxyHostCard(
             FIF.PEOPLE,

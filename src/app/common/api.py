@@ -332,7 +332,7 @@ class Pan123:
         }
         share_res = self._session.http.post(
             "https://www.123pan.com/a/api/share/create",
-            data=json.dumps(data),
+            json=data,
             timeout=10,
         )
         share_res_json = share_res.json()
@@ -366,7 +366,7 @@ class Pan123:
 
         up_res = self._session.http.post(
             "https://www.123pan.com/b/api/file/upload_request",
-            data=list_up_request,
+            json=list_up_request,
             timeout=10,
         )
         up_res_json = up_res.json()
@@ -393,7 +393,7 @@ class Pan123:
         }
         start_res = self._session.http.post(
             "https://www.123pan.com/b/api/file/s3_list_upload_parts",
-            data=json.dumps(start_data),
+            json=start_data,
             timeout=10,
         )
         start_res_json = start_res.json()
@@ -425,7 +425,7 @@ class Pan123:
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
-                    data=json.dumps(get_link_data),
+                    json=get_link_data,
                     timeout=10,
                 )
                 get_link_res_json = get_link_res.json()
@@ -448,7 +448,7 @@ class Pan123:
         }
         self._session.http.post(
             uploaded_list_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=10,
         )
         compmultipart_up_url = (
@@ -456,7 +456,7 @@ class Pan123:
         )
         self._session.http.post(
             compmultipart_up_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=10,
         )
 
@@ -466,7 +466,7 @@ class Pan123:
         close_up_session_data = {"fileId": up_file_id}
         close_up_session_res = self._session.http.post(
             close_up_session_url,
-            data=json.dumps(close_up_session_data),
+            json=close_up_session_data,
             timeout=10,
         )
         close_res_json = close_up_session_res.json()
@@ -884,7 +884,7 @@ class Pan123:
         if code == 5060:
             list_up_request["duplicate"] = dup_choice
             res = self._session.http.post(
-                url, data=json.dumps(list_up_request), timeout=30
+                url, json=list_up_request, timeout=30
             )
             res_json = res.json()
             code = res_json.get("code", -1)
@@ -921,7 +921,7 @@ class Pan123:
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
-                    data=json.dumps(get_link_data),
+                    json=get_link_data,
                     timeout=30,
                 )
                 get_link_res_json = get_link_res.json()
@@ -947,7 +947,7 @@ class Pan123:
         }
         self._session.http.post(
             uploaded_list_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=30,
         )
         compmultipart_up_url = (
@@ -955,7 +955,7 @@ class Pan123:
         )
         self._session.http.post(
             compmultipart_up_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=30,
         )
         if fsize > 64 * 1024 * 1024:
@@ -964,7 +964,7 @@ class Pan123:
         close_up_session_data = {"fileId": up_file_id}
         close_res = self._session.http.post(
             close_up_session_url,
-            data=json.dumps(close_up_session_data),
+            json=close_up_session_data,
             timeout=30,
         )
         cr = close_res.json()
