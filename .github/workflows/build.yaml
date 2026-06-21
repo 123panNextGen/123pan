@@ -71,29 +71,29 @@ jobs:
         run: |
           choco install upx -y
 
-      - name: Run mypy
+      - name: Run mypy (Linux)
+        if: runner.os == 'Linux'
         run: |
           bash script/mypy.sh
         shell: bash
 
-      - name: Build with Nuitka
+      - name: Run mypy (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pwsh script/mypy.ps1
+        shell: pwsh
+
+      - name: Build with Nuitka (Linux)
+        if: runner.os == 'Linux'
         run: |
           bash script/build.sh
         shell: bash
 
-      - name: Package Windows build
+      - name: Build with Nuitka (Windows)
         if: runner.os == 'Windows'
+        run: |
+          pwsh script/build.ps1
         shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path 123pan.exe `
-            -DestinationPath 123pan-windows.zip `
-            -Force
-
-      - name: Package Linux build
-        if: runner.os == 'Linux'
-        run: |
-          zip -9 123pan-linux.zip 123pan
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'

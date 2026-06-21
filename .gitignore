@@ -208,3 +208,6 @@ __marimo__/
 
 # AI Tools
 .marscode/
+
+123pan.dist
+nuitka-crash-report.xml
