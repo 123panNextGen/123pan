@@ -93,7 +93,7 @@
 
 ### 使用打包后的文件运行
 
-如果你的电脑是windows系统或者linux发行版，可以直接下载打包后的文件并运行。  
+如果你的电脑是windows系统或者linux发行版，可以直接下载并解压，然后运行其中的`123pan.exe`或`123pan`。  
 下载地址：
 
 - Github: https://github.com/123panNextGen/123pan/releases/

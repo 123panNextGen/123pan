@@ -60,7 +60,6 @@ jobs:
             libxcb-shape0 \
             libxcb-xfixes0 \
             libxcb-xinerama0 \
-            zip \
             upx \
             clang \
             ccache
@@ -107,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: 123pan-linux
-          path: 123pan-linux.zip
+          path: 123pan-linux.tar.xz
 
   release:
     name: Create GitHub Release
@@ -146,6 +145,6 @@ jobs:
           name: ${{ env.VERSION }}
           files: |
             ./artifacts/windows/123pan-windows.zip
-            ./artifacts/linux/123pan-linux.zip
+            ./artifacts/linux/123pan-linux.tar.xz
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false

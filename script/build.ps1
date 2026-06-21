@@ -62,30 +62,25 @@ try {
     --python-flag=no_asserts `
     --python-flag=no_site `
     --noinclude-setuptools-mode=nofollow `
-    --noinclude-default-mode=nofollow `
     --remove-output `
     --output-filename="$OUT_NAME" `
     $args
 
   # ============================================================
-  # 清理 .dist 目录中不需要的文件，大幅减小体积
+  # 清理
   # ============================================================
   $DIST_DIR = "123pan.dist"
   Write-Host "Cleaning up $DIST_DIR ..."
 
-  # 1. 删除 Qt SQL 驱动（未使用数据库）
-  Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "sqldrivers" -ErrorAction SilentlyContinue |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-  # 2. 删除 Qt 网络信息插件
-  Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "networkinformation" -ErrorAction SilentlyContinue |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-  # 3. 删除 Qt 翻译文件（体积很大，通常 10-20MB）
+  # 1. 删除 Qt 翻译文件
   Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "translations" -ErrorAction SilentlyContinue |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-  # 4. 删除不必要的 Qt 图片格式插件（保留常用格式）
+  # 2. 删除 Qt SQL 驱动（未使用数据库）
+  Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "sqldrivers" -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+  # 3. 删除不必要的 Qt 图片格式插件（保留常用格式）
   $keepImgfmt = @("qico", "qjpeg", "qpng", "qsvg", "qwebp")
   $imgfmtDirs = Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "imageformats" -ErrorAction SilentlyContinue
   foreach ($dir in $imgfmtDirs) {
@@ -100,20 +95,21 @@ try {
     }
   }
 
-  # 5. 删除不需要的 Qt DLL（Windows .dll）
-  $unusedQtDlls = @("Qt6DBus*", "Qt6Xml*", "Qt6Test*", "Qt6Concurrent*")
-  foreach ($pattern in $unusedQtDlls) {
-    Get-ChildItem -Recurse -Path $DIST_DIR -Filter $pattern -ErrorAction SilentlyContinue |
-      Remove-Item -Force -ErrorAction SilentlyContinue
-  }
+  # 4. 删除仅用于嵌入式设备的 EGL 显示集成（桌面不需要）
+  Get-ChildItem -Recurse -Path $DIST_DIR -Filter "Qt6EglFSDeviceIntegration*" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-  # 6. 删除 .pyc 缓存文件
+  # 5. 删除 Qt PDF 模块（未使用）
+  Get-ChildItem -Recurse -Path $DIST_DIR -Filter "Qt6Pdf*" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+  # 6. 删除 .pyc 缓存和 __pycache__
   Get-ChildItem -Recurse -Path $DIST_DIR -Filter "*.pyc" -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
   Get-ChildItem -Recurse -Path $DIST_DIR -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-  # 7. 删除导入库（运行时不需要）
+  # 7. 删除导入库（.lib 运行时不需要，保留 python*.lib）
   Get-ChildItem -Recurse -Path $DIST_DIR -Filter "*.lib" -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -notlike "python*.lib" } |
     Remove-Item -Force -ErrorAction SilentlyContinue
