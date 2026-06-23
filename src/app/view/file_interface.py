@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -103,6 +102,7 @@ class FileInterface(QWidget):
         self.backButton = PushButton(
             FIF.LEFT_ARROW.icon(), "返回上一级", self.topBarFrame
         )
+
         self.breadcrumbBar = BreadcrumbBar(self.topBarFrame)
 
         # 右侧按钮

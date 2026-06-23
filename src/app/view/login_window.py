@@ -33,7 +33,8 @@ class LoginDialog(QDialog):
         layout.setSpacing(20)
 
         # 标题
-        title = TitleLabel("欢迎使用123云盘")
+        title = TitleLabel()
+        title.setText("欢迎使用123云盘")
         layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
 
         form = QFormLayout()
@@ -58,11 +59,13 @@ class LoginDialog(QDialog):
         h.addStretch()
 
         # 登录按钮
-        self.btn_ok = PrimaryPushButton("登录")
+        self.btn_ok = PrimaryPushButton()
+        self.btn_ok.setText("登录")
         self.btn_ok.setMinimumWidth(100)
 
         # 取消按钮
-        self.btn_cancel = PushButton("取消")
+        self.btn_cancel = PushButton()
+        self.btn_cancel.setText("取消")
         self.btn_cancel.setMinimumWidth(100)
 
         h.addWidget(self.btn_ok)
