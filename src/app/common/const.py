@@ -7,8 +7,8 @@ YEAR = 2026
 VERSION = "3.1.0"
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
 
-# 云盘最大容量（字节）默认 10TB
-MAX_STORAGE_CAPACITY = 10 * 1024 * 1024 * 1024 * 1024  # 10TB
+# 云盘最大容量（字节）默认 2TB
+MAX_STORAGE_CAPACITY = 2 * 1024 * 1024 * 1024 * 1024  # 2TB
 
 # 设备类型列表
 all_device_type = [

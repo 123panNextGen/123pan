@@ -980,14 +980,12 @@ class Pan123:
 
 def format_file_size(size):
     """格式化文件大小"""
-    if size > 1073741824:
-        return f"{round(size / 1073741824, 2)} GB"
-    elif size > 1048576:
-        return f"{round(size / 1048576, 2)} MB"
-    elif size > 1024:
-        return f"{round(size / 1024, 2)} KB"
-    else:
-        return f"{size} B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for i in range(len(units)):
+        if size < 1024.0:
+            return f"{round(size, 2)} {units[i]}"
+        size /= 1024.0
+    return f"{size:.2f} {units[-1]}"
 
 
 class TransferTask:
