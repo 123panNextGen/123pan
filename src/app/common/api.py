@@ -14,7 +14,7 @@ import requests
 from ..api.model import DeviceModel, UserInfoModel
 from ..api.session import BASE_URL, NetSession
 from .config import ConfigManager
-from .const import all_device_type, all_os_versions
+from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -1144,3 +1144,18 @@ class FileDataManager:
     def is_duplicate_filename(pan_instance, filename):
         """检查是否存在同名文件"""
         return any(item.get("FileName") == filename for item in pan_instance.list)
+    
+def check_version():
+    """获取版本信息"""
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/123pannextgen/123pan/releases/latest",
+            timeout=5,
+        )
+        response.raise_for_status()
+        vesion_info = response.json()
+        version = "v" + str(VERSION)
+        return vesion_info.get("name") == version
+    except Exception as e:
+        logger.error("获取版本信息出错: %s", e)
+        return False

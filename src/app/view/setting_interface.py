@@ -17,6 +17,7 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     LineEdit,
     BodyLabel,
+    InfoBar
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -24,6 +25,7 @@ from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
 from ..common.log import open_log_file
+from ..common.api import check_version
 
 
 class _SpinBoxCard(SettingCard):
@@ -101,7 +103,6 @@ class _ComboCard(SettingCard):
 
     def currentIndex(self):
         return self.comboBox.currentIndex()
-
 
 class SettingInterface(ScrollArea):
     """设置页面"""
@@ -247,6 +248,13 @@ class SettingInterface(ScrollArea):
             "123pan" + f"{VERSION}" + " © Copyright" + f" {YEAR}",
             self.aboutGroup,
         )
+        self.checkversion = PushSettingCard(
+            self.tr("检查"),
+            FIF.FOLDER,
+            self.tr("检查更新"),
+            self.tr("检查当前应用是否为最新版"),
+            self.aboutGroup,
+        )        
 
         self.__initWidget()
 
@@ -293,6 +301,7 @@ class SettingInterface(ScrollArea):
 
         # 关于组
         self.aboutGroup.addSettingCard(self.aboutCard)
+        self.aboutGroup.addSettingCard(self.checkversion)
 
         # 添加到布局
         self.expandLayout.setSpacing(28)
@@ -304,6 +313,12 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.aboutGroup)
 
     # ---- 事件处理 ----
+
+    def check(self):
+        if check_version():
+            InfoBar.success(title="检查成功", content="当前是最新版本", parent=self)
+        else:
+            InfoBar.error(title="检查失败", content="当前不是最新版本，或当前无法完成检查", parent=self)    
 
     def __onDownloadFolderCardClicked(self):
         folder = QFileDialog.getExistingDirectory(self, self.tr("Choose folder"), "./")
@@ -383,4 +398,7 @@ class SettingInterface(ScrollArea):
         # 关于
         self.aboutCard.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ABOUT_URL))
+        )
+        self.checkversion.clicked.connect(
+            lambda: self.check()
         )
