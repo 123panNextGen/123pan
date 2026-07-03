@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --extra build --extra lint
+          uv sync --group build --group lint
 
       - name: Check
         run: |
