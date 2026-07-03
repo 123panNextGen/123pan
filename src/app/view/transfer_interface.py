@@ -6,17 +6,11 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QCoreApplication
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from pathlib import Path
-import requests
-
-# 导入Pan123类
-Pan123 = __import__("app.common.api").common.api.Pan123
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (
-    TabBar,
     SegmentedWidget,
     TableWidget,
     PushButton,
@@ -440,9 +434,6 @@ class TransferInterface(QWidget):
     def __update_task_progress(self, task, progress):
         """更新任务进度"""
         task.progress = progress
-        # 使用QCoreApplication.processEvents()来确保界面响应
-
-        QCoreApplication.processEvents()
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):
@@ -451,9 +442,6 @@ class TransferInterface(QWidget):
     def __update_task_status(self, task, status):
         """更新任务状态"""
         task.status = status
-        # 使用QCoreApplication.processEvents()来确保界面响应
-
-        QCoreApplication.processEvents()
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):

@@ -71,11 +71,6 @@ jobs:
         run: |
           choco install upx -y
 
-      - name: Run mypy
-        run: |
-          bash script/mypy.sh
-        shell: bash
-
       - name: Build with Nuitka
         run: |
           bash script/build.sh

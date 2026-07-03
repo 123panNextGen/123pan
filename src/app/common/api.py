@@ -14,7 +14,7 @@ import requests
 from ..api.model import DeviceModel, UserInfoModel
 from ..api.session import BASE_URL, NetSession
 from .config import ConfigManager
-from .const import all_device_type, all_os_versions
+from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -331,15 +331,15 @@ class Pan123:
             "event": "shareCreate",
         }
         share_res = self._session.http.post(
-            "https://www.123pan.com/a/api/share/create",
-            data=json.dumps(data),
+            "https://www.123pan.cn/a/api/share/create",
+            json=data,
             timeout=10,
         )
         share_res_json = share_res.json()
         if share_res_json.get("code", -1) != 0:
             raise RuntimeError(f"分享失败: {share_res_json.get('message', '')}")
         share_key = share_res_json["data"]["ShareKey"]
-        share_url = "https://www.123pan.com/s/" + share_key
+        share_url = "https://www.123pan.cn/s/" + share_key
         return share_url
 
     def up_load(self, file_path):
@@ -365,8 +365,8 @@ class Pan123:
         }
 
         up_res = self._session.http.post(
-            "https://www.123pan.com/b/api/file/upload_request",
-            data=list_up_request,
+            "https://www.123pan.cn/b/api/file/upload_request",
+            json=list_up_request,
             timeout=10,
         )
         up_res_json = up_res.json()
@@ -392,8 +392,8 @@ class Pan123:
             "storageNode": storage_node,
         }
         start_res = self._session.http.post(
-            "https://www.123pan.com/b/api/file/s3_list_upload_parts",
-            data=json.dumps(start_data),
+            "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
+            json=start_data,
             timeout=10,
         )
         start_res_json = start_res.json()
@@ -421,11 +421,11 @@ class Pan123:
                 }
 
                 get_link_url = (
-                    "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
+                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
-                    data=json.dumps(get_link_data),
+                    json=get_link_data,
                     timeout=10,
                 )
                 get_link_res_json = get_link_res.json()
@@ -439,7 +439,7 @@ class Pan123:
 
                 part_number_start = part_number_start + 1
 
-        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
+        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
         uploaded_comp_data = {
             "bucket": bucket,
             "key": upload_key,
@@ -448,25 +448,25 @@ class Pan123:
         }
         self._session.http.post(
             uploaded_list_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=10,
         )
         compmultipart_up_url = (
-            "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
+            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
         )
         self._session.http.post(
             compmultipart_up_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=10,
         )
 
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
-        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
+        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
         close_up_session_data = {"fileId": up_file_id}
         close_up_session_res = self._session.http.post(
             close_up_session_url,
-            data=json.dumps(close_up_session_data),
+            json=close_up_session_data,
             timeout=10,
         )
         close_res_json = close_up_session_res.json()
@@ -875,7 +875,7 @@ class Pan123:
             "type": 0,
             "duplicate": 0,
         }
-        url = "https://www.123pan.com/b/api/file/upload_request"
+        url = "https://www.123pan.cn/b/api/file/upload_request"
         res = self._session.http.post(
             url, data=list_up_request, timeout=30
         )
@@ -884,7 +884,7 @@ class Pan123:
         if code == 5060:
             list_up_request["duplicate"] = dup_choice
             res = self._session.http.post(
-                url, data=json.dumps(list_up_request), timeout=30
+                url, json=list_up_request, timeout=30
             )
             res_json = res.json()
             code = res_json.get("code", -1)
@@ -917,11 +917,11 @@ class Pan123:
                     "StorageNode": storage_node,
                 }
                 get_link_url = (
-                    "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
+                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
-                    data=json.dumps(get_link_data),
+                    json=get_link_data,
                     timeout=30,
                 )
                 get_link_res_json = get_link_res.json()
@@ -938,7 +938,7 @@ class Pan123:
                 if signals and fsize:
                     signals.progress.emit(int(total_sent * 100 / fsize))
                 part_number += 1
-        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
+        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
         uploaded_comp_data = {
             "bucket": bucket,
             "key": upload_key,
@@ -947,24 +947,24 @@ class Pan123:
         }
         self._session.http.post(
             uploaded_list_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=30,
         )
         compmultipart_up_url = (
-            "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
+            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
         )
         self._session.http.post(
             compmultipart_up_url,
-            data=json.dumps(uploaded_comp_data),
+            json=uploaded_comp_data,
             timeout=30,
         )
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
-        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
+        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
         close_up_session_data = {"fileId": up_file_id}
         close_res = self._session.http.post(
             close_up_session_url,
-            data=json.dumps(close_up_session_data),
+            json=close_up_session_data,
             timeout=30,
         )
         cr = close_res.json()
@@ -980,14 +980,12 @@ class Pan123:
 
 def format_file_size(size):
     """格式化文件大小"""
-    if size > 1073741824:
-        return f"{round(size / 1073741824, 2)} GB"
-    elif size > 1048576:
-        return f"{round(size / 1048576, 2)} MB"
-    elif size > 1024:
-        return f"{round(size / 1024, 2)} KB"
-    else:
-        return f"{size} B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for i in range(len(units)):
+        if size < 1024.0:
+            return f"{round(size, 2)} {units[i]}"
+        size /= 1024.0
+    return f"{size:.2f} {units[-1]}"
 
 
 class TransferTask:
@@ -1146,3 +1144,18 @@ class FileDataManager:
     def is_duplicate_filename(pan_instance, filename):
         """检查是否存在同名文件"""
         return any(item.get("FileName") == filename for item in pan_instance.list)
+    
+def check_version():
+    """获取版本信息"""
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/123pannextgen/123pan/releases/latest",
+            timeout=5,
+        )
+        response.raise_for_status()
+        vesion_info = response.json()
+        version = "v" + str(VERSION)
+        return vesion_info.get("name") == version
+    except Exception as e:
+        logger.error("获取版本信息出错: %s", e)
+        return False

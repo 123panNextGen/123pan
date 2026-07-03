@@ -1,5 +1,4 @@
 import concurrent.futures
-import json
 import os
 import re
 import time
@@ -19,7 +18,7 @@ from .model import (
     UserInfoModel,
 )
 
-BASE_URL = "https://www.123pan.com"
+BASE_URL = "https://www.123pan.cn"
 
 
 class NetSession:
@@ -36,7 +35,7 @@ class NetSession:
             "content-type": "application/json",
             "platform": "android",
             "devicename": "Xiaomi",
-            "host": "www.123pan.com",
+            "host": "www.123pan.cn",
             "app-version": "61",
             "x-app-version": "2.4.0",
         })
@@ -342,13 +341,30 @@ class NetSession:
         """将伪装请求头合并到 Session 默认头中。"""
         self._http.headers.update(self._build_headers())
 
+    @staticmethod
+    def _safe_json(resp: requests.Response) -> tuple[dict[str, Any], Optional[ApiReturnModel]]:
+        """安全解析 JSON 响应，失败时返回错误模型。
+
+        处理服务器返回空响应、HTML 错误页等非 JSON 内容的情况。
+        """
+        try:
+            body = resp.json()
+        except requests.exceptions.JSONDecodeError:
+            return {}, ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=f"服务器返回无效 JSON (HTTP {resp.status_code})",
+            )
+        return body, None
+
     # ---- 账户 ----
 
     def login(self, user_name: str, password: str) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/b/api/user/sign_in")
         data = {"type": 1, "passport": user_name, "password": password}
         try:
-            resp = self._http.post(url, data=data, timeout=(3, 5))
+            resp = self._http.post(url, json=data, timeout=(3, 5))
         except requests.RequestException as e:
             return ApiReturnModel(
                 code=-1,
@@ -356,7 +372,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code != 200:
             return ApiReturnModel(
@@ -436,7 +454,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code == 2 and retry_login:
             return ApiReturnModel(
@@ -490,7 +510,7 @@ class NetSession:
         }
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -499,7 +519,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code != 0:
             return ApiReturnModel(
@@ -531,7 +553,7 @@ class NetSession:
         }
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -540,7 +562,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code != 0:
             return ApiReturnModel(
@@ -599,7 +623,7 @@ class NetSession:
                 }
         try:
             resp = self._http.post(
-                url, data=json.dumps(request_data), timeout=10
+                url, json=request_data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -608,7 +632,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code != 0:
             return ApiReturnModel(
@@ -650,7 +676,7 @@ class NetSession:
         data = {"driveId": 0, "fileId": file_id, "fileName": new_name}
         try:
             resp = self._http.post(
-                url, data=json.dumps(data), timeout=10
+                url, json=data, timeout=10
             )
         except requests.RequestException as e:
             return ApiReturnModel(
@@ -659,7 +685,9 @@ class NetSession:
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
-        body = resp.json()
+        body, error = self._safe_json(resp)
+        if error:
+            return error
         code = body.get("code", -1)
         if code != 0:
             return ApiReturnModel(

@@ -1,9 +1,8 @@
 {
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "debug",
+            "name": "123pan",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/src/123pan.py",

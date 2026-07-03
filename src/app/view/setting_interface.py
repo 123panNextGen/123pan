@@ -17,6 +17,7 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     LineEdit,
     BodyLabel,
+    InfoBar
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -24,19 +25,21 @@ from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
 from ..common.log import open_log_file
+from ..common.api import check_version
 
 
-class _SpeedLimitCard(SettingCard):
-    """自定义速度限制设置卡片（带 SpinBox）"""
+class _SpinBoxCard(SettingCard):
+    """通用数值输入设置卡片（带 SpinBox）"""
 
-    def __init__(self, icon, title, content, value=0, parent=None):
+    def __init__(self, icon, title, content, value=0, parent=None,
+                 min_val=0, max_val=1048576, step=1, suffix="", special_text=""):
         super().__init__(icon, title, content, parent)
         self.spinBox = QSpinBox(self)
-        self.spinBox.setRange(0, 1048576)  # 0 ~ 1TB/s (KB)
-        self.spinBox.setSingleStep(100)
+        self.spinBox.setRange(min_val, max_val)
+        self.spinBox.setSingleStep(step)
         self.spinBox.setValue(value)
-        self.spinBox.setSuffix(" KB/s")
-        self.spinBox.setSpecialValueText("不限制")
+        self.spinBox.setSuffix(suffix)
+        self.spinBox.setSpecialValueText(special_text)
         self.spinBox.setMinimumWidth(140)
         self.spinBox.valueChanged.connect(self._onValueChanged)
         self.hBoxLayout.addWidget(self.spinBox, 0, Qt.AlignmentFlag.AlignRight)
@@ -48,6 +51,15 @@ class _SpeedLimitCard(SettingCard):
 
     def setValue(self, val):
         self.spinBox.setValue(val)
+
+
+class _SpeedLimitCard(_SpinBoxCard):
+    """速度限制设置卡片"""
+
+    def __init__(self, icon, title, content, value=0, parent=None):
+        super().__init__(icon, title, content, value, parent,
+                         min_val=0, max_val=1048576, step=100,
+                         suffix=" KB/s", special_text="不限制")
 
 
 class _ProxyHostCard(SettingCard):
@@ -91,7 +103,6 @@ class _ComboCard(SettingCard):
 
     def currentIndex(self):
         return self.comboBox.currentIndex()
-
 
 class SettingInterface(ScrollArea):
     """设置页面"""
@@ -183,17 +194,14 @@ class SettingInterface(ScrollArea):
             self.proxyGroup,
         )
 
-        self.proxyPortCard = _SpeedLimitCard(
+        self.proxyPortCard = _SpinBoxCard(
             FIF.GLOBE,
             self.tr("代理端口"),
             self.tr("代理服务器端口"),
             ConfigManager.get_setting("proxyPort", 0),
             self.proxyGroup,
+            min_val=0, max_val=65535, step=1,
         )
-        self.proxyPortCard.spinBox.setRange(0, 65535)
-        self.proxyPortCard.spinBox.setSingleStep(1)
-        self.proxyPortCard.spinBox.setSuffix("")
-        self.proxyPortCard.spinBox.setSpecialValueText("")
 
         self.proxyUserCard = _ProxyHostCard(
             FIF.PEOPLE,
@@ -240,6 +248,13 @@ class SettingInterface(ScrollArea):
             "123pan" + f"{VERSION}" + " © Copyright" + f" {YEAR}",
             self.aboutGroup,
         )
+        self.checkversion = PushSettingCard(
+            self.tr("检查"),
+            FIF.FOLDER,
+            self.tr("检查更新"),
+            self.tr("检查当前应用是否为最新版"),
+            self.aboutGroup,
+        )        
 
         self.__initWidget()
 
@@ -286,6 +301,7 @@ class SettingInterface(ScrollArea):
 
         # 关于组
         self.aboutGroup.addSettingCard(self.aboutCard)
+        self.aboutGroup.addSettingCard(self.checkversion)
 
         # 添加到布局
         self.expandLayout.setSpacing(28)
@@ -297,6 +313,12 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.aboutGroup)
 
     # ---- 事件处理 ----
+
+    def check(self):
+        if check_version():
+            InfoBar.success(title="检查成功", content="当前是最新版本", parent=self)
+        else:
+            InfoBar.error(title="检查失败", content="当前不是最新版本，或当前无法完成检查", parent=self)    
 
     def __onDownloadFolderCardClicked(self):
         folder = QFileDialog.getExistingDirectory(self, self.tr("Choose folder"), "./")
@@ -376,4 +398,7 @@ class SettingInterface(ScrollArea):
         # 关于
         self.aboutCard.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ABOUT_URL))
+        )
+        self.checkversion.clicked.connect(
+            lambda: self.check()
         )

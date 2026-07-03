@@ -3,17 +3,17 @@
 # 🚀 [123pan](https://www.123panng.top)
 
   <p>突破限制 · 高效下载 · 简单易用</p>
-  
+
   <div>
     <a href="https://github.com/123pannextgen/123pan/stargazers"><img src="https://img.shields.io/github/stars/123pannextgen/123pan" alt="Stars"></a>
-    <a href="https://github.com/123pannextgen/123pan/issues"><img src="https://img.shields.io/github/issues/123pannextgen/123pan"></a>
+    <a href="https://github.com/123pannextgen/123pan/issues"><img src="https://img.shields.io/github/issues/123pannextgen/123pan" alt="Issues"></a>
     <a href="https://github.com/123pannextgen/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version"></a>
     <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/v/tag/123pannextgen/123pan?label=release" alt="latest_release"></a>
     <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/downloads/123pannextgen/123pan/total" alt="Downloads"></a>
   </div>
   <br>
-  <img src="./doc/image.png" width="600"><img>
+  <img src="./doc/image.png" width="600" alt="Screenshot">
 
 </div>
 
@@ -21,79 +21,11 @@
 
 123pan是一款基于Python开发的高效下载辅助工具，通过模拟安卓客户端协议，帮助用户绕过123云盘的自用下载流量限制，实现无阻碍下载体验。
 
-## 项目源码结构
-
-```
-123pan/
-├── CODE_OF_CONDUCT.md
-├── CONTRIBUTING.md
-├── doc
-│   └── image.png
-├── LICENSE
-├── pyproject.toml
-├── README.md
-├── script
-│   ├── build.sh
-│   ├── lint.sh
-│   └── mypy.sh
-├── SECURITY.md
-├── src
-│   ├── 123pan.pro
-│   ├── 123pan.py
-│   └── app
-│       ├── api
-│       │   ├── model.py
-│       │   └── session.py
-│       ├── common
-│       │   ├── api.py
-│       │   ├── config.py
-│       │   ├── const.py
-│       │   ├── credential.py
-│       │   ├── log.py
-│       │   ├── resource.py
-│       │   ├── speed_limiter.py
-│       │   └── style_sheet.py
-│       ├── resource
-│       │   ├── qss
-│       │   │   ├── dark
-│       │   │   │   ├── gallery_interface.qss
-│       │   │   │   ├── home_interface.qss
-│       │   │   │   ├── icon_interface.qss
-│       │   │   │   ├── link_card.qss
-│       │   │   │   ├── navigation_view_interface.qss
-│       │   │   │   ├── sample_card.qss
-│       │   │   │   ├── setting_interface.qss
-│       │   │   │   └── view_interface.qss
-│       │   │   └── light
-│       │   │       ├── gallery_interface.qss
-│       │   │       ├── home_interface.qss
-│       │   │       ├── icon_interface.qss
-│       │   │       ├── link_card.qss
-│       │   │       ├── navigation_view_interface.qss
-│       │   │       ├── sample_card.qss
-│       │   │       ├── setting_interface.qss
-│       │   │       └── view_interface.qss
-│       │   └── resource.qrc
-│       └── view
-│           ├── cloud_interface.py
-│           ├── file_interface.py
-│           ├── login_window.py
-│           ├── main_window.py
-│           ├── newfolder_window.py
-│           ├── rename_window.py
-│           ├── setting_interface.py
-│           └── transfer_interface.py
-├── TODO.md
-└── uv.lock
-
-12 directories, 49 files
-```
-
 ## 使用
 
 ### 使用打包后的文件运行
 
-如果你的电脑是windows系统或者linux发行版，可以直接下载并解压，然后运行其中的`123pan.exe`或`123pan`。  
+如果你的电脑是Windows系统或者Linux发行版，可以直接下载并解压，然后运行其中的`123pan.exe`或`123pan`。  
 下载地址：
 
 - Github: https://github.com/123panNextGen/123pan/releases/
@@ -166,19 +98,19 @@ uv run src/123pan.py
 
 ### 设置项说明
 
-| 设置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `defaultDownloadPath` | string | `~/Downloads` | 默认下载目录 |
-| `askDownloadLocation` | bool | `true` | 每次下载前是否询问保存位置 |
-| `multiThreadDownload` | bool | `true` | 是否启用多线程分片下载 |
-| `downloadSpeedLimit` | int | `0` | 下载速度限制（KB/s），`0` 表示不限制 |
-| `uploadSpeedLimit` | int | `0` | 上传速度限制（KB/s），`0` 表示不限制 |
-| `proxyEnabled` | bool | `false` | 是否启用网络代理 |
-| `proxyType` | string | `"http"` | 代理类型：`"http"` 或 `"socks5"` |
-| `proxyHost` | string | `""` | 代理服务器地址 |
-| `proxyPort` | int | `0` | 代理服务器端口 |
-| `proxyUsername` | string | `""` | 代理认证用户名（可选） |
-| `proxyPassword` | string | `""` | 代理认证密码（可选） |
+| 设置项                   | 类型     | 默认值           | 说明                         |
+|-----------------------|--------|---------------|----------------------------|
+| `defaultDownloadPath` | string | `~/Downloads` | 默认下载目录                     |
+| `askDownloadLocation` | bool   | `true`        | 每次下载前是否询问保存位置              |
+| `multiThreadDownload` | bool   | `true`        | 是否启用多线程分片下载                |
+| `downloadSpeedLimit`  | int    | `0`           | 下载速度限制（KB/s），`0` 表示不限制     |
+| `uploadSpeedLimit`    | int    | `0`           | 上传速度限制（KB/s），`0` 表示不限制     |
+| `proxyEnabled`        | bool   | `false`       | 是否启用网络代理                   |
+| `proxyType`           | string | `"http"`      | 代理类型：`"http"` 或 `"socks5"` |
+| `proxyHost`           | string | `""`          | 代理服务器地址                    |
+| `proxyPort`           | int    | `0`           | 代理服务器端口                    |
+| `proxyUsername`       | string | `""`          | 代理认证用户名（可选）                |
+| `proxyPassword`       | string | `""`          | 代理认证密码（可选）                 |
 
 ## 问题反馈
 
