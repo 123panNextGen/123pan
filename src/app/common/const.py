@@ -4,7 +4,7 @@
 
 # 版本信息
 YEAR = 2026
-VERSION = "3.1.0"
+VERSION = "3.1.1"
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
 
 # 云盘最大容量（字节）默认 2TB

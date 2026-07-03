@@ -5,12 +5,12 @@
   <p>突破限制 · 高效下载 · 简单易用</p>
 
   <div>
-    <a href="https://github.com/123pannextgen/123pan/stargazers"><img src="https://img.shields.io/github/stars/123pannextgen/123pan?style=for-the-badge" alt="Stars"></a>
-    <a href="https://github.com/123pannextgen/123pan/issues"><img src="https://img.shields.io/github/issues/123pannextgen/123pan?style=for-the-badge" alt="Issues"></a>
-    <a href="https://github.com/123pannextgen/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge" alt="License"></a>
-    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue?style=for-the-badge" alt="Python Version"></a>
-    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/v/tag/123pannextgen/123pan?label=release&style=for-the-badge" alt="latest_release"></a>
-    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/downloads/123pannextgen/123pan/total?style=for-the-badge" alt="Downloads"></a>
+    <a href="https://github.com/123pannextgen/123pan/stargazers"><img src="https://img.shields.io/github/stars/123pannextgen/123pan" alt="Stars"></a>
+    <a href="https://github.com/123pannextgen/123pan/issues"><img src="https://img.shields.io/github/issues/123pannextgen/123pan" alt="Issues"></a>
+    <a href="https://github.com/123pannextgen/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version"></a>
+    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/v/tag/123pannextgen/123pan?label=release" alt="latest_release"></a>
+    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/downloads/123pannextgen/123pan/total" alt="Downloads"></a>
   </div>
   <br>
   <img src="./doc/image.png" width="600" alt="Screenshot">
@@ -20,74 +20,6 @@
 ## 介绍
 
 123pan是一款基于Python开发的高效下载辅助工具，通过模拟安卓客户端协议，帮助用户绕过123云盘的自用下载流量限制，实现无阻碍下载体验。
-
-## 项目源码结构
-
-```
-123pan/
-├── CODE_OF_CONDUCT.md
-├── CONTRIBUTING.md
-├── doc
-│   └── image.png
-├── LICENSE
-├── pyproject.toml
-├── README.md
-├── script
-│   ├── build.sh
-│   ├── lint.sh
-│   └── mypy.sh
-├── SECURITY.md
-├── src
-│   ├── 123pan.pro
-│   ├── 123pan.py
-│   └── app
-│       ├── api
-│       │   ├── model.py
-│       │   └── session.py
-│       ├── common
-│       │   ├── api.py
-│       │   ├── config.py
-│       │   ├── const.py
-│       │   ├── credential.py
-│       │   ├── log.py
-│       │   ├── resource.py
-│       │   ├── speed_limiter.py
-│       │   └── style_sheet.py
-│       ├── resource
-│       │   ├── qss
-│       │   │   ├── dark
-│       │   │   │   ├── gallery_interface.qss
-│       │   │   │   ├── home_interface.qss
-│       │   │   │   ├── icon_interface.qss
-│       │   │   │   ├── link_card.qss
-│       │   │   │   ├── navigation_view_interface.qss
-│       │   │   │   ├── sample_card.qss
-│       │   │   │   ├── setting_interface.qss
-│       │   │   │   └── view_interface.qss
-│       │   │   └── light
-│       │   │       ├── gallery_interface.qss
-│       │   │       ├── home_interface.qss
-│       │   │       ├── icon_interface.qss
-│       │   │       ├── link_card.qss
-│       │   │       ├── navigation_view_interface.qss
-│       │   │       ├── sample_card.qss
-│       │   │       ├── setting_interface.qss
-│       │   │       └── view_interface.qss
-│       │   └── resource.qrc
-│       └── view
-│           ├── cloud_interface.py
-│           ├── file_interface.py
-│           ├── login_window.py
-│           ├── main_window.py
-│           ├── newfolder_window.py
-│           ├── rename_window.py
-│           ├── setting_interface.py
-│           └── transfer_interface.py
-├── TODO.md
-└── uv.lock
-
-12 directories, 49 files
-```
 
 ## 使用
 
