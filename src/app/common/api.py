@@ -331,7 +331,7 @@ class Pan123:
             "event": "shareCreate",
         }
         share_res = self._session.http.post(
-            "https://www.123pan.com/a/api/share/create",
+            "https://www.123pan.cn/a/api/share/create",
             json=data,
             timeout=10,
         )
@@ -339,7 +339,7 @@ class Pan123:
         if share_res_json.get("code", -1) != 0:
             raise RuntimeError(f"分享失败: {share_res_json.get('message', '')}")
         share_key = share_res_json["data"]["ShareKey"]
-        share_url = "https://www.123pan.com/s/" + share_key
+        share_url = "https://www.123pan.cn/s/" + share_key
         return share_url
 
     def up_load(self, file_path):
@@ -365,7 +365,7 @@ class Pan123:
         }
 
         up_res = self._session.http.post(
-            "https://www.123pan.com/b/api/file/upload_request",
+            "https://www.123pan.cn/b/api/file/upload_request",
             json=list_up_request,
             timeout=10,
         )
@@ -392,7 +392,7 @@ class Pan123:
             "storageNode": storage_node,
         }
         start_res = self._session.http.post(
-            "https://www.123pan.com/b/api/file/s3_list_upload_parts",
+            "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
             json=start_data,
             timeout=10,
         )
@@ -421,7 +421,7 @@ class Pan123:
                 }
 
                 get_link_url = (
-                    "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
+                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
@@ -439,7 +439,7 @@ class Pan123:
 
                 part_number_start = part_number_start + 1
 
-        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
+        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
         uploaded_comp_data = {
             "bucket": bucket,
             "key": upload_key,
@@ -452,7 +452,7 @@ class Pan123:
             timeout=10,
         )
         compmultipart_up_url = (
-            "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
+            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
         )
         self._session.http.post(
             compmultipart_up_url,
@@ -462,7 +462,7 @@ class Pan123:
 
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
-        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
+        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
         close_up_session_data = {"fileId": up_file_id}
         close_up_session_res = self._session.http.post(
             close_up_session_url,
@@ -875,7 +875,7 @@ class Pan123:
             "type": 0,
             "duplicate": 0,
         }
-        url = "https://www.123pan.com/b/api/file/upload_request"
+        url = "https://www.123pan.cn/b/api/file/upload_request"
         res = self._session.http.post(
             url, data=list_up_request, timeout=30
         )
@@ -917,7 +917,7 @@ class Pan123:
                     "StorageNode": storage_node,
                 }
                 get_link_url = (
-                    "https://www.123pan.com/b/api/file/s3_repare_upload_parts_batch"
+                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
                 )
                 get_link_res = self._session.http.post(
                     get_link_url,
@@ -938,7 +938,7 @@ class Pan123:
                 if signals and fsize:
                     signals.progress.emit(int(total_sent * 100 / fsize))
                 part_number += 1
-        uploaded_list_url = "https://www.123pan.com/b/api/file/s3_list_upload_parts"
+        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
         uploaded_comp_data = {
             "bucket": bucket,
             "key": upload_key,
@@ -951,7 +951,7 @@ class Pan123:
             timeout=30,
         )
         compmultipart_up_url = (
-            "https://www.123pan.com/b/api/file/s3_complete_multipart_upload"
+            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
         )
         self._session.http.post(
             compmultipart_up_url,
@@ -960,7 +960,7 @@ class Pan123:
         )
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
-        close_up_session_url = "https://www.123pan.com/b/api/file/upload_complete"
+        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
         close_up_session_data = {"fileId": up_file_id}
         close_res = self._session.http.post(
             close_up_session_url,

@@ -35,7 +35,7 @@ class NetSession:
             "content-type": "application/json",
             "platform": "android",
             "devicename": "Xiaomi",
-            "host": "www.123pan.com",
+            "host": "www.123pan.cn",
             "app-version": "61",
             "x-app-version": "2.4.0",
         })
