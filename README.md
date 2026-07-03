@@ -52,7 +52,7 @@ cd 123pan/
 
 ```shell
 uv sync
-uv sync --extra build # 构建环境
+uv sync --group build --group lint # 构建环境
 ```
 
 然后运行`src`下的`123pan.py`即可。
