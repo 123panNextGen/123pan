@@ -9,6 +9,10 @@ from qfluentwidgets import (
     SettingCard,
 )
 
+from ..common.log import get_logger
+
+logger = get_logger(__name__)
+
 
 def _mask_username(username):
     """如果用户名类似手机号，隐藏中间4位"""
@@ -51,16 +55,15 @@ class CloudInterface(QWidget):
 
         # 添加用户名显示（使用SettingCard样式）
         self.username_card = SettingCard(
-            FIF.PEOPLE,
-            "账户",
-            "当前登录的账户信息",
-            self.accountGroup
+            FIF.PEOPLE, "账户", "当前登录的账户信息", self.accountGroup
         )
         self.username_label = QLabel()
         font = QFont()
         font.setPointSize(12)
         self.username_label.setFont(font)
-        self.username_card.hBoxLayout.addWidget(self.username_label, 0, Qt.AlignmentFlag.AlignRight)
+        self.username_card.hBoxLayout.addWidget(
+            self.username_label, 0, Qt.AlignmentFlag.AlignRight
+        )
         self.username_card.hBoxLayout.addSpacing(16)
         self.accountGroup.addSettingCard(self.username_card)
 
@@ -94,6 +97,7 @@ class CloudInterface(QWidget):
     def set_pan(self, pan):
         """设置Pan123实例并更新用户信息"""
         self.pan = pan
-        if self.pan and hasattr(self.pan, 'user_name'):
+        if self.pan and hasattr(self.pan, "user_name"):
             username = _mask_username(self.pan.user_name)
             self.username_label.setText(f"用户名: {username}")
+            logger.info("云盘界面已设置: %s", username)

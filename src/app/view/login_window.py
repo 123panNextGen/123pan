@@ -1,5 +1,12 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QFormLayout, QHBoxLayout, QDialog, QComboBox
+from PyQt6.QtWidgets import (
+    QApplication,
+    QVBoxLayout,
+    QFormLayout,
+    QHBoxLayout,
+    QDialog,
+    QComboBox,
+)
 
 from qfluentwidgets import (
     LineEdit,
@@ -24,9 +31,7 @@ class LoginDialog(QDialog):
         self.setWindowTitle("登录123云盘")
         self.resize(460, 320)
         self.setFixedSize(460, 320)
-        # self.setWindowFlags(
-        #     self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
-        # )
+        logger.debug("LoginDialog 初始化")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 30, 40, 30)
@@ -101,28 +106,32 @@ class LoginDialog(QDialog):
             return
         account = ConfigManager.get_account(account_name)
         if account:
+            logger.debug("已加载账号 %s 的密码", account_name)
             self.le_pass.setText(account.get("passWord", ""))
+        else:
+            logger.debug("账号 %s 无保存信息", account_name)
 
     def on_ok(self):
         """登录处理"""
-
         user = self.cbo_accounts.currentText().strip()
         pwd = self.le_pass.text()
+        logger.info("登录尝试: user=%s, has_pwd=%s", user, bool(pwd))
         if not user or not pwd:
+            logger.warning("登录失败: 用户名或密码为空")
             MessageBox("提示", "请输入用户名和密码。", self).exec()
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             account = ConfigManager.get_account(user)
             if account:
-                # 有保存账户信息时，优先读取该账户的设备信息和授权信息
+                logger.debug("使用已保存账号信息登录: %s", user)
                 self.pan = Pan123(readfile=True, user_name=user, password=pwd)
             else:
-                # 新账户登录，不读取旧账号信息
+                logger.debug("新账号登录: %s", user)
                 self.pan = Pan123(readfile=False, user_name=user, password=pwd)
 
-            # 无论是否换账号，都尝试登录以确保 authorization 有效
             code = self.pan.login()
+            logger.info("登录结果: user=%s, code=%s", user, code)
             if code != 200 and code != 0:
                 self.login_error = f"登录失败，返回码: {code}"
                 QApplication.restoreOverrideCursor()
@@ -130,6 +139,7 @@ class LoginDialog(QDialog):
                 return
         except Exception as e:
             self.login_error = str(e)
+            logger.error("登录异常: %s", e)
             QApplication.restoreOverrideCursor()
             MessageBox("登录异常", "登录时发生异常:\n" + str(e), self).exec()
             return
@@ -140,10 +150,10 @@ class LoginDialog(QDialog):
             if hasattr(self.pan, "save_file"):
                 self.pan.save_file()
         except (IOError, OSError) as e:
-            # 忽略配置文件保存失败,不影响登录流程
             logger.warning(f"保存配置失败: {e}")
         except Exception as e:
             logger.error(f"保存配置时发生未知错误: {e}")
+        logger.info("登录成功，对话框关闭: %s", user)
         self.accept()
 
     def get_pan(self):

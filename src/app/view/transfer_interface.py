@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
 )
+import time
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from pathlib import Path
 
@@ -21,7 +23,6 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
 from ..common.config import ConfigManager
-from ..common.speed_limiter import SpeedLimiter
 
 from ..common.log import get_logger
 
@@ -73,32 +74,31 @@ class UploadThread(QThread):
     def run(self):
         try:
             self.status_updated.emit("上传中")
+            logger.info(
+                "上传线程启动: %s (%.2f MB)",
+                self.task.file_name,
+                self.task.file_size / 1024 / 1024,
+            )
 
-            # 读取上传速度限制
             ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
-            if ul_limit > 0:
-                self.pan._session.set_speed_limiter(
-                    SpeedLimiter(ul_limit), is_upload=True
-                )
-            else:
-                self.pan._session.set_speed_limiter(None, is_upload=True)
+            self.pan.set_upload_speed_limit(ul_limit)
 
-            # 保存当前目录
             current_parent_id = self.pan.parent_file_id
-
-            # 设置目标目录
             self.pan.parent_file_id = self.task.target_dir_id
+            logger.debug("上传目标目录: %s", self.task.target_dir_id)
 
-            # 执行上传
+            t0 = time.monotonic()
             self.pan.up_load(self.task.local_path)
+            elapsed = time.monotonic() - t0
 
-            # 恢复当前目录
             self.pan.parent_file_id = current_parent_id
 
             self.progress_updated.emit(100)
             self.status_updated.emit("已完成")
             self.finished.emit()
+            logger.info("上传完成: %s (%.1fs)", self.task.file_name, elapsed)
         except Exception as e:
+            logger.error("上传失败: %s: %s", self.task.file_name, e)
             self.error.emit(str(e))
             self.status_updated.emit("失败")
 
@@ -118,38 +118,29 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            # 更新状态为下载中
             self.status_updated.emit("下载中")
+            logger.info(
+                "下载线程启动: %s, file_id=%s, size=%.2f MB",
+                self.task.file_name,
+                self.task.file_id,
+                self.task.file_size / 1024 / 1024,
+            )
 
-            # 读取配置：多线程开关和速度限制
             multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
             dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
+            logger.debug(
+                "下载配置: multi_thread=%s, speed_limit=%d KB/s", multi_thread, dl_limit
+            )
 
-            # 配置 NetSession
-            session = self.pan._session
-            session.set_multi_thread(multi_thread)
+            self.pan.set_download_multi_thread(multi_thread)
+            self.pan.set_download_speed_limit(dl_limit)
 
-            if dl_limit > 0:
-                limiter = SpeedLimiter(dl_limit)
-                session.set_speed_limiter(limiter, is_upload=False)
-            else:
-                session.set_speed_limiter(None, is_upload=False)
-
-            # 设置进度回调
             def _on_progress(downloaded, total):
                 if total > 0:
                     pct = int(downloaded * 100 / total)
                     self.progress_updated.emit(pct)
 
-            session.set_progress_callback(_on_progress)
-
-            logger.debug(
-                f"下载任务: {self.task.file_name}, file_id: {self.task.file_id}"
-            )
-
-            # 查找文件信息
             target_file = self._find_file_info()
-
             if not target_file:
                 target_file = {
                     "FileId": self.task.file_id,
@@ -159,35 +150,58 @@ class DownloadThread(QThread):
                     "Etag": "",
                     "S3KeyFlag": False,
                 }
-                logger.debug(f"构造文件详情: {target_file}")
+                logger.debug(
+                    "未找到文件信息，使用构造数据: file_id=%s", self.task.file_id
+                )
+            else:
+                real_size = int(target_file.get("Size", 0) or 0)
+                if real_size > 0:
+                    self.task.file_size = real_size
+                logger.debug(
+                    "已找到文件信息: name=%s, size=%s",
+                    target_file.get("FileName"),
+                    target_file.get("Size"),
+                )
 
-            # 获取下载链接
             download_url = self.pan.link_by_fileDetail(target_file, showlink=False)
             if isinstance(download_url, int):
                 raise RuntimeError(f"获取下载链接失败，返回码: {download_url}")
+            logger.debug("下载链接已获取")
 
-            # 确保保存路径存在
             file_path = Path(self.task.save_path)
             save_dir = file_path.parent
             if not save_dir.exists():
                 save_dir.mkdir(parents=True, exist_ok=True)
+                logger.debug("创建下载目录: %s", save_dir)
 
-            # 使用多线程下载
             file_size = int(target_file.get("Size", self.task.file_size) or 0)
-            success = session.download_file_multithread(
-                download_url, file_path, file_size,
+            t0 = time.monotonic()
+            success = self.pan.download_file(
+                download_url,
+                file_path,
+                file_size,
                 progress_callback=_on_progress,
             )
+            elapsed = time.monotonic() - t0
 
             if not success:
                 raise RuntimeError("下载失败")
 
-            # 更新状态为完成
             self.progress_updated.emit(100)
             self.status_updated.emit("已完成")
             self.finished.emit()
+            speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
+            logger.info(
+                "下载完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
+                self.task.file_name,
+                file_size / 1024 / 1024,
+                elapsed,
+                speed,
+            )
         except Exception as e:
-            logger.error(f"下载错误: {e}")
+            logger.error(
+                "下载失败: %s: %s:%s", self.task.file_name, type(e).__name__, e
+            )
             self.error.emit(str(e))
             self.status_updated.emit("失败")
 
@@ -260,12 +274,12 @@ class TransferInterface(QWidget):
             username = ConfigManager.get_setting("proxyUsername", "")
             password = ConfigManager.get_setting("proxyPassword", "")
             if host and port > 0:
-                self.pan._session.set_proxy_auth(
+                self.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
                 logger.info(f"代理已启用: {proxy_type}://{host}:{port}")
         else:
-            self.pan._session.set_proxy("")
+            self.pan.clear_download_proxy()
 
     def _apply_speed_settings(self):
         """从配置读取并应用速度限制设置。"""
@@ -275,17 +289,9 @@ class TransferInterface(QWidget):
         ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
         multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
 
-        self.pan._session.set_multi_thread(multi_thread)
-
-        if dl_limit > 0:
-            self.pan._session.set_speed_limiter(SpeedLimiter(dl_limit), is_upload=False)
-        else:
-            self.pan._session.set_speed_limiter(None, is_upload=False)
-
-        if ul_limit > 0:
-            self.pan._session.set_speed_limiter(SpeedLimiter(ul_limit), is_upload=True)
-        else:
-            self.pan._session.set_speed_limiter(None, is_upload=True)
+        self.pan.set_download_multi_thread(multi_thread)
+        self.pan.set_download_speed_limit(dl_limit)
+        self.pan.set_upload_speed_limit(ul_limit)
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)
@@ -389,9 +395,9 @@ class TransferInterface(QWidget):
         """添加上传任务"""
         task = UploadTask(file_name, file_size, local_path, target_dir_id)
         self.upload_tasks.append(task)
+        logger.info("添加上传任务: %s (%.2f MB)", file_name, file_size / 1024 / 1024)
         self.__update_upload_table()
 
-        # 启动上传线程
         if self.pan:
             thread = UploadThread(task, self.pan)
             thread.progress_updated.connect(
@@ -404,6 +410,7 @@ class TransferInterface(QWidget):
             thread.error.connect(lambda error, t=task: self.__task_error(t, error))
             self.upload_threads.append(thread)
             thread.start()
+            logger.debug("上传线程已启动: %s", file_name)
 
         return task
 
@@ -413,9 +420,14 @@ class TransferInterface(QWidget):
         """添加下载任务"""
         task = DownloadTask(file_name, file_size, file_id, save_path, current_dir_id)
         self.download_tasks.append(task)
+        logger.info(
+            "添加下载任务: %s (%.2f MB, id=%s)",
+            file_name,
+            file_size / 1024 / 1024,
+            file_id,
+        )
         self.__update_download_table()
 
-        # 启动下载线程
         if self.pan:
             thread = DownloadThread(task, self.pan)
             thread.progress_updated.connect(
@@ -428,6 +440,7 @@ class TransferInterface(QWidget):
             thread.error.connect(lambda error, t=task: self.__task_error(t, error))
             self.download_threads.append(thread)
             thread.start()
+            logger.debug("下载线程已启动: %s", file_name)
 
         return task
 
@@ -449,9 +462,9 @@ class TransferInterface(QWidget):
 
     def __task_finished(self, task, task_type):
         """任务完成处理"""
+        logger.info("任务完成: type=%s, name=%s", task_type, task.file_name)
         if task_type == "upload":
             self.__update_upload_table()
-            # 上传完成时显示右上角提示
             InfoBar.success(
                 title="上传完成",
                 content=f"文件 '{task.file_name}' 上传成功",
@@ -462,7 +475,12 @@ class TransferInterface(QWidget):
 
     def __task_error(self, task, error):
         """任务错误处理"""
-        logger.error(f"任务错误: {error}")
+        logger.error(
+            "任务失败: type=%s, name=%s, error=%s",
+            type(task).__name__,
+            task.file_name,
+            error,
+        )
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):
@@ -479,132 +497,63 @@ class TransferInterface(QWidget):
                 self.download_tasks.remove(task)
                 self.__update_download_table()
 
-    def __update_upload_table(self):
-        """更新上传表格"""
-        # 确保表格行数正确
-        if self.uploadTable.rowCount() != len(self.upload_tasks):
-            self.uploadTable.setRowCount(len(self.upload_tasks))
+    def __update_table(self, table, tasks, task_type):
+        """更新传输表格（上传/下载共用）"""
+        if table.rowCount() != len(tasks):
+            table.setRowCount(len(tasks))
 
-        for row, task in enumerate(self.upload_tasks):
-            # 文件名
-            name_item = self.uploadTable.item(row, 0)
+        for row, task in enumerate(tasks):
+            name_item = table.item(row, 0)
             if not name_item:
                 name_item = QTableWidgetItem(task.file_name)
-                self.uploadTable.setItem(row, 0, name_item)
+                table.setItem(row, 0, name_item)
             else:
                 name_item.setText(task.file_name)
 
-            # 文件大小
-            size_item = self.uploadTable.item(row, 1)
+            size_item = table.item(row, 1)
             if not size_item:
                 size_item = QTableWidgetItem(format_file_size(task.file_size))
-                self.uploadTable.setItem(row, 1, size_item)
+                table.setItem(row, 1, size_item)
+            else:
+                size_item.setText(format_file_size(task.file_size))
 
-            # 进度条
-            progress_bar = self.uploadTable.cellWidget(row, 2)
+            progress_bar = table.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
-                self.uploadTable.setCellWidget(row, 2, progress_bar)
+                progress_bar.setTextVisible(False)
+                table.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
-            # 百分比
-            percent_item = self.uploadTable.item(row, 3)
+            percent_item = table.item(row, 3)
             if not percent_item:
                 percent_item = QTableWidgetItem(f"{task.progress}%")
                 percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.uploadTable.setItem(row, 3, percent_item)
+                table.setItem(row, 3, percent_item)
             else:
                 percent_item.setText(f"{task.progress}%")
 
-            # 状态
-            status_item = self.uploadTable.item(row, 4)
+            status_item = table.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.uploadTable.setItem(row, 4, status_item)
+                table.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
-            # 操作按钮 - 只在首次创建时添加
-            if not self.uploadTable.cellWidget(row, 5):
-                action_layout = QHBoxLayout()
-                delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", self.uploadTable
-                )
-                delete_button.setFixedSize(128, 24)
+            action_layout = QHBoxLayout()
+            delete_button = PushButton(
+                FIF.DELETE.icon(), "删除任务", table
+            )
+            delete_button.setFixedSize(128, 24)
+            delete_button.clicked.connect(
+                lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
+            )
+            action_layout.addWidget(delete_button)
+            action_widget = QWidget()
+            action_widget.setLayout(action_layout)
+            table.setCellWidget(row, 5, action_widget)
 
-                # 添加点击事件
-                delete_button.clicked.connect(
-                    lambda _, t=task: self.__remove_task(t, "upload")
-                )
-
-                action_layout.addWidget(delete_button)
-
-                action_widget = QWidget()
-                action_widget.setLayout(action_layout)
-                self.uploadTable.setCellWidget(row, 5, action_widget)
+    def __update_upload_table(self):
+        self.__update_table(self.uploadTable, self.upload_tasks, "upload")
 
     def __update_download_table(self):
-        """更新下载表格"""
-        # 确保表格行数正确
-        if self.downloadTable.rowCount() != len(self.download_tasks):
-            self.downloadTable.setRowCount(len(self.download_tasks))
-
-        for row, task in enumerate(self.download_tasks):
-            # 文件名
-            name_item = self.downloadTable.item(row, 0)
-            if not name_item:
-                name_item = QTableWidgetItem(task.file_name)
-                self.downloadTable.setItem(row, 0, name_item)
-            else:
-                name_item.setText(task.file_name)
-
-            # 文件大小
-            size_item = self.downloadTable.item(row, 1)
-            if not size_item:
-                size_item = QTableWidgetItem(format_file_size(task.file_size))
-                self.downloadTable.setItem(row, 1, size_item)
-
-            # 进度条
-            progress_bar = self.downloadTable.cellWidget(row, 2)
-            if not progress_bar:
-                progress_bar = ProgressBar()
-                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
-                self.downloadTable.setCellWidget(row, 2, progress_bar)
-            progress_bar.setValue(task.progress)
-
-            # 百分比
-            percent_item = self.downloadTable.item(row, 3)
-            if not percent_item:
-                percent_item = QTableWidgetItem(f"{task.progress}%")
-                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.downloadTable.setItem(row, 3, percent_item)
-            else:
-                percent_item.setText(f"{task.progress}%")
-
-            # 状态
-            status_item = self.downloadTable.item(row, 4)
-            if not status_item:
-                status_item = QTableWidgetItem(task.status)
-                self.downloadTable.setItem(row, 4, status_item)
-            else:
-                status_item.setText(task.status)
-
-            # 操作按钮 - 只在首次创建时添加
-            if not self.downloadTable.cellWidget(row, 5):
-                action_layout = QHBoxLayout()
-                delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", self.downloadTable
-                )
-                delete_button.setFixedSize(128, 24)
-
-                # 添加点击事件
-                delete_button.clicked.connect(
-                    lambda _, t=task: self.__remove_task(t, "download")
-                )
-
-                action_layout.addWidget(delete_button)
-
-                action_widget = QWidget()
-                action_widget.setLayout(action_layout)
-                self.downloadTable.setCellWidget(row, 5, action_widget)
+        self.__update_table(self.downloadTable, self.download_tasks, "download")

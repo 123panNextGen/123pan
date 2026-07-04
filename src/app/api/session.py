@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 import os
 import re
 import time
@@ -8,6 +9,8 @@ from typing import Any, Optional, Callable
 from urllib.parse import urljoin
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 from .model import (
     ApiCode,
@@ -30,15 +33,17 @@ class NetSession:
     def __init__(self):
         self._user_info: Optional[UserInfoModel] = None
         self._http = requests.Session()
-        self._http.headers.update({
-            "accept-encoding": "gzip",
-            "content-type": "application/json",
-            "platform": "android",
-            "devicename": "Xiaomi",
-            "host": "www.123pan.cn",
-            "app-version": "61",
-            "x-app-version": "2.4.0",
-        })
+        self._http.headers.update(
+            {
+                "accept-encoding": "gzip",
+                "content-type": "application/json",
+                "platform": "android",
+                "devicename": "Xiaomi",
+                "host": "www.123pan.cn",
+                "app-version": "61",
+                "x-app-version": "2.4.0",
+            }
+        )
 
         # 传输专用会话：用于下载（CDN）与上传（S3）。
         # 不携带 123pan 鉴权头，并扩大连接池以适配多线程分片传输，
@@ -154,8 +159,14 @@ class NetSession:
         self._http.proxies = proxies or {}
         self._transfer.proxies = proxies or {}
 
-    def set_proxy_auth(self, proxy_type: str, host: str, port: int,
-                       username: str = "", password: str = ""):
+    def set_proxy_auth(
+        self,
+        proxy_type: str,
+        host: str,
+        port: int,
+        username: str = "",
+        password: str = "",
+    ):
         """通过参数设置代理。
 
         Args:
@@ -196,24 +207,51 @@ class NetSession:
         Returns:
             是否下载成功。
         """
+        logger.info(
+            "下载文件: %s (%.2f MB), multi=%s, threads=%s",
+            file_path.name,
+            file_size / 1024 / 1024,
+            self._multi_thread_enabled,
+            self._num_threads,
+        )
+
+        if file_size == 0:
+            logger.info("空文件，跳过下载: %s", file_path.name)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(b"")
+            if progress_callback:
+                progress_callback(0, 0)
+            return True
+
         if not self._multi_thread_enabled or self._num_threads <= 1:
+            logger.debug("多线程已禁用，使用单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
 
-        # 检查服务器是否支持 Range
         supports_range = self._check_range_support(url)
-        min_chunk = 5 * 1024 * 1024  # 小于 5MB 不分片
+        min_chunk = 5 * 1024 * 1024
 
-        if not supports_range or file_size < min_chunk:
+        if not supports_range:
+            logger.debug("服务器不支持 Range，回退单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
 
+        if file_size < min_chunk:
+            logger.debug("文件小于 5MB，回退单线程")
+            return self._download_single(url, file_path, file_size, progress_callback)
+
+        logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
         return self._download_chunked(url, file_path, file_size, progress_callback)
 
     def _check_range_support(self, url: str) -> bool:
         """检查 URL 是否支持 Range 请求。"""
         try:
             resp = self._transfer.head(url, timeout=10, allow_redirects=True)
-            return resp.headers.get("Accept-Ranges") == "bytes"
-        except requests.RequestException:
+            accept = resp.headers.get("Accept-Ranges", "")
+            logger.debug(
+                "Range 支持检查: Accept-Ranges=%s -> %s", accept, accept == "bytes"
+            )
+            return accept == "bytes"
+        except requests.RequestException as e:
+            logger.debug("Range 检查 HEAD 请求失败: %s", e)
             return False
 
     def _download_single(
@@ -225,8 +263,10 @@ class NetSession:
     ) -> bool:
         """单线程流式下载。"""
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        logger.debug("单线程下载开始: %s", file_path.name)
+        t0 = time.monotonic()
         try:
-            with self._transfer.get(url, stream=True, timeout=30) as resp:
+            with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
                 resp.raise_for_status()
                 downloaded = 0
                 with open(temp_path, "wb") as f:
@@ -240,12 +280,27 @@ class NetSession:
                                     time.sleep(wait)
                             if progress_callback:
                                 progress_callback(downloaded, file_size)
+            elapsed = time.monotonic() - t0
+            logger.info(
+                "单线程下载完成: %s (%.2f MB / %.1fs)",
+                file_path.name,
+                downloaded / 1024 / 1024,
+                elapsed,
+            )
             if temp_path.exists():
                 if file_path.exists():
                     file_path.unlink()
                 temp_path.rename(file_path)
             return True
-        except Exception:
+        except Exception as e:
+            elapsed = time.monotonic() - t0
+            logger.error(
+                "单线程下载失败: %s (%.1fs): %s:%s",
+                file_path.name,
+                elapsed,
+                type(e).__name__,
+                e,
+            )
             if temp_path.exists():
                 temp_path.unlink()
             raise
@@ -257,71 +312,129 @@ class NetSession:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> bool:
-        """多线程分片下载。"""
-        chunk_size = max(self._chunk_size, file_size // self._num_threads)
-        ranges = []
+        """多线程分片下载（每分片直接写入磁盘 .partN 文件，避免内存爆炸）。"""
+        num_threads = self._num_threads
+        chunk_size = max(self._chunk_size, file_size // num_threads)
+
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        progress_lock = threading.Lock()
+        downloaded_bytes = [0]
+        last_report = [0.0]
+        errors: list = []
+        errors_lock = threading.Lock()
+
+        def _report_progress():
+            if progress_callback:
+                progress_callback(downloaded_bytes[0], file_size)
+
+        def _download_chunk(start: int, end: int, index: int) -> bool:
+            part_path = Path(str(temp_path) + f".part{index}")
+            headers = {"Range": f"bytes={start}-{end}"}
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if part_path.exists():
+                        part_path.unlink()
+                    with self._transfer.get(
+                        url,
+                        headers=headers,
+                        stream=True,
+                        timeout=(10, 60),
+                    ) as resp:
+                        resp.raise_for_status()
+                        with open(part_path, "wb") as pf:
+                            for data in resp.iter_content(chunk_size=8192):
+                                if data:
+                                    pf.write(data)
+                                    if self._download_limiter:
+                                        wait = self._download_limiter.consume(len(data))
+                                        if wait > 0:
+                                            time.sleep(wait)
+                                    with progress_lock:
+                                        downloaded_bytes[0] += len(data)
+                                        now = time.monotonic()
+                                        if now - last_report[0] >= 0.1:
+                                            _report_progress()
+                                            last_report[0] = now
+                    return True
+                except Exception as e:
+                    if part_path.exists():
+                        try:
+                            part_path.unlink()
+                        except OSError:
+                            pass
+                    if attempt < max_retries - 1:
+                        wait = (attempt + 1) * 1.0
+                        with progress_lock:
+                            saved = downloaded_bytes[0]
+                        logger.warning(
+                            f"分片 {index} 第 {attempt + 1} 次失败，{wait:.0f}s 后重试: {e}"
+                        )
+                        time.sleep(wait)
+                        with progress_lock:
+                            downloaded_bytes[0] = saved
+                        continue
+                    with errors_lock:
+                        errors.append((index, e))
+                    return False
+
+        # 计算分片范围
+        ranges: list[tuple[int, int]] = []
         start = 0
         while start < file_size:
             end = min(start + chunk_size - 1, file_size - 1)
             ranges.append((start, end))
             start = end + 1
 
-        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-        progress_lock = threading.Lock()
-        downloaded_bytes = [0] * len(ranges)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_threads
+            ) as executor:
+                futures = {
+                    executor.submit(_download_chunk, r[0], r[1], i): i
+                    for i, r in enumerate(ranges)
+                }
 
-        def _report_progress():
-            if progress_callback:
-                total = sum(downloaded_bytes)
-                progress_callback(total, file_size)
+                for future in concurrent.futures.as_completed(futures):
+                    if not future.result():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        for i in range(len(ranges)):
+                            p = Path(str(temp_path) + f".part{i}")
+                            if p.exists():
+                                try:
+                                    p.unlink()
+                                except OSError:
+                                    pass
+                        err_msgs = [f"分片{idx}: {e}" for idx, e in errors]
+                        raise RuntimeError(f"分片下载失败: {'; '.join(err_msgs)}")
 
-        def _download_chunk(idx: int, byte_range: tuple):
-            headers = {"Range": f"bytes={byte_range[0]}-{byte_range[1]}"}
-            try:
-                with self._transfer.get(
-                    url, headers=headers, stream=True, timeout=60
-                ) as resp:
-                    resp.raise_for_status()
-                    chunk_data = bytearray()
-                    for data in resp.iter_content(chunk_size=8192):
-                        if data:
-                            chunk_data.extend(data)
-                            if self._download_limiter:
-                                wait = self._download_limiter.consume(len(data))
-                                if wait > 0:
-                                    time.sleep(wait)
-                            with progress_lock:
-                                downloaded_bytes[idx] += len(data)
-                                _report_progress()
-                    return bytes(chunk_data), byte_range[0]
-            except Exception:
-                return None, byte_range[0]
+            # 按顺序合并分片
+            with open(temp_path, "wb") as out_f:
+                for i in range(len(ranges)):
+                    p = Path(str(temp_path) + f".part{i}")
+                    try:
+                        with open(p, "rb") as pf:
+                            while True:
+                                buf = pf.read(1024 * 1024)
+                                if not buf:
+                                    break
+                                out_f.write(buf)
+                        p.unlink()
+                    except OSError as e:
+                        raise RuntimeError(f"合并分片文件 {i} 失败: {e}")
 
-        # 使用线程池并行下载
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self._num_threads
-        ) as executor:
-            futures = {
-                executor.submit(_download_chunk, i, r): i
-                for i, r in enumerate(ranges)
-            }
-            results = {}
-            for future in concurrent.futures.as_completed(futures):
-                data, offset = future.result()
-                if data is None:
-                    raise RuntimeError(f"分片下载失败: offset={offset}")
-                results[offset] = data
-
-        # 按顺序写入文件
-        with open(temp_path, "wb") as f:
-            for byte_range in ranges:
-                f.write(results[byte_range[0]])
-
-        if temp_path.exists():
-            if file_path.exists():
-                file_path.unlink()
-            temp_path.rename(file_path)
-        return True
+            if temp_path.exists():
+                if file_path.exists():
+                    file_path.unlink()
+                temp_path.rename(file_path)
+            return True
+        except Exception:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            raise
 
     def _build_headers(self) -> dict[str, str]:
         """构建设备伪装请求头。"""
@@ -342,7 +455,9 @@ class NetSession:
         self._http.headers.update(self._build_headers())
 
     @staticmethod
-    def _safe_json(resp: requests.Response) -> tuple[dict[str, Any], Optional[ApiReturnModel]]:
+    def _safe_json(
+        resp: requests.Response,
+    ) -> tuple[dict[str, Any], Optional[ApiReturnModel]]:
         """安全解析 JSON 响应，失败时返回错误模型。
 
         处理服务器返回空响应、HTML 错误页等非 JSON 内容的情况。
@@ -362,26 +477,43 @@ class NetSession:
 
     def login(self, user_name: str, password: str) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/b/api/user/sign_in")
-        data = {"type": 1, "passport": user_name, "password": password}
+        data = {"type": 1, "passport": user_name, "password": "***"}
+        t0 = time.monotonic()
         try:
-            resp = self._http.post(url, json=data, timeout=(3, 5))
+            resp = self._http.post(
+                url,
+                json={"type": 1, "passport": user_name, "password": password},
+                timeout=(3, 5),
+            )
         except requests.RequestException as e:
+            logger.error("登录请求失败 (%.2fs): %s", time.monotonic() - t0, e)
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
+            logger.error("登录响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
             return error
         code = body.get("code", -1)
+        logger.info(
+            "登录 %s (%.2fs): HTTP %s, code=%s",
+            user_name,
+            elapsed,
+            resp.status_code,
+            code,
+        )
         if code != 200:
+            msg = body.get("message", "")
+            logger.error("登录失败: code=%s, msg=%s", code, msg)
             return ApiReturnModel(
                 code=code,
                 api_code=code,
                 api_code_enum=ApiCode.fail,
-                msg=body.get("message", ""),
+                msg=msg,
             )
         token = body["data"]["token"]
         authorization = "Bearer " + token
@@ -445,20 +577,46 @@ class NetSession:
             "Page": str(page),
             "OnlyLookAbnormalFile": 0,
         }
+        t0 = time.monotonic()
         try:
             resp = self._http.get(url, params=params, timeout=30)
         except requests.RequestException as e:
+            logger.error(
+                "获取文件列表失败 (%.2fs): file_id=%s, page=%s, err=%s",
+                time.monotonic() - t0,
+                file_id,
+                page,
+                e,
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
+            logger.error(
+                "文件列表响应异常: file_id=%s, HTTP %s", file_id, resp.status_code
+            )
             return error
         code = body.get("code", -1)
+        total = (
+            body.get("data", {}).get("Total", 0)
+            if isinstance(body.get("data"), dict)
+            else 0
+        )
+        logger.debug(
+            "获取文件列表 (%.2fs): file_id=%s, page=%s, code=%s, total=%s",
+            elapsed,
+            file_id,
+            page,
+            code,
+            total,
+        )
         if code == 2 and retry_login:
+            logger.warning("token 过期，需重新登录: file_id=%s", file_id)
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -466,6 +624,12 @@ class NetSession:
                 msg=body.get("message", "token 过期"),
             )
         if code != 0:
+            logger.error(
+                "获取文件列表失败: file_id=%s, code=%s, msg=%s",
+                file_id,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -475,6 +639,7 @@ class NetSession:
         try:
             file_list_response = FileListResponse.from_dict(body)
         except Exception as e:
+            logger.error("解析文件列表失败: %s", e)
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
@@ -508,22 +673,41 @@ class NetSession:
             "event": "newCreateFolder",
             "operateType": 1,
         }
+        t0 = time.monotonic()
         try:
-            resp = self._http.post(
-                url, json=data, timeout=10
-            )
+            resp = self._http.post(url, json=data, timeout=10)
         except requests.RequestException as e:
+            logger.error(
+                "创建文件夹失败: name=%s, parent=%s, err=%s",
+                dir_name,
+                parent_file_id,
+                e,
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
             return error
         code = body.get("code", -1)
+        logger.debug(
+            "创建文件夹 (%.2fs): name=%s, parent=%s, code=%s",
+            elapsed,
+            dir_name,
+            parent_file_id,
+            code,
+        )
         if code != 0:
+            logger.error(
+                "创建文件夹失败: name=%s, code=%s, msg=%s",
+                dir_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -540,7 +724,9 @@ class NetSession:
 
     # ---- 删除/恢复 ----
 
-    def trash_file(self, file_info: dict | FileItemModel, operation: bool = True) -> ApiReturnModel:
+    def trash_file(
+        self, file_info: dict | FileItemModel, operation: bool = True
+    ) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/a/api/file/trash")
         if isinstance(file_info, FileItemModel):
             payload = file_info.to_json()
@@ -551,22 +737,39 @@ class NetSession:
             "fileTrashInfoList": payload,
             "operation": operation,
         }
+        op_name = "删除" if operation else "恢复"
+        file_name = (
+            payload.get("FileName", payload.get("fileName", "?"))
+            if isinstance(payload, dict)
+            else "?"
+        )
+        t0 = time.monotonic()
         try:
-            resp = self._http.post(
-                url, json=data, timeout=10
-            )
+            resp = self._http.post(url, json=data, timeout=10)
         except requests.RequestException as e:
+            logger.error("%s文件失败: name=%s, err=%s", op_name, file_name, e)
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
             return error
         code = body.get("code", -1)
+        logger.debug(
+            "%s文件 (%.2fs): name=%s, code=%s", op_name, elapsed, file_name, code
+        )
         if code != 0:
+            logger.error(
+                "%s文件失败: name=%s, code=%s, msg=%s",
+                op_name,
+                file_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -585,7 +788,9 @@ class NetSession:
 
     # ---- 下载链接 ----
 
-    def get_file_link(self, file_info: dict | FileItemModel) -> ApiReturnModel:  # pylint: disable=protected-access
+    def get_file_link(
+        self, file_info: dict | FileItemModel
+    ) -> ApiReturnModel:  # pylint: disable=protected-access
         if isinstance(file_info, FileItemModel):
             type_val = file_info._type  # pylint: disable=protected-access
         else:
@@ -616,27 +821,46 @@ class NetSession:
                     "driveId": 0,
                     "etag": file_info.get("Etag", file_info.get("etag", "")),
                     "fileId": file_info.get("FileId", file_info.get("fileId", 0)),
-                    "s3keyFlag": file_info.get("S3KeyFlag", file_info.get("s3keyFlag", "")),
+                    "s3keyFlag": file_info.get(
+                        "S3KeyFlag", file_info.get("s3keyFlag", "")
+                    ),
                     "type": file_info.get("Type", file_info.get("type", 0)),
-                    "fileName": file_info.get("FileName", file_info.get("fileName", "")),
+                    "fileName": file_info.get(
+                        "FileName", file_info.get("fileName", "")
+                    ),
                     "size": file_info.get("Size", file_info.get("size", 0)),
                 }
+        file_name = request_data.get("fileName", "?")
+        t0 = time.monotonic()
         try:
-            resp = self._http.post(
-                url, json=request_data, timeout=10
-            )
+            resp = self._http.post(url, json=request_data, timeout=10)
         except requests.RequestException as e:
+            logger.error("获取下载链接失败: name=%s, err=%s", file_name, e)
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
             return error
         code = body.get("code", -1)
+        logger.debug(
+            "获取下载链接 (%.2fs): name=%s, type=%s, code=%s",
+            elapsed,
+            file_name,
+            type_val,
+            code,
+        )
         if code != 0:
+            logger.error(
+                "获取下载链接失败: name=%s, code=%s, msg=%s",
+                file_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -645,6 +869,9 @@ class NetSession:
             )
         download_url = body["data"]["DownloadUrl"]
         redirect_url = self._resolve_download_url(download_url)
+        logger.info(
+            "下载链接已获取: name=%s, size=%s", file_name, request_data.get("size", "?")
+        )
         return ApiReturnModel(
             code=0,
             api_code=200,
@@ -660,13 +887,20 @@ class NetSession:
         """
         try:
             resp = self._transfer.get(url, timeout=10, allow_redirects=False)
-            text = resp.text
+            text = resp.text[:500]
             url_pattern = re.compile(r"href='(https?://[^']+)'")
             match = url_pattern.search(text)
             if match:
-                return match.group(1)
-        except requests.RequestException:
-            pass
+                resolved = match.group(1)
+                logger.debug("下载 URL 已解析: %s ...", resolved[:80])
+                return resolved
+            logger.debug(
+                "下载 URL 未找到重定向，返回原始 URL: status=%s, body=%.100s",
+                resp.status_code,
+                text,
+            )
+        except requests.RequestException as e:
+            logger.warning("解析下载 URL 失败: %s", e)
         return url
 
     # ---- 重命名 ----
@@ -674,22 +908,38 @@ class NetSession:
     def rename_file(self, file_id: int, new_name: str) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/a/api/file/rename")
         data = {"driveId": 0, "fileId": file_id, "fileName": new_name}
+        t0 = time.monotonic()
         try:
-            resp = self._http.post(
-                url, json=data, timeout=10
-            )
+            resp = self._http.post(url, json=data, timeout=10)
         except requests.RequestException as e:
+            logger.error(
+                "重命名失败: file_id=%s, new_name=%s, err=%s", file_id, new_name, e
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
                 api_code_enum=ApiCode.fail,
                 msg=str(e),
             )
+        elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
             return error
         code = body.get("code", -1)
+        logger.debug(
+            "重命名 (%.2fs): file_id=%s, new_name=%s, code=%s",
+            elapsed,
+            file_id,
+            new_name,
+            code,
+        )
         if code != 0:
+            logger.error(
+                "重命名失败: file_id=%s, code=%s, msg=%s",
+                file_id,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,

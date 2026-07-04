@@ -1,8 +1,14 @@
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QFileDialog,
-    QHBoxLayout, QSpinBox, QLineEdit, QComboBox,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QFileDialog,
+    QHBoxLayout,
+    QSpinBox,
+    QLineEdit,
+    QComboBox,
 )
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -17,22 +23,35 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     LineEdit,
     BodyLabel,
-    InfoBar
+    InfoBar,
 )
 from qfluentwidgets import FluentIcon as FIF
 
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
-from ..common.log import open_log_file
+from ..common.log import get_logger, open_log_file
 from ..common.api import check_version
+
+logger = get_logger(__name__)
 
 
 class _SpinBoxCard(SettingCard):
     """通用数值输入设置卡片（带 SpinBox）"""
 
-    def __init__(self, icon, title, content, value=0, parent=None,
-                 min_val=0, max_val=1048576, step=1, suffix="", special_text=""):
+    def __init__(
+        self,
+        icon,
+        title,
+        content,
+        value=0,
+        parent=None,
+        min_val=0,
+        max_val=1048576,
+        step=1,
+        suffix="",
+        special_text="",
+    ):
         super().__init__(icon, title, content, parent)
         self.spinBox = QSpinBox(self)
         self.spinBox.setRange(min_val, max_val)
@@ -57,9 +76,18 @@ class _SpeedLimitCard(_SpinBoxCard):
     """速度限制设置卡片"""
 
     def __init__(self, icon, title, content, value=0, parent=None):
-        super().__init__(icon, title, content, value, parent,
-                         min_val=0, max_val=1048576, step=100,
-                         suffix=" KB/s", special_text="不限制")
+        super().__init__(
+            icon,
+            title,
+            content,
+            value,
+            parent,
+            min_val=0,
+            max_val=1048576,
+            step=100,
+            suffix=" KB/s",
+            special_text="不限制",
+        )
 
 
 class _ProxyHostCard(SettingCard):
@@ -104,6 +132,7 @@ class _ComboCard(SettingCard):
     def currentIndex(self):
         return self.comboBox.currentIndex()
 
+
 class SettingInterface(ScrollArea):
     """设置页面"""
 
@@ -115,14 +144,14 @@ class SettingInterface(ScrollArea):
         self.settingLabel = QLabel(self.tr("设置"), self)
 
         # ---- 下载设置组 ----
-        self.downloadGroup = SettingCardGroup(
-            self.tr("下载设置"), self.scrollWidget
-        )
+        self.downloadGroup = SettingCardGroup(self.tr("下载设置"), self.scrollWidget)
         self.downloadFolderCard = PushSettingCard(
             self.tr("选择文件夹"),
             FIF.DOWNLOAD,
             self.tr("下载目录"),
-            ConfigManager.get_setting("defaultDownloadPath", str(Path.home() / "Downloads")),
+            ConfigManager.get_setting(
+                "defaultDownloadPath", str(Path.home() / "Downloads")
+            ),
             self.downloadGroup,
         )
 
@@ -163,9 +192,7 @@ class SettingInterface(ScrollArea):
         )
 
         # ---- 代理设置组 ----
-        self.proxyGroup = SettingCardGroup(
-            self.tr("网络代理"), self.scrollWidget
-        )
+        self.proxyGroup = SettingCardGroup(self.tr("网络代理"), self.scrollWidget)
 
         self.proxyEnabledCard = SwitchSettingCard(
             FIF.GLOBE,
@@ -182,7 +209,9 @@ class SettingInterface(ScrollArea):
             self.tr("代理类型"),
             self.tr("选择代理协议类型"),
             texts=["HTTP", "SOCKS5"],
-            current_index=0 if ConfigManager.get_setting("proxyType", "http") == "http" else 1,
+            current_index=(
+                0 if ConfigManager.get_setting("proxyType", "http") == "http" else 1
+            ),
             parent=self.proxyGroup,
         )
 
@@ -200,7 +229,9 @@ class SettingInterface(ScrollArea):
             self.tr("代理服务器端口"),
             ConfigManager.get_setting("proxyPort", 0),
             self.proxyGroup,
-            min_val=0, max_val=65535, step=1,
+            min_val=0,
+            max_val=65535,
+            step=1,
         )
 
         self.proxyUserCard = _ProxyHostCard(
@@ -254,7 +285,7 @@ class SettingInterface(ScrollArea):
             self.tr("检查更新"),
             self.tr("检查当前应用是否为最新版"),
             self.aboutGroup,
-        )        
+        )
 
         self.__initWidget()
 
@@ -318,7 +349,11 @@ class SettingInterface(ScrollArea):
         if check_version():
             InfoBar.success(title="检查成功", content="当前是最新版本", parent=self)
         else:
-            InfoBar.error(title="检查失败", content="当前不是最新版本，或当前无法完成检查", parent=self)    
+            InfoBar.error(
+                title="检查失败",
+                content="当前不是最新版本，或当前无法完成检查",
+                parent=self,
+            )
 
     def __onDownloadFolderCardClicked(self):
         folder = QFileDialog.getExistingDirectory(self, self.tr("Choose folder"), "./")
@@ -326,40 +361,78 @@ class SettingInterface(ScrollArea):
             return
         self.downloadFolderCard.setContent(folder)
         ConfigManager.set_setting("defaultDownloadPath", folder)
+        logger.info("下载目录变更为: %s", folder)
 
     def __onAskDownloadLocationChanged(self, checked):
         ConfigManager.set_setting("askDownloadLocation", checked)
+        logger.info("询问下载位置: %s", "开启" if checked else "关闭")
 
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
-        # 实时应用到当前 session
-        if self.parent() and hasattr(self.parent(), 'pan'):
-            self.parent().pan._session.set_multi_thread(checked)
+        if self.parent() and hasattr(self.parent(), "pan"):
+            self.parent().pan.set_download_multi_thread(checked)
+        logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
+        if self.parent() and hasattr(self.parent(), "pan"):
+            self.parent().pan.set_download_speed_limit(val)
+        logger.info("下载限速: %d KB/s", val)
 
     def __onUploadSpeedChanged(self, val):
         ConfigManager.set_setting("uploadSpeedLimit", val)
+        if self.parent() and hasattr(self.parent(), "pan"):
+            self.parent().pan.set_upload_speed_limit(val)
+        logger.info("上传限速: %d KB/s", val)
+
+    def _apply_proxy_to_service(self):
+        """将当前代理配置推送到 Service。"""
+        if not (self.parent() and hasattr(self.parent(), "pan")):
+            return
+        enabled = ConfigManager.get_setting("proxyEnabled", False)
+        if enabled:
+            proxy_type = ConfigManager.get_setting("proxyType", "http")
+            host = ConfigManager.get_setting("proxyHost", "")
+            port = ConfigManager.get_setting("proxyPort", 0)
+            username = ConfigManager.get_setting("proxyUsername", "")
+            password = ConfigManager.get_setting("proxyPassword", "")
+            if host and port > 0:
+                self.parent().pan.set_download_proxy(
+                    proxy_type, host, port, username, password
+                )
+                return
+        self.parent().pan.clear_download_proxy()
 
     def __onProxyEnabledChanged(self, checked):
         ConfigManager.set_setting("proxyEnabled", checked)
+        self._apply_proxy_to_service()
+        logger.info("代理: %s", "开启" if checked else "关闭")
 
     def __onProxyTypeChanged(self, text):
         proxy_type = "http" if text == "HTTP" else "socks5"
         ConfigManager.set_setting("proxyType", proxy_type)
+        self._apply_proxy_to_service()
+        logger.info("代理类型: %s", proxy_type)
 
     def __onProxyHostChanged(self, text):
         ConfigManager.set_setting("proxyHost", text)
+        self._apply_proxy_to_service()
+        logger.debug("代理主机: %s", text)
 
     def __onProxyPortChanged(self, val):
         ConfigManager.set_setting("proxyPort", val)
+        self._apply_proxy_to_service()
+        logger.debug("代理端口: %d", val)
 
     def __onProxyUserChanged(self, text):
         ConfigManager.set_setting("proxyUsername", text)
+        self._apply_proxy_to_service()
+        logger.debug("代理用户名: %s", text)
 
     def __onProxyPassChanged(self, text):
         ConfigManager.set_setting("proxyPassword", text)
+        self._apply_proxy_to_service()
+        logger.debug("代理密码已更新")
 
     def __connectSignalToSlot(self):
         # 下载设置
@@ -371,13 +444,13 @@ class SettingInterface(ScrollArea):
         self.downloadSpeedCard.spinBox.valueChanged.connect(
             self.__onDownloadSpeedChanged
         )
-        self.uploadSpeedCard.spinBox.valueChanged.connect(
-            self.__onUploadSpeedChanged
-        )
+        self.uploadSpeedCard.spinBox.valueChanged.connect(self.__onUploadSpeedChanged)
 
         # 代理设置
         self.proxyEnabledCard.checkedChanged.connect(self.__onProxyEnabledChanged)
-        self.proxyTypeCard.comboBox.currentTextChanged.connect(self.__onProxyTypeChanged)
+        self.proxyTypeCard.comboBox.currentTextChanged.connect(
+            self.__onProxyTypeChanged
+        )
 
         # 代理主机 - 使用 editingFinished 而不是每次字符变化都触发
         self.proxyHostCard.lineEdit.editingFinished.connect(
@@ -399,6 +472,4 @@ class SettingInterface(ScrollArea):
         self.aboutCard.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ABOUT_URL))
         )
-        self.checkversion.clicked.connect(
-            lambda: self.check()
-        )
+        self.checkversion.clicked.connect(lambda: self.check())

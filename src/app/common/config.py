@@ -59,33 +59,49 @@ class ConfigManager:
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     config = json.load(f)
+                    logger.debug(
+                        "配置文件已加载: %s (%d KB)",
+                        CONFIG_FILE,
+                        CONFIG_FILE.stat().st_size // 1024,
+                    )
                     # 兼容旧版本配置
                     if "settings" not in config:
                         config["settings"] = default_config["settings"]
                         migrated = True
+                        logger.info("配置迁移: 补全 settings 字段")
 
                     if "accounts" not in config:
                         config["accounts"] = {}
 
                     old_user = config.get("userName", "")
                     if old_user:
-                        config["accounts"].setdefault(old_user, {
-                            "userName": old_user,
-                            "passWord": config.get("passWord", ""),
-                            "authorization": config.get("authorization", ""),
-                            "deviceType": config.get("deviceType", ""),
-                            "osVersion": config.get("osVersion", ""),
-                            "loginuuid": config.get("loginuuid", ""),
-                        })
+                        config["accounts"].setdefault(
+                            old_user,
+                            {
+                                "userName": old_user,
+                                "passWord": config.get("passWord", ""),
+                                "authorization": config.get("authorization", ""),
+                                "deviceType": config.get("deviceType", ""),
+                                "osVersion": config.get("osVersion", ""),
+                                "loginuuid": config.get("loginuuid", ""),
+                            },
+                        )
                         migrated = True
+                        logger.info(
+                            "配置迁移: 将旧账号 %s 迁移到 accounts 区块", old_user
+                        )
 
-                    if "currentAccount" not in config or not config.get("currentAccount", ""):
+                    if "currentAccount" not in config or not config.get(
+                        "currentAccount", ""
+                    ):
                         config["currentAccount"] = config.get("userName", "")
                         if not config["currentAccount"] and config["accounts"]:
                             config["currentAccount"] = next(iter(config["accounts"]))
                         migrated = True
+                        logger.info(
+                            "配置迁移: 补全 currentAccount=%s", config["currentAccount"]
+                        )
 
-                    # 删除重复的顶层账号字段，只保留 accounts 区块
                     for k in [
                         "userName",
                         "passWord",
@@ -97,25 +113,27 @@ class ConfigManager:
                         if k in config:
                             del config[k]
                             migrated = True
+                            logger.info("配置迁移: 删除冗余顶层字段 %s", k)
 
-                    # 补齐缺失的 settings 默认值
                     for key, val in default_config["settings"].items():
                         if key not in config.get("settings", {}):
                             config["settings"][key] = val
                             migrated = True
+                            logger.info("配置迁移: 补全默认设置 %s=%s", key, val)
 
                     if migrated:
                         ConfigManager.save_config(config)
                     return config
             except Exception as e:
                 logger.error(f"加载配置失败: {e}")
-                # 若配置文件损坏或为空，尝试重置为默认配置
                 try:
                     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                         json.dump(default_config, f, indent=2, ensure_ascii=False)
+                    logger.info("配置文件已重置为默认值")
                 except Exception as e2:
                     logger.error(f"重写配置失败: {e2}")
                 return default_config
+        logger.debug("配置文件不存在，使用默认配置")
         return default_config
 
     @staticmethod
@@ -125,6 +143,7 @@ class ConfigManager:
             ConfigManager.ensure_config_dir()
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
+            logger.debug("配置已保存到 %s", CONFIG_FILE)
             return True
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
@@ -133,7 +152,9 @@ class ConfigManager:
     @staticmethod
     def get_current_account_name():
         config = ConfigManager.load_config()
-        return config.get("currentAccount", "")
+        name = config.get("currentAccount", "")
+        logger.debug("当前账号: %s", name or "(无)")
+        return name
 
     @staticmethod
     def get_account(user_name=None):
@@ -141,59 +162,74 @@ class ConfigManager:
         accounts = config.get("accounts", {})
         if user_name:
             account = accounts.get(user_name, {})
+            logger.debug("获取账号 %s: %s", user_name, "存在" if account else "不存在")
         else:
             current = config.get("currentAccount", "")
             account = accounts.get(current, {})
+            logger.debug(
+                "获取当前账号 %s: %s", current, "存在" if account else "不存在"
+            )
 
-        # 解密密码（惰性导入避免循环依赖）
         if account and account.get("passWord", "").startswith("enc:"):
             from .credential import decrypt_credential
+
             account = dict(account)
             account["passWord"] = decrypt_credential(account["passWord"])
+            logger.debug("账号密码已解密")
         return account
 
     @staticmethod
     def get_account_names():
-        return list(ConfigManager.load_config().get("accounts", {}).keys())
+        names = list(ConfigManager.load_config().get("accounts", {}).keys())
+        logger.debug("已保存账号列表: %s", names)
+        return names
 
     @staticmethod
     def save_account(user_name, account_info, set_current=True):
         config = ConfigManager.load_config()
         if "accounts" not in config:
             config["accounts"] = {}
+            logger.debug("初始化 accounts 区块")
 
-        # 加密密码后存储（惰性导入避免循环依赖）
         info = dict(account_info)
         pwd = info.get("passWord", "")
         if pwd and not pwd.startswith("enc:"):
             from .credential import encrypt_credential
+
             info["passWord"] = encrypt_credential(pwd)
+            logger.debug("账号密码已加密存储")
 
         config["accounts"][user_name] = info
         if set_current:
             config["currentAccount"] = user_name
+            logger.info("保存账号 %s (设为当前)", user_name)
+        else:
+            logger.info("保存账号 %s", user_name)
         return ConfigManager.save_config(config)
 
     @staticmethod
     def set_current_account(user_name):
         config = ConfigManager.load_config()
         if user_name and user_name not in config.get("accounts", {}):
+            logger.warning("设置当前账号失败: %s 不存在于已保存账号中", user_name)
             return False
         config["currentAccount"] = user_name
+        logger.info("切换当前账号为: %s", user_name or "(空)")
         return ConfigManager.save_config(config)
 
     @staticmethod
     def get_setting(key, default=None):
-        """获取特定设置"""
         config = ConfigManager.load_config()
         settings = config.get("settings", {})
-        return settings.get(key, default)
+        val = settings.get(key, default)
+        logger.debug("读取设置 %s = %s", key, val)
+        return val
 
     @staticmethod
     def set_setting(key, value):
-        """设置特定设置项并保存"""
         config = ConfigManager.load_config()
         if "settings" not in config:
             config["settings"] = {}
         config["settings"][key] = value
+        logger.info("设置变更: %s = %s", key, value)
         return ConfigManager.save_config(config)
