@@ -370,7 +370,7 @@ class SettingInterface(ScrollArea):
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
         if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan._session.set_multi_thread(checked)
+            self.parent().pan.set_download_multi_thread(checked)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
     def __onDownloadSpeedChanged(self, val):

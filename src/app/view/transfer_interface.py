@@ -23,7 +23,6 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
 from ..common.config import ConfigManager
-from ..common.speed_limiter import SpeedLimiter
 
 from ..common.log import get_logger
 
@@ -82,13 +81,7 @@ class UploadThread(QThread):
             )
 
             ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
-            if ul_limit > 0:
-                self.pan._session.set_speed_limiter(
-                    SpeedLimiter(ul_limit), is_upload=True
-                )
-                logger.debug("上传限速: %d KB/s", ul_limit)
-            else:
-                self.pan._session.set_speed_limiter(None, is_upload=True)
+            self.pan.set_upload_speed_limit(ul_limit)
 
             current_parent_id = self.pan.parent_file_id
             self.pan.parent_file_id = self.task.target_dir_id
@@ -139,21 +132,13 @@ class DownloadThread(QThread):
                 "下载配置: multi_thread=%s, speed_limit=%d KB/s", multi_thread, dl_limit
             )
 
-            session = self.pan._session
-            session.set_multi_thread(multi_thread)
-
-            if dl_limit > 0:
-                limiter = SpeedLimiter(dl_limit)
-                session.set_speed_limiter(limiter, is_upload=False)
-            else:
-                session.set_speed_limiter(None, is_upload=False)
+            self.pan.set_download_multi_thread(multi_thread)
+            self.pan.set_download_speed_limit(dl_limit)
 
             def _on_progress(downloaded, total):
                 if total > 0:
                     pct = int(downloaded * 100 / total)
                     self.progress_updated.emit(pct)
-
-            session.set_progress_callback(_on_progress)
 
             target_file = self._find_file_info()
             if not target_file:
@@ -188,7 +173,7 @@ class DownloadThread(QThread):
 
             file_size = int(target_file.get("Size", self.task.file_size) or 0)
             t0 = time.monotonic()
-            success = session.download_file_multithread(
+            success = self.pan.download_file(
                 download_url,
                 file_path,
                 file_size,
@@ -286,12 +271,12 @@ class TransferInterface(QWidget):
             username = ConfigManager.get_setting("proxyUsername", "")
             password = ConfigManager.get_setting("proxyPassword", "")
             if host and port > 0:
-                self.pan._session.set_proxy_auth(
+                self.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
                 logger.info(f"代理已启用: {proxy_type}://{host}:{port}")
         else:
-            self.pan._session.set_proxy("")
+            self.pan.clear_download_proxy()
 
     def _apply_speed_settings(self):
         """从配置读取并应用速度限制设置。"""
@@ -301,17 +286,9 @@ class TransferInterface(QWidget):
         ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
         multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
 
-        self.pan._session.set_multi_thread(multi_thread)
-
-        if dl_limit > 0:
-            self.pan._session.set_speed_limiter(SpeedLimiter(dl_limit), is_upload=False)
-        else:
-            self.pan._session.set_speed_limiter(None, is_upload=False)
-
-        if ul_limit > 0:
-            self.pan._session.set_speed_limiter(SpeedLimiter(ul_limit), is_upload=True)
-        else:
-            self.pan._session.set_speed_limiter(None, is_upload=True)
+        self.pan.set_download_multi_thread(multi_thread)
+        self.pan.set_download_speed_limit(dl_limit)
+        self.pan.set_upload_speed_limit(ul_limit)
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)
