@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=75.0.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "123pan"
@@ -17,8 +17,7 @@ dependencies = [
     "pyqt6-sip>=13.11.1",
 ]
 
-[project.scripts]
-123pan = "123pan:main"
+
 
 [tool.setuptools.packages.find]
 where = ["src"]
