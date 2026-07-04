@@ -28,7 +28,7 @@ def _cleanup_old_logs():
             file_time = datetime.strptime(ts_str, "%Y-%m-%d_%H-%M-%S")
             if file_time.timestamp() < cutoff:
                 f.unlink()
-        except ValueError, OSError:
+        except (ValueError, OSError):
             pass
 
 

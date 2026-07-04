@@ -5,7 +5,6 @@
 
 import threading
 import time
-from typing import Optional
 
 
 class SpeedLimiter:
@@ -89,34 +88,4 @@ class SpeedLimiter:
                 self._tokens = 0.0
                 return wait
 
-    def limit(self):
-        """上下文管理器方式使用限速器。每次迭代调用此方法。
 
-        用法:
-            for chunk in stream:
-                limiter.limit()
-                process(chunk)
-        """
-        pass
-
-
-class ThrottledFileWrapper:
-    """带速度限制的可读文件包装器。
-
-    包装一个二进制文件对象，在每次 read 时应用速度限制。
-    """
-
-    def __init__(self, fileobj, limiter: Optional[SpeedLimiter] = None):
-        self._fileobj = fileobj
-        self._limiter = limiter
-
-    def read(self, size: int = -1) -> bytes:
-        data = self._fileobj.read(size)
-        if data and self._limiter:
-            wait = self._limiter.consume(len(data))
-            if wait > 0:
-                time.sleep(wait)
-        return data
-
-    def __getattr__(self, name):
-        return getattr(self._fileobj, name)
