@@ -539,19 +539,18 @@ class TransferInterface(QWidget):
             else:
                 status_item.setText(task.status)
 
-            if not table.cellWidget(row, 5):
-                action_layout = QHBoxLayout()
-                delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", table
-                )
-                delete_button.setFixedSize(128, 24)
-                delete_button.clicked.connect(
-                    lambda _, t=task: self.__remove_task(t, task_type)
-                )
-                action_layout.addWidget(delete_button)
-                action_widget = QWidget()
-                action_widget.setLayout(action_layout)
-                table.setCellWidget(row, 5, action_widget)
+            action_layout = QHBoxLayout()
+            delete_button = PushButton(
+                FIF.DELETE.icon(), "删除任务", table
+            )
+            delete_button.setFixedSize(128, 24)
+            delete_button.clicked.connect(
+                lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
+            )
+            action_layout.addWidget(delete_button)
+            action_widget = QWidget()
+            action_widget.setLayout(action_layout)
+            table.setCellWidget(row, 5, action_widget)
 
     def __update_upload_table(self):
         self.__update_table(self.uploadTable, self.upload_tasks, "upload")
