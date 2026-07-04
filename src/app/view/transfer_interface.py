@@ -517,132 +517,62 @@ class TransferInterface(QWidget):
                 self.download_tasks.remove(task)
                 self.__update_download_table()
 
-    def __update_upload_table(self):
-        """更新上传表格"""
-        # 确保表格行数正确
-        if self.uploadTable.rowCount() != len(self.upload_tasks):
-            self.uploadTable.setRowCount(len(self.upload_tasks))
+    def __update_table(self, table, tasks, task_type):
+        """更新传输表格（上传/下载共用）"""
+        if table.rowCount() != len(tasks):
+            table.setRowCount(len(tasks))
 
-        for row, task in enumerate(self.upload_tasks):
-            # 文件名
-            name_item = self.uploadTable.item(row, 0)
+        for row, task in enumerate(tasks):
+            name_item = table.item(row, 0)
             if not name_item:
                 name_item = QTableWidgetItem(task.file_name)
-                self.uploadTable.setItem(row, 0, name_item)
+                table.setItem(row, 0, name_item)
             else:
                 name_item.setText(task.file_name)
 
-            # 文件大小
-            size_item = self.uploadTable.item(row, 1)
+            size_item = table.item(row, 1)
             if not size_item:
                 size_item = QTableWidgetItem(format_file_size(task.file_size))
-                self.uploadTable.setItem(row, 1, size_item)
+                table.setItem(row, 1, size_item)
 
-            # 进度条
-            progress_bar = self.uploadTable.cellWidget(row, 2)
+            progress_bar = table.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
-                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
-                self.uploadTable.setCellWidget(row, 2, progress_bar)
+                progress_bar.setTextVisible(False)
+                table.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
-            # 百分比
-            percent_item = self.uploadTable.item(row, 3)
+            percent_item = table.item(row, 3)
             if not percent_item:
                 percent_item = QTableWidgetItem(f"{task.progress}%")
                 percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.uploadTable.setItem(row, 3, percent_item)
+                table.setItem(row, 3, percent_item)
             else:
                 percent_item.setText(f"{task.progress}%")
 
-            # 状态
-            status_item = self.uploadTable.item(row, 4)
+            status_item = table.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                self.uploadTable.setItem(row, 4, status_item)
+                table.setItem(row, 4, status_item)
             else:
                 status_item.setText(task.status)
 
-            # 操作按钮 - 只在首次创建时添加
-            if not self.uploadTable.cellWidget(row, 5):
+            if not table.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
                 delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", self.uploadTable
+                    FIF.DELETE.icon(), "删除任务", table
                 )
                 delete_button.setFixedSize(128, 24)
-
-                # 添加点击事件
                 delete_button.clicked.connect(
-                    lambda _, t=task: self.__remove_task(t, "upload")
+                    lambda _, t=task: self.__remove_task(t, task_type)
                 )
-
                 action_layout.addWidget(delete_button)
-
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                self.uploadTable.setCellWidget(row, 5, action_widget)
+                table.setCellWidget(row, 5, action_widget)
+
+    def __update_upload_table(self):
+        self.__update_table(self.uploadTable, self.upload_tasks, "upload")
 
     def __update_download_table(self):
-        """更新下载表格"""
-        # 确保表格行数正确
-        if self.downloadTable.rowCount() != len(self.download_tasks):
-            self.downloadTable.setRowCount(len(self.download_tasks))
-
-        for row, task in enumerate(self.download_tasks):
-            # 文件名
-            name_item = self.downloadTable.item(row, 0)
-            if not name_item:
-                name_item = QTableWidgetItem(task.file_name)
-                self.downloadTable.setItem(row, 0, name_item)
-            else:
-                name_item.setText(task.file_name)
-
-            # 文件大小
-            size_item = self.downloadTable.item(row, 1)
-            if not size_item:
-                size_item = QTableWidgetItem(format_file_size(task.file_size))
-                self.downloadTable.setItem(row, 1, size_item)
-
-            # 进度条
-            progress_bar = self.downloadTable.cellWidget(row, 2)
-            if not progress_bar:
-                progress_bar = ProgressBar()
-                progress_bar.setTextVisible(False)  # 不显示百分比，因为我们在旁边显示
-                self.downloadTable.setCellWidget(row, 2, progress_bar)
-            progress_bar.setValue(task.progress)
-
-            # 百分比
-            percent_item = self.downloadTable.item(row, 3)
-            if not percent_item:
-                percent_item = QTableWidgetItem(f"{task.progress}%")
-                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.downloadTable.setItem(row, 3, percent_item)
-            else:
-                percent_item.setText(f"{task.progress}%")
-
-            # 状态
-            status_item = self.downloadTable.item(row, 4)
-            if not status_item:
-                status_item = QTableWidgetItem(task.status)
-                self.downloadTable.setItem(row, 4, status_item)
-            else:
-                status_item.setText(task.status)
-
-            # 操作按钮 - 只在首次创建时添加
-            if not self.downloadTable.cellWidget(row, 5):
-                action_layout = QHBoxLayout()
-                delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", self.downloadTable
-                )
-                delete_button.setFixedSize(128, 24)
-
-                # 添加点击事件
-                delete_button.clicked.connect(
-                    lambda _, t=task: self.__remove_task(t, "download")
-                )
-
-                action_layout.addWidget(delete_button)
-
-                action_widget = QWidget()
-                action_widget.setLayout(action_layout)
-                self.downloadTable.setCellWidget(row, 5, action_widget)
+        self.__update_table(self.downloadTable, self.download_tasks, "download")
