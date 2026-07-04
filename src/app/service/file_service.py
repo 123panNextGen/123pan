@@ -118,6 +118,21 @@ class FileService:
             logger.error("创建文件夹解析失败: %s", e)
             return None, str(e)
 
+    def create_folder(self, dirname, parent_file_id):
+        """创建文件夹（简化版，无需 file_list）。"""
+        result = self._session.create_dir(dirname, parent_file_id)
+        if result.code != 0:
+            logger.error("创建文件夹失败: %s", result.msg)
+            return None, result.msg
+        try:
+            res_json = result.data
+            file_id = res_json["Info"]["FileId"]
+            logger.info("创建成功: %s", file_id)
+            return file_id, ""
+        except Exception as e:
+            logger.error("创建文件夹解析失败: %s", e)
+            return None, str(e)
+
     def delete_file(self, file_list, file, by_num=True, operation=True):
         """删除或恢复文件。返回 (success, msg)。"""
         if by_num:
@@ -155,6 +170,16 @@ class FileService:
         logger.info("重命名成功: %s", new_name)
         return True
 
+    def delete_file_by_id(self, file_id, parent_file_id):
+        """按文件ID删除文件（无需外部 file_list）。"""
+        code, items, *_ = self.get_dir_by_id(parent_file_id, all=True, limit=1000)
+        if code != 0:
+            return False, "获取文件列表失败"
+        for item in items:
+            if str(item.get("FileId")) == str(file_id):
+                return self.delete_file(items, item, by_num=False, operation=True)
+        return False, "文件未找到"
+
     def recycle(self):
         """获取回收站列表。
 
@@ -167,6 +192,37 @@ class FileService:
             return []
         file_list_data = result.data.data
         return [item.to_json() for item in file_list_data.info_list]
+
+    def share(self, file_id_list, share_pwd=""):
+        """创建分享链接。
+
+        Args:
+            file_id_list: 文件ID列表
+            share_pwd: 分享密码（可选）
+
+        Returns:
+            str: 分享URL
+        """
+        if not file_id_list:
+            raise ValueError("文件ID列表为空")
+        data = {
+            "driveId": 0,
+            "expiration": "2099-12-12T08:00:00+08:00",
+            "fileIdList": file_id_list,
+            "shareName": "123云盘分享",
+            "sharePwd": share_pwd or "",
+            "event": "shareCreate",
+        }
+        share_res = self._session.http.post(
+            "https://www.123pan.cn/a/api/share/create",
+            json=data,
+            timeout=10,
+        )
+        share_res_json = share_res.json()
+        if share_res_json.get("code", -1) != 0:
+            raise RuntimeError(f"分享失败: {share_res_json.get('message', '')}")
+        share_key = share_res_json["data"]["ShareKey"]
+        return "https://www.123pan.cn/s/" + share_key
 
     def get_all_things(self, file_id, dir_ids, file_list, name_dict):
         """递归获取文件夹内所有内容。

@@ -205,30 +205,39 @@ class Pan123:
         return self._file.rename_file(file_id, new_name)
 
     def share(self, file_id_list, share_pwd=""):
-        if not file_id_list:
-            raise ValueError("文件ID列表为空")
-        data = {
-            "driveId": 0,
-            "expiration": "2099-12-12T08:00:00+08:00",
-            "fileIdList": file_id_list,
-            "shareName": "123云盘分享",
-            "sharePwd": share_pwd or "",
-            "event": "shareCreate",
-        }
-        share_res = self._session.http.post(
-            "https://www.123pan.cn/a/api/share/create",
-            json=data,
-            timeout=10,
-        )
-        share_res_json = share_res.json()
-        if share_res_json.get("code", -1) != 0:
-            raise RuntimeError(f"分享失败: {share_res_json.get('message', '')}")
-        share_key = share_res_json["data"]["ShareKey"]
-        share_url = "https://www.123pan.cn/s/" + share_key
-        return share_url
+        return self._file.share(file_id_list, share_pwd)
 
     def up_load(self, file_path):
         return self._upload.up_load(file_path, self.parent_file_id)
+
+    # ---- Session 配置（门面方法） ----
+
+    def set_download_multi_thread(self, enabled):
+        self._download.set_multi_thread(enabled)
+
+    def set_download_speed_limit(self, kbps):
+        self._download.set_download_speed_limit(kbps)
+
+    def set_upload_speed_limit(self, kbps):
+        self._upload.set_upload_speed_limit(kbps)
+
+    def set_download_proxy(self, proxy_type, host, port, username="", password=""):
+        self._download.set_proxy(proxy_type, host, port, username, password)
+
+    def clear_download_proxy(self):
+        self._download.clear_proxy()
+
+    def download_file(self, url, file_path, file_size, progress_callback=None):
+        return self._download.download_file(url, file_path, file_size, progress_callback)
+
+    def create_folder(self, dirname, parent_file_id):
+        return self._file.create_folder(dirname, parent_file_id)
+
+    def delete_file_by_id(self, file_id, parent_file_id):
+        return self._file.delete_file_by_id(file_id, parent_file_id)
+
+    def share_files(self, file_id_list, share_pwd=""):
+        return self._file.share(file_id_list, share_pwd)
 
     def cd(self, dir_num):
         if dir_num == "..":

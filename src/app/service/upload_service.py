@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from ..common.log import get_logger
+from ..common.speed_limiter import SpeedLimiter
 
 logger = get_logger(__name__)
 
@@ -15,6 +16,13 @@ class UploadService:
 
     def __init__(self, session):
         self._session = session
+
+    def set_upload_speed_limit(self, kbps: int):
+        """设置上传速度限制（KB/s），0 为不限速。"""
+        if kbps > 0:
+            self._session.set_speed_limiter(SpeedLimiter(kbps), is_upload=True)
+        else:
+            self._session.set_speed_limiter(None, is_upload=True)
 
     @staticmethod
     def compute_file_md5(file_path):
