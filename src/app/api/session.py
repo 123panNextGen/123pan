@@ -65,7 +65,7 @@ class NetSession:
         self._upload_limiter = None
 
         # 进度回调
-        self._progress_callback: Optional[Callable[[int, int], Nne]] = None
+        self._progress_callback: Optional[Callable[[int, int], None]] = None
 
     @property
     def http(self) -> requests.Session:
