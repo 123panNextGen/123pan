@@ -1,19 +1,15 @@
-import concurrent.futures
-import hashlib
-import json
-import os
 import random
-import re
 import threading
-import time
 import uuid
 from pathlib import Path
 
 import requests
 
-from ..api.model import DeviceModel, UserInfoModel
-from ..api.session import BASE_URL, NetSession
-from .config import ConfigManager
+from ..api.session import NetSession
+from ..service.auth_service import AuthService
+from ..service.download_service import DownloadService
+from ..service.file_service import FileService
+from ..service.upload_service import UploadService
 from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
 
@@ -23,7 +19,7 @@ logger = get_logger(__name__)
 class Pan123:
     """123云盘API客户端类（向后兼容包装层）。
 
-    内部使用 NetSession 处理 HTTP 请求，保持与旧版代码 100% 兼容的公开接口。
+    内部使用服务类处理具体业务逻辑，保持与旧版代码 100% 兼容的公开接口。
     """
 
     def __init__(
@@ -35,6 +31,11 @@ class Pan123:
         input_pwd=False,
     ):
         self._session = NetSession()
+
+        self._auth = AuthService(self._session)
+        self._file = FileService(self._session)
+        self._download = DownloadService(self._session)
+        self._upload = UploadService(self._session)
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -50,16 +51,16 @@ class Pan123:
         self.dir_list = []
         self.name_dict = {}
         if readfile:
-            self.read_ini(user_name, password, input_pwd, authorization)
+            self._auth.read_ini(user_name, password, input_pwd, authorization)
+            self._sync_from_auth()
         else:
             if user_name == "" or password == "":
                 raise Exception("用户名或密码为空")
-            self.user_name = user_name
-            self.password = password
-            self.authorization = authorization
+            self._auth.user_name = user_name
+            self._auth.password = password
+            self._auth.authorization = authorization
+            self._sync_from_auth()
 
-        # 将账户/设备信息同步到 NetSession，自动设置动态请求头
-        # 静态请求头（platform, devicename, host 等）已在 NetSession.__init__ 中设置
         self._sync_to_session()
         self.parent_file_id = 0
         self.parent_file_list = [0]
@@ -69,157 +70,82 @@ class Pan123:
             self.get_dir()
 
     def _sync_to_session(self):
-        """将当前设备/用户信息同步到内部 NetSession。"""
-        device = DeviceModel(os=self.osversion, type=self.devicetype)
-        user_info = UserInfoModel(
-            user_name=self.user_name,
-            password=self.password,
-            uuid=self.loginuuid,
-            authorization=self.authorization,
-            device=device,
-        )
-        self._session.set_user_info(user_info)
+        self._auth.devicetype = self.devicetype
+        self._auth.osversion = self.osversion
+        self._auth.loginuuid = self.loginuuid
+        self._auth.user_name = self.user_name
+        self._auth.password = self.password
+        self._auth.authorization = self.authorization
+        self._auth.sync_to_session()
+
+    def _sync_from_auth(self):
+        self.devicetype = self._auth.devicetype
+        self.osversion = self._auth.osversion
+        self.loginuuid = self._auth.loginuuid
+        self.user_name = self._auth.user_name
+        self.password = self._auth.password
+        self.authorization = self._auth.authorization
 
     def login(self):
-        """登录123云盘账户并获取授权令牌"""
         logger.info("Pan123.login: user=%s", self.user_name)
-        result = self._session.login(self.user_name, self.password)
-        if result.code not in (200, 0):
-            logger.error("登录失败: code=%s, msg=%s", result.code, result.msg)
-            return result.code
-        token_data = result.data
-        self.authorization = token_data["authorization"]
-        logger.info(
-            "登录成功: user=%s, token=%.20s...", self.user_name, self.authorization
-        )
-        self.save_file()
-        return 200
+        self._auth.user_name = self.user_name
+        self._auth.password = self.password
+        code = self._auth.login()
+        if code == 200:
+            self.authorization = self._auth.authorization
+            self.save_file()
+        return code
 
     def save_file(self):
-        """将账户信息保存到配置文件"""
-        try:
-            account_info = {
-                "userName": self.user_name,
-                "passWord": self.password,
-                "authorization": self.authorization,
-                "deviceType": self.devicetype,
-                "osVersion": self.osversion,
-                "loginuuid": self.loginuuid,
-            }
-            ConfigManager.save_account(self.user_name, account_info)
-            logger.info("账号已保存")
-        except Exception as e:
-            logger.error("保存账号失败:", e)
+        self._auth.devicetype = self.devicetype
+        self._auth.osversion = self.osversion
+        self._auth.loginuuid = self.loginuuid
+        self._auth.user_name = self.user_name
+        self._auth.password = self.password
+        self._auth.authorization = self.authorization
+        self._auth.save_file()
 
     def get_dir(self, save=True):
-        """获取当前目录下的文件列表"""
         return self.get_dir_by_id(self.parent_file_id, save)
 
     def get_dir_by_id(self, file_id, save=True, all=False, limit=100):
-        """按文件夹ID获取文件列表（支持分页）
-
-        Args:
-            file_id: 文件夹ID
-            save: 是否保存结果到 self.list
-            all: 是否强制获取所有文件
-            limit: 每页限制数量
-        """
-        get_pages = 3
-        page = self.file_page * get_pages + 1
-        lenth_now = len(self.list)
-        if all:
-            page = 1
-            lenth_now = 0
-        lists = []
-
-        total = -1
-        times = 0
-        t0 = time.monotonic()
-        while (lenth_now < total or total == -1) and (times < get_pages or all):
-            result = self._session.get_file_list(
-                file_id=file_id, page=page, limit=limit, retry_login=False
-            )
-            if result.code == 2:
-                logger.warning("token 过期，正在尝试重新登录")
-                login_code = self.login()
-                if login_code == 200:
-                    return self.get_dir_by_id(file_id, save, all, limit)
-                logger.error("重新登录失败")
-                return result.code, []
-            if result.code != 0:
-                logger.error(
-                    "获取文件列表失败: file_id=%s, code=%s, msg=%s",
-                    file_id,
-                    result.code,
-                    result.msg,
-                )
-                return result.code, []
-
-            file_list_data = result.data.data
-            lists_page = [item.to_json() for item in file_list_data.info_list]
-            lists += lists_page
-            total = file_list_data.total
-            lenth_now += len(lists_page)
-            page += 1
-            times += 1
-            logger.debug(
-                "分页加载: page=%s, got=%s, total=%s, accumulated=%s",
-                page - 1,
-                len(lists_page),
-                total,
-                lenth_now,
-            )
-            if times % 5 == 0:
-                logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
-                logger.info("暂停3秒防止对服务器造成影响")
-                time.sleep(3)
-
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "目录列表加载完成: file_id=%s, total=%s, pages=%s, %.1fs",
-            file_id,
-            total,
-            times,
-            elapsed,
+        code, items, total, all_file, _ = self._file.get_dir_by_id(
+            file_id, page=self.file_page, list_len=len(self.list),
+            all=all, limit=limit,
         )
-        if lenth_now < total:
-            logger.warning("文件夹内文件过多：%s/%s，未完全加载", lenth_now, total)
-            self.all_file = False
-        else:
-            self.all_file = True
+        if code == 2:
+            logger.warning("token 过期，正在尝试重新登录")
+            login_code = self.login()
+            if login_code == 200:
+                return self.get_dir_by_id(file_id, save, all, limit)
+            logger.error("重新登录失败")
+            return code, []
+        if code != 0:
+            logger.error(
+                "获取文件列表失败: file_id=%s, code=%s",
+                file_id, code,
+            )
+            return code, []
+
         self.total = total
+        self.all_file = all_file
         self.file_page += 1
         if save:
-            self.list = self.list + lists
+            self.list = self.list + items
 
-        return 0, lists
+        return 0, items
 
     def show(self):
-        """显示文件列表信息到日志"""
-        if not self.all_file:
-            logger.info(f"获取了{len(self.list)}/{self.total}个文件")
-        else:
-            logger.info(f"获取全部{len(self.list)}个文件")
+        self._file.show(len(self.list), self.total, self.all_file)
 
     def link_by_number(self, file_number, showlink=True):
-        """按编号获取文件下载链接"""
         file_detail = self.list[file_number]
         return self.link_by_fileDetail(file_detail, showlink)
 
     def link_by_fileDetail(self, file_detail, showlink=True):
-        """按文件详情获取下载链接"""
-        result = self._session.get_file_link(file_detail)
-        if result.api_code_enum != result.api_code_enum.success:
-            logger.error("获取下载链接失败，返回码: " + str(result.code))
-            logger.error(result.msg)
-            return result.code
-        redirect_url = result.data
-        if showlink:
-            logger.info(f"获取下载链接成功: {redirect_url}")
-        return redirect_url
+        return self._download.link_by_fileDetail(file_detail, showlink)
 
     def download(self, file_number, download_path="download"):
-        """下载文件"""
         file_detail = self.list[file_number]
         if file_detail["Type"] == 1:
             logger.info("开始下载")
@@ -228,35 +154,14 @@ class Pan123:
             file_name = file_detail["FileName"]
 
         down_load_url = self.link_by_number(file_number, showlink=False)
-        if type(down_load_url) == int:
+        if isinstance(down_load_url, int):
             return
-        self.download_from_url(down_load_url, file_name, download_path)
+        self._download.download_from_url(down_load_url, file_name, download_path)
 
     def download_from_url(self, url, file_name, download_path="download"):
-        """从URL下载文件"""
-        download_dir = Path(download_path)
-        if not download_dir.exists():
-            logger.info("创建下载目录")
-            download_dir.mkdir(parents=True, exist_ok=True)
-
-        file_path = download_dir / file_name
-        temp_path = file_path.with_suffix(file_path.suffix + ".123pan")
-
-        if temp_path.exists():
-            temp_path.unlink()
-
-        down = self._session.transfer.get(url, stream=True, timeout=10)
-        file_size = int(down.headers.get("Content-Length", 0) or 0)
-
-        with open(temp_path, "wb") as f:
-            for chunk in down.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-
-        os.rename(temp_path, file_path)
+        self._download.download_from_url(url, file_name, download_path)
 
     def get_all_things(self, id):
-        """获取文件夹内所有内容"""
         self.dir_list.remove(id)
         all_list = self.get_dir_by_id(id, save=False)[1]
 
@@ -271,7 +176,6 @@ class Pan123:
             self.get_all_things(i)
 
     def download_dir(self, file_detail, download_path_root="download"):
-        """下载文件夹"""
         self.name_dict[file_detail["FileId"]] = file_detail["FileName"]
         if file_detail["Type"] != 1:
             logger.warning("不是文件夹")
@@ -293,56 +197,15 @@ class Pan123:
                 self.download_dir(i, download_path_root)
 
     def recycle(self):
-        """获取回收站列表"""
-        result = self._session.get_trash_list()
-        if result.code != 0:
-            logger.error("获取回收站失败: code=%s, msg=%s", result.code, result.msg)
-            self.recycle_list = []
-            return
-        file_list_data = result.data.data
-        self.recycle_list = [item.to_json() for item in file_list_data.info_list]
+        self.recycle_list = self._file.recycle()
 
     def delete_file(self, file, by_num=True, operation=True):
-        """删除或恢复文件"""
-        if by_num:
-            if not str(file).isdigit():
-                raise ValueError("文件索引必须是数字")
-            if 0 <= file < len(self.list):
-                file_detail = self.list[file]
-            else:
-                raise IndexError("文件索引超出范围")
-        else:
-            if file in self.list:
-                file_detail = file
-            else:
-                raise ValueError("文件不存在")
-        result = self._session.trash_file(file_detail, operation=operation)
-        logger.debug(f"删除文件响应: code={result.code}, msg={result.msg}")
-        if result.code != 0:
-            logger.error(f"删除文件失败: {result.msg}")
-        else:
-            logger.info(f"删除文件消息: {result.msg}")
+        self._file.delete_file(self.list, file, by_num, operation)
 
     def rename_file(self, file_id, new_name):
-        """重命名文件或文件夹
-
-        Args:
-            file_id: 文件或文件夹的ID
-            new_name: 新的文件名
-
-        Returns:
-            bool: 是否成功
-        """
-        result = self._session.rename_file(file_id, new_name)
-        logger.debug(f"重命名文件响应: code={result.code}, msg={result.msg}")
-        if result.code != 0:
-            logger.error(f"重命名失败: {result.msg}")
-            return False
-        logger.info(f"重命名成功: {new_name}")
-        return True
+        return self._file.rename_file(file_id, new_name)
 
     def share(self, file_id_list, share_pwd=""):
-        """分享文件"""
         if not file_id_list:
             raise ValueError("文件ID列表为空")
         data = {
@@ -366,152 +229,9 @@ class Pan123:
         return share_url
 
     def up_load(self, file_path):
-        """上传文件"""
-        file_path = file_path.replace('"', "").replace("\\", "/")
-        file_path_obj = Path(file_path)
-        file_name = file_path_obj.name
-        if not file_path_obj.exists():
-            raise FileNotFoundError("文件不存在")
-        if file_path_obj.is_dir():
-            raise IsADirectoryError("不支持文件夹上传")
-        fsize = file_path_obj.stat().st_size
-        logger.info("上传开始: %s (%.2f MB)", file_name, fsize / 1024 / 1024)
-        t0 = time.monotonic()
-        readable_hash = self._compute_file_md5(file_path)
-        logger.debug("文件 MD5 计算完成: %s", readable_hash)
-
-        list_up_request = {
-            "driveId": 0,
-            "etag": readable_hash,
-            "fileName": file_name,
-            "parentFileId": self.parent_file_id,
-            "size": fsize,
-            "type": 0,
-            "duplicate": 0,
-        }
-
-        up_res = self._session.http.post(
-            "https://www.123pan.cn/b/api/file/upload_request",
-            json=list_up_request,
-            timeout=10,
-        )
-        up_res_json = up_res.json()
-        res_code_up = up_res_json.get("code", -1)
-        if res_code_up == 5060:
-            raise RuntimeError("同名文件存在")
-        if res_code_up != 0:
-            raise RuntimeError(f"上传请求失败: {up_res_json}")
-        up_file_id = up_res_json["data"]["FileId"]
-        if up_res_json["data"].get("Reuse", False):
-            return up_file_id
-
-        bucket = up_res_json["data"]["Bucket"]
-        storage_node = up_res_json["data"]["StorageNode"]
-        upload_key = up_res_json["data"]["Key"]
-        upload_id = up_res_json["data"]["UploadId"]
-        up_file_id = up_res_json["data"]["FileId"]
-
-        start_data = {
-            "bucket": bucket,
-            "key": upload_key,
-            "uploadId": upload_id,
-            "storageNode": storage_node,
-        }
-        start_res = self._session.http.post(
-            "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
-            json=start_data,
-            timeout=10,
-        )
-        start_res_json = start_res.json()
-        res_code_up = start_res_json.get("code", -1)
-        if res_code_up != 0:
-            raise RuntimeError(f"获取传输列表失败: {start_res_json}")
-
-        block_size = 5242880
-        with open(file_path, "rb") as f:
-            part_number_start = 1
-            put_size = 0
-            while True:
-                data = f.read(block_size)
-                put_size = put_size + len(data)
-
-                if not data:
-                    break
-                get_link_data = {
-                    "bucket": bucket,
-                    "key": upload_key,
-                    "partNumberEnd": part_number_start + 1,
-                    "partNumberStart": part_number_start,
-                    "uploadId": upload_id,
-                    "StorageNode": storage_node,
-                }
-
-                get_link_url = (
-                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
-                )
-                get_link_res = self._session.http.post(
-                    get_link_url,
-                    json=get_link_data,
-                    timeout=10,
-                )
-                get_link_res_json = get_link_res.json()
-                res_code_up = get_link_res_json.get("code", -1)
-                if res_code_up != 0:
-                    raise RuntimeError(f"获取链接失败: {get_link_res_json}")
-                upload_url = get_link_res_json["data"]["presignedUrls"][
-                    str(part_number_start)
-                ]
-                self._session.transfer.put(upload_url, data=data, timeout=10)
-
-                part_number_start = part_number_start + 1
-
-        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
-        uploaded_comp_data = {
-            "bucket": bucket,
-            "key": upload_key,
-            "uploadId": upload_id,
-            "storageNode": storage_node,
-        }
-        self._session.http.post(
-            uploaded_list_url,
-            json=uploaded_comp_data,
-            timeout=10,
-        )
-        compmultipart_up_url = (
-            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
-        )
-        self._session.http.post(
-            compmultipart_up_url,
-            json=uploaded_comp_data,
-            timeout=10,
-        )
-
-        if fsize > 64 * 1024 * 1024:
-            time.sleep(3)
-        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
-        close_up_session_data = {"fileId": up_file_id}
-        close_up_session_res = self._session.http.post(
-            close_up_session_url,
-            json=close_up_session_data,
-            timeout=10,
-        )
-        close_res_json = close_up_session_res.json()
-        res_code_up = close_res_json.get("code", -1)
-        if res_code_up != 0:
-            raise RuntimeError(f"上传完成确认失败: {close_res_json}")
-        elapsed = time.monotonic() - t0
-        speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
-        logger.info(
-            "上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
-            file_name,
-            fsize / 1024 / 1024,
-            elapsed,
-            speed,
-        )
-        return up_file_id
+        return self._upload.up_load(file_path, self.parent_file_id)
 
     def cd(self, dir_num):
-        """进入文件夹"""
         if dir_num == "..":
             if len(self.parent_file_list) > 1:
                 self.all_file = False
@@ -549,7 +269,6 @@ class Pan123:
         self.get_dir()
 
     def cdById(self, file_id):
-        """按ID进入文件夹"""
         self.all_file = False
         self.file_page = 0
         self.list = []
@@ -558,96 +277,19 @@ class Pan123:
         self.get_dir()
         self.show()
 
-    def read_ini(
-        self,
-        user_name,
-        password,
-        input_pwd,
-        authorization="",
-    ):
-        """从配置文件读取账号信息"""
-        try:
-            # 使用 ConfigManager.get_account() 以支持密码解密
-            account = ConfigManager.get_account(user_name) if user_name else {}
-            if not account:
-                account = ConfigManager.get_account(None)  # 当前账户
-
-            if account:
-                if not user_name:
-                    user_name = account.get("userName", user_name)
-                if not password:
-                    password = account.get("passWord", password)
-                if not authorization:
-                    authorization = account.get("authorization", authorization)
-
-                deviceType = account.get("deviceType", "")
-                osVersion = account.get("osVersion", "")
-                loginuuid = account.get("loginuuid", "")
-                if deviceType:
-                    self.devicetype = deviceType
-                if osVersion:
-                    self.osversion = osVersion
-                if loginuuid:
-                    self.loginuuid = loginuuid
-            else:
-                # 兼容旧版：从顶层字段读取
-                config = ConfigManager.load_config()
-                deviceType = config.get("deviceType", "")
-                osVersion = config.get("osVersion", "")
-                loginuuid = config.get("loginuuid", "")
-                if deviceType:
-                    self.devicetype = deviceType
-                if osVersion:
-                    self.osversion = osVersion
-                if loginuuid:
-                    self.loginuuid = loginuuid
-                user_name = config.get("userName", user_name)
-                if not password:
-                    password = config.get("passWord", password)
-                if not authorization:
-                    authorization = config.get("authorization", authorization)
-        except Exception as e:
-            logger.error(f"获取配置失败: {e}")
-            if user_name == "" or password == "":
-                raise Exception("无法从配置获取账号信息")
-
-        self.user_name = user_name
-        self.password = password
-        self.authorization = authorization
+    def read_ini(self, user_name="", password="", input_pwd=False, authorization=""):
+        self._auth.read_ini(user_name, password, input_pwd, authorization)
+        self._sync_from_auth()
 
     def mkdir(self, dirname, remakedir=False):
-        """创建文件夹"""
-        if not remakedir:
-            for i in self.list:
-                if i["FileName"] == dirname:
-                    logger.info("文件夹已存在")
-                    return i["FileId"]
-
-        result = self._session.create_dir(dirname, self.parent_file_id)
-        try:
-            res_json = result.data
-        except Exception:
-            logger.error("创建失败")
-            logger.error(result.msg)
-            return
-        if result.code != 0:
-            logger.error(f"创建失败: {res_json}")
-            return
-        logger.info(f"创建成功: {res_json['FileId']}")
-        self.get_dir()
-        return res_json["Info"]["FileId"]
+        file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
+        if file_id is not None:
+            self.get_dir()
+        return file_id
 
     @staticmethod
     def _compute_file_md5(file_path):
-        """计算文件MD5值"""
-        md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            while True:
-                data = f.read(64 * 1024)
-                if not data:
-                    break
-                md5.update(data)
-        return md5.hexdigest()
+        return UploadService.compute_file_md5(file_path)
 
     def stream_download_by_number(
         self, file_number, download_dir, task_id=None, signals=None, task=None
@@ -659,347 +301,17 @@ class Pan123:
             redirect_url = self.link_by_number(file_number, showlink=False)
         if isinstance(redirect_url, int):
             raise RuntimeError("获取下载链接失败，返回码: " + str(redirect_url))
-        if file_detail["Type"] == 1:
-            fname = file_detail["FileName"] + ".zip"
-        else:
-            fname = file_detail["FileName"]
 
-        out_path = Path(download_dir) / fname
-        temp = out_path.with_suffix(out_path.suffix + ".123pan")
-
-        Path(download_dir).mkdir(parents=True, exist_ok=True)
-
-        if out_path.exists():
-            raise FileExistsError(str(out_path))
-
-        total = 0
-        accept_ranges = False
-        try:
-            head = self._session.transfer.head(
-                redirect_url, allow_redirects=True, timeout=30
-            )
-            head.raise_for_status()
-            total = int(head.headers.get("Content-Length", 0) or 0)
-            accept_ranges = head.headers.get("Accept-Ranges", "").lower() == "bytes"
-        except Exception:
-            try:
-                with self._session.transfer.get(
-                    redirect_url, stream=True, timeout=30
-                ) as r:
-                    r.raise_for_status()
-                    total = int(r.headers.get("Content-Length", 0) or 0)
-                    accept_ranges = (
-                        r.headers.get("Accept-Ranges", "").lower() == "bytes"
-                    )
-            except Exception:
-                total = 0
-                accept_ranges = False
-
-        try:
-            if accept_ranges and total and total > 1024 * 1024 * 2:
-                max_download_threads = ConfigManager.get_setting(
-                    "maxDownloadThreads", 8
-                )
-                max_download_threads = min(max(1, int(max_download_threads)), 16)
-
-                num_threads = min(
-                    max_download_threads,
-                    max(1, int(total / (10 * 1024 * 1024))),
-                )
-
-                chunk_size = min(1024 * 1024, max(8192, total // (num_threads * 100)))
-
-                part_size = total // num_threads
-                downloaded = [0]
-                dl_lock = threading.Lock()
-                last_progress_time = [0]
-
-                def download_range(start, end, index):
-                    part_path = Path(str(temp) + f".part{index}")
-                    headers = {"Range": f"bytes={start}-{end}"}
-                    try:
-                        with self._session.transfer.get(
-                            redirect_url, headers=headers, stream=True, timeout=30
-                        ) as r:
-                            r.raise_for_status()
-                            with open(part_path, "wb") as pf:
-                                for chunk in r.iter_content(chunk_size=chunk_size):
-                                    if task:
-                                        try:
-                                            task._pause_event.wait()
-                                        except Exception:
-                                            pass
-                                        if task.is_cancelled:
-                                            return False
-                                    if chunk:
-                                        pf.write(chunk)
-                                        with dl_lock:
-                                            downloaded[0] += len(chunk)
-                                            current_time = time.time()
-                                            if (
-                                                current_time - last_progress_time[0]
-                                                > 0.1
-                                            ):
-                                                if total and signals:
-                                                    signals.progress.emit(
-                                                        int(downloaded[0] * 100 / total)
-                                                    )
-                                                last_progress_time[0] = current_time
-                        return True
-                    except requests.exceptions.RequestException as e:
-                        logger.error(f"下载分片 {index} 失败: {e}")
-                        if part_path.exists():
-                            try:
-                                part_path.unlink()
-                            except OSError:
-                                pass
-                        return False
-                    except Exception as e:
-                        logger.error(f"下载分片 {index} 时发生未知错误: {e}")
-                        if part_path.exists():
-                            try:
-                                part_path.unlink()
-                            except OSError:
-                                pass
-                        return False
-
-                futures = []
-                try:
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=num_threads, thread_name_prefix="download_range"
-                    ) as exe:
-                        for i in range(num_threads):
-                            start = i * part_size
-                            end = (
-                                (start + part_size - 1)
-                                if i < num_threads - 1
-                                else (total - 1)
-                            )
-                            futures.append(exe.submit(download_range, start, end, i))
-
-                        ok = True
-                        for f in concurrent.futures.as_completed(futures):
-                            if not f.result():
-                                ok = False
-                                break
-
-                    if not ok:
-                        raise RuntimeError("分片下载失败")
-                except concurrent.futures.CancelledError:
-                    logger.warning("下载任务被取消")
-                    raise RuntimeError("下载任务被取消")
-
-                if task and task.is_cancelled:
-                    for i in range(num_threads):
-                        p = Path(str(temp) + f".part{i}")
-                        if p.exists():
-                            try:
-                                p.unlink()
-                            except OSError:
-                                pass
-                    return "已取消"
-
-                try:
-                    with open(temp, "wb") as out_f:
-                        for i in range(num_threads):
-                            p = Path(str(temp) + f".part{i}")
-                            try:
-                                with open(p, "rb") as pf:
-                                    while True:
-                                        chunk = pf.read(1024 * 1024)
-                                        if not chunk:
-                                            break
-                                        out_f.write(chunk)
-                                p.unlink()
-                            except OSError as e:
-                                logger.error(f"合并分片文件 {i} 时出错: {e}")
-                                if p.exists():
-                                    try:
-                                        p.unlink()
-                                    except OSError:
-                                        pass
-                                raise RuntimeError(f"合并分片文件失败: {e}")
-                except OSError as e:
-                    logger.error(f"创建临时文件时出错: {e}")
-                    raise RuntimeError("合并分片文件失败")
-
-                if task and task.is_cancelled:
-                    if temp.exists():
-                        try:
-                            temp.unlink()
-                        except OSError:
-                            pass
-                    return "已取消"
-
-                temp.replace(out_path)
-                return out_path
-            else:
-                with self._session.transfer.get(
-                    redirect_url, stream=True, timeout=30
-                ) as r:
-                    r.raise_for_status()
-                    done = 0
-                    with open(temp, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            if task:
-                                try:
-                                    task._pause_event.wait()
-                                except Exception:
-                                    pass
-                                if task.is_cancelled:
-                                    f.close()
-                                    if temp.exists():
-                                        temp.unlink()
-                                    return "已取消"
-                            if chunk:
-                                f.write(chunk)
-                                done += len(chunk)
-                                if total and signals:
-                                    signals.progress.emit(int(done * 100 / total))
-                if task and task.is_cancelled:
-                    if temp.exists():
-                        temp.unlink()
-                    return "已取消"
-                temp.replace(out_path)
-                return out_path
-        except Exception:
-            if temp.exists():
-                try:
-                    temp.unlink()
-                except Exception:
-                    pass
-            raise
+        return self._download.stream_download_by_number(
+            file_detail, redirect_url, download_dir, task=task, signals=signals
+        )
 
     def upload_file_stream(
         self, file_path, dup_choice=1, task_id=None, signals=None, task=None
     ):
-        """上传文件（分块），支持 progress 回调 与 取消/暂停 控制。
-
-        与 MainWindow 的 ThreadedTask 接口兼容。
-        """
-        file_path = file_path.replace('"', "").replace("\\", "/")
-        file_path_obj = Path(file_path)
-        file_name = file_path_obj.name
-        if not file_path_obj.exists():
-            raise FileNotFoundError("文件不存在")
-        if file_path_obj.is_dir():
-            raise IsADirectoryError("不支持文件夹上传")
-        fsize = file_path_obj.stat().st_size
-
-        md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            while True:
-                data = f.read(64 * 1024)
-                if not data:
-                    break
-                md5.update(data)
-                if task and task.is_cancelled:
-                    return "已取消"
-        readable_hash = md5.hexdigest()
-
-        list_up_request = {
-            "driveId": 0,
-            "etag": readable_hash,
-            "fileName": file_name,
-            "parentFileId": self.parent_file_id,
-            "size": fsize,
-            "type": 0,
-            "duplicate": 0,
-        }
-        url = "https://www.123pan.cn/b/api/file/upload_request"
-        res = self._session.http.post(url, data=list_up_request, timeout=30)
-        res_json = res.json()
-        code = res_json.get("code", -1)
-        if code == 5060:
-            list_up_request["duplicate"] = dup_choice
-            res = self._session.http.post(url, json=list_up_request, timeout=30)
-            res_json = res.json()
-            code = res_json.get("code", -1)
-        if code != 0:
-            raise RuntimeError(
-                "上传请求失败: " + json.dumps(res_json, ensure_ascii=False)
-            )
-        data = res_json["data"]
-        if data.get("Reuse"):
-            return "复用上传成功"
-        bucket = data["Bucket"]
-        storage_node = data["StorageNode"]
-        upload_key = data["Key"]
-        upload_id = data["UploadId"]
-        up_file_id = data["FileId"]
-        block_size = 5242880
-        total_sent = 0
-        part_number = 1
-        with open(file_path, "rb") as f:
-            while True:
-                block = f.read(block_size)
-                if not block:
-                    break
-                get_link_data = {
-                    "bucket": bucket,
-                    "key": upload_key,
-                    "partNumberEnd": part_number + 1,
-                    "partNumberStart": part_number,
-                    "uploadId": upload_id,
-                    "StorageNode": storage_node,
-                }
-                get_link_url = (
-                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch"
-                )
-                get_link_res = self._session.http.post(
-                    get_link_url,
-                    json=get_link_data,
-                    timeout=30,
-                )
-                get_link_res_json = get_link_res.json()
-                if get_link_res_json.get("code", -1) != 0:
-                    raise RuntimeError(
-                        "获取上传链接失败: "
-                        + json.dumps(get_link_res_json, ensure_ascii=False)
-                    )
-                upload_url = get_link_res_json["data"]["presignedUrls"][
-                    str(part_number)
-                ]
-                self._session.transfer.put(upload_url, data=block, timeout=60)
-                total_sent += len(block)
-                if signals and fsize:
-                    signals.progress.emit(int(total_sent * 100 / fsize))
-                part_number += 1
-        uploaded_list_url = "https://www.123pan.cn/b/api/file/s3_list_upload_parts"
-        uploaded_comp_data = {
-            "bucket": bucket,
-            "key": upload_key,
-            "uploadId": upload_id,
-            "storageNode": storage_node,
-        }
-        self._session.http.post(
-            uploaded_list_url,
-            json=uploaded_comp_data,
-            timeout=30,
+        return self._upload.upload_file_stream(
+            file_path, self.parent_file_id, dup_choice, signals=signals, task=task
         )
-        compmultipart_up_url = (
-            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload"
-        )
-        self._session.http.post(
-            compmultipart_up_url,
-            json=uploaded_comp_data,
-            timeout=30,
-        )
-        if fsize > 64 * 1024 * 1024:
-            time.sleep(3)
-        close_up_session_url = "https://www.123pan.cn/b/api/file/upload_complete"
-        close_up_session_data = {"fileId": up_file_id}
-        close_res = self._session.http.post(
-            close_up_session_url,
-            json=close_up_session_data,
-            timeout=30,
-        )
-        cr = close_res.json()
-        if cr.get("code", -1) != 0:
-            raise RuntimeError(
-                "上传完成确认失败: " + json.dumps(cr, ensure_ascii=False)
-            )
-        return up_file_id
 
 
 # ==================== 工具函数和任务管理模块 ====================
