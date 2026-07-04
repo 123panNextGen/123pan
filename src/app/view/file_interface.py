@@ -465,7 +465,7 @@ class FileInterface(QWidget):
 
         try:
             target_dir_id = int(route_key)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
         target_index = -1
