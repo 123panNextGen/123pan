@@ -358,23 +358,24 @@ class FileInterface(QWidget):
 
     def __loadCurrentList(self):
         if not self.pan:
+            logger.warning("__loadCurrentList: pan 未设置")
             return
 
-        # 使用后台线程加载文件列表，避免阻塞主线程
+        logger.debug("加载文件列表: dir_id=%s", self.current_dir_id)
         self.fileTable.setRowCount(0)
 
-        # 在主线程创建信号对象，防止 QObject 跨线程问题
         signals = _LoadListSignals()
         signals.finished.connect(self.__onLoadListFinished)
         task = self.LoadListTask(self.__fetchDirList, self.current_dir_id, signals)
 
-        # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
 
     def __fetchDirList(self, dir_id):
         if not self.pan:
+            logger.warning("__fetchDirList: pan 未设置")
             return []
 
+        logger.debug("异步获取目录列表: dir_id=%s", dir_id)
         cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
         self.pan.file_page = 0
         try:
@@ -735,15 +736,15 @@ class FileInterface(QWidget):
 
     def __uploadFile(self):
         """上传文件"""
-        # 打开文件选择对话框
         file_paths, _ = QFileDialog.getOpenFileNames(self, "选择要上传的文件")
 
         if file_paths:
-            # 添加上传任务到传输界面
+            logger.info("用户选择了 %d 个文件上传", len(file_paths))
             for file_path in file_paths:
                 path = Path(file_path)
                 file_name = path.name
                 file_size = path.stat().st_size
+                logger.debug("上传文件: name=%s, size=%s, dir=%s", file_name, file_size, self.current_dir_id)
                 if self.transfer_interface:
                     self.transfer_interface.add_upload_task(
                         file_name, file_size, file_path, self.current_dir_id
@@ -757,53 +758,46 @@ class FileInterface(QWidget):
 
     def __downloadFile(self):
         """下载文件"""
-        # 获取选中的文件
         selected_items = self.fileTable.selectedItems()
         if not selected_items:
             InfoBar.warning(title="下载错误", content="请选择要下载的文件", parent=self)
             return
 
-        # 获取选中行的文件信息
         row = selected_items[0].row()
         name_item = self.fileTable.item(row, 0)
         file_id = name_item.data(Qt.ItemDataRole.UserRole)
         file_name = name_item.text()
         file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
+        logger.debug("下载请求: name=%s, id=%s, type=%s", file_name, file_id, file_type)
 
-        # 如果是文件夹，将文件名改为xxx.zip
-        if file_type == 1:  # 文件夹
+        if file_type == 1:
             file_name = file_name + ".zip"
 
-        # 导入配置管理器
         from app.common.config import ConfigManager
 
-        # 获取配置
         ask_download_location = ConfigManager.get_setting("askDownloadLocation", True)
         default_download_path = ConfigManager.get_setting(
             "defaultDownloadPath", str(Path.home() / "Downloads")
         )
+        logger.debug("下载配置: ask_location=%s, default_path=%s", ask_download_location, default_download_path)
 
         save_path = None
-
-        # 根据配置决定是否询问下载位置
         if ask_download_location:
-            # 开启时：直接保存到默认目录，不询问文件名
             save_path = str(Path(default_download_path) / file_name)
         else:
-            # 关闭时：在默认目录下询问文件名
             save_path, _ = QFileDialog.getSaveFileName(
                 self, "保存文件", str(Path(default_download_path) / file_name)
             )
+            logger.debug("用户选择保存路径: %s", save_path)
 
         if save_path:
-            # 从数据源获取文件原始大小（字节），避免从显示文本反向解析
             file_size = 0
             for f in self.pan.list:
                 if str(f.get("FileId")) == str(file_id):
                     file_size = int(f.get("Size", 0) or 0)
                     break
+            logger.info("启动下载: name=%s, size=%s, save_path=%s", file_name, file_size, save_path)
 
-            # 添加下载任务到传输界面
             if self.transfer_interface:
                 self.transfer_interface.add_download_task(
                     file_name, file_size, file_id, save_path, self.current_dir_id
@@ -859,6 +853,7 @@ class FileInterface(QWidget):
 
             def run(self):
                 try:
+                    logger.info("删除文件: name=%s, id=%s", self.file_name, self.file_id)
                     success = False
                     for i, file in enumerate(self.pan.list):
                         if str(file.get("FileId")) == str(self.file_id):
@@ -867,6 +862,7 @@ class FileInterface(QWidget):
                             break
 
                     if not success:
+                        logger.debug("文件未在当前列表中找到，尝试刷新目录")
                         code, files = self.pan.get_dir_by_id(
                             self.current_dir_id, save=True, all=True, limit=1000
                         )
@@ -878,6 +874,7 @@ class FileInterface(QWidget):
                                     break
 
                     if success:
+                        logger.debug("删除成功: %s", self.file_name)
                         items, folder_items = self._fi._reload_dir_data(
                             self.current_dir_id
                         )
@@ -885,8 +882,10 @@ class FileInterface(QWidget):
                             True, self.file_name, "", items, folder_items
                         )
                     else:
+                        logger.warning("删除失败: 文件未找到 %s", self.file_name)
                         self.signals.finished.emit(False, self.file_name, "", [], [])
                 except Exception as e:
+                    logger.error("删除异常: %s: %s", self.file_name, e)
                     self.signals.finished.emit(False, self.file_name, str(e), [], [])
 
         # 在主线程创建信号
@@ -998,8 +997,10 @@ class FileInterface(QWidget):
 
             def run(self):
                 try:
+                    logger.info("重命名文件: %s -> %s (id=%s)", self.old_name, self.new_name, self.file_id)
                     success = self.pan.rename_file(self.file_id, self.new_name)
                     if success:
+                        logger.debug("重命名成功: %s -> %s", self.old_name, self.new_name)
                         items, folder_items = self._fi._reload_dir_data(
                             self.current_dir_id
                         )
@@ -1007,10 +1008,12 @@ class FileInterface(QWidget):
                             True, self.old_name, self.new_name, "", items, folder_items
                         )
                     else:
+                        logger.warning("重命名失败: %s -> %s", self.old_name, self.new_name)
                         self.signals.finished.emit(
                             False, self.old_name, self.new_name, "重命名失败", [], []
                         )
                 except Exception as e:
+                    logger.error("重命名异常: %s: %s", self.old_name, e)
                     self.signals.finished.emit(
                         False, self.old_name, self.new_name, str(e), [], []
                     )
@@ -1098,21 +1101,17 @@ class FileInterface(QWidget):
 
     def __copyDownloadLink(self):
         """复制文件下载链接到剪贴板"""
-        # 获取选中的行
         selected_items = self.fileTable.selectedItems()
         if not selected_items:
-            InfoBar.warning(
-                title="复制链接失败", content="请选择一个文件", parent=self
-            )
+            InfoBar.warning(title="复制链接失败", content="请选择一个文件", parent=self)
             return
 
-        # 获取文件信息
         row = selected_items[0].row()
         name_item = self.fileTable.item(row, 0)
         file_id = name_item.data(Qt.ItemDataRole.UserRole)
         file_name = name_item.text()
+        logger.info("获取下载链接: name=%s, id=%s", file_name, file_id)
 
-        # 在 pan.list 中找到对应的文件详情
         file_detail = None
         for item in self.pan.list:
             if str(item.get("FileId")) == str(file_id):
@@ -1120,30 +1119,25 @@ class FileInterface(QWidget):
                 break
 
         if not file_detail:
-            InfoBar.error(
-                title="复制链接失败", content="无法找到文件详情", parent=self
-            )
+            logger.warning("未找到文件详情: id=%s", file_id)
+            InfoBar.error(title="复制链接失败", content="无法找到文件详情", parent=self)
             return
 
         try:
-            # 获取下载链接
             url = self.pan.link_by_fileDetail(file_detail, showlink=False)
             if isinstance(url, str) and url:
-                # 复制到剪贴板
                 clipboard = QApplication.clipboard()
                 clipboard.setText(url)
+                logger.info("下载链接已复制: %s", file_name)
                 InfoBar.success(
                     title="复制成功", content=f"已复制 {file_name} 的下载链接到剪贴板", parent=self
                 )
             else:
-                InfoBar.error(
-                    title="复制链接失败", content="获取下载链接失败", parent=self
-                )
+                logger.error("获取下载链接失败: name=%s, url=%s", file_name, url)
+                InfoBar.error(title="复制链接失败", content="获取下载链接失败", parent=self)
         except Exception as e:
             logger.error(f"复制下载链接失败: {e}")
-            InfoBar.error(
-                title="复制链接失败", content=f"发生错误: {str(e)}", parent=self
-            )
+            InfoBar.error(title="复制链接失败", content=f"发生错误: {str(e)}", parent=self)
 
     def __shareFile(self):
         """为选中文件/文件夹生成分享链接并复制到剪贴板（可选设置密码）。"""
@@ -1156,22 +1150,25 @@ class FileInterface(QWidget):
         name_item = self.fileTable.item(row, 0)
         file_id = name_item.data(Qt.ItemDataRole.UserRole)
         file_name = name_item.text()
+        logger.info("生成分享链接: name=%s, id=%s", file_name, file_id)
 
-        # 询问是否设置分享密码（可选）
         pwd, ok = QInputDialog.getText(self, "设置分享密码(可选)", "分享密码 (留空则无密码):")
         if not ok:
+            logger.debug("用户取消分享密码设置")
             return
 
         try:
             share_url = self.pan.share([int(file_id)], share_pwd=pwd or "")
             if isinstance(share_url, str) and share_url:
                 QApplication.clipboard().setText(share_url)
+                logger.info("分享成功: %s -> %s", file_name, share_url)
                 InfoBar.success(
                     title="分享成功",
                     content=f"已生成分享链接并复制到剪贴板：{share_url}",
                     parent=self,
                 )
             else:
+                logger.error("分享失败: name=%s, url=%s", file_name, share_url)
                 InfoBar.error(title="分享失败", content="生成分享链接失败", parent=self)
         except Exception as e:
             logger.error(f"生成分享链接失败: {e}")

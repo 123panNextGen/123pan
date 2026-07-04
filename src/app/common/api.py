@@ -82,12 +82,14 @@ class Pan123:
 
     def login(self):
         """登录123云盘账户并获取授权令牌"""
+        logger.info("Pan123.login: user=%s", self.user_name)
         result = self._session.login(self.user_name, self.password)
         if result.code not in (200, 0):
             logger.error("登录失败: code=%s, msg=%s", result.code, result.msg)
             return result.code
         token_data = result.data
         self.authorization = token_data["authorization"]
+        logger.info("登录成功: user=%s, token=%.20s...", self.user_name, self.authorization)
         self.save_file()
         return 200
 
@@ -130,12 +132,12 @@ class Pan123:
 
         total = -1
         times = 0
+        t0 = time.monotonic()
         while (lenth_now < total or total == -1) and (times < get_pages or all):
             result = self._session.get_file_list(
                 file_id=file_id, page=page, limit=limit, retry_login=False
             )
             if result.code == 2:
-                # token 过期，重新登录后重试
                 logger.warning("token 过期，正在尝试重新登录")
                 login_code = self.login()
                 if login_code == 200:
@@ -143,24 +145,26 @@ class Pan123:
                 logger.error("重新登录失败")
                 return result.code, []
             if result.code != 0:
-                logger.error("获取文件列表失败: code=%s, msg=%s", result.code, result.msg)
+                logger.error("获取文件列表失败: file_id=%s, code=%s, msg=%s", file_id, result.code, result.msg)
                 return result.code, []
 
             file_list_data = result.data.data
-            # 转换为旧格式 dict 以保持与现有代码的兼容性
             lists_page = [item.to_json() for item in file_list_data.info_list]
             lists += lists_page
             total = file_list_data.total
             lenth_now += len(lists_page)
             page += 1
             times += 1
+            logger.debug("分页加载: page=%s, got=%s, total=%s, accumulated=%s", page - 1, len(lists_page), total, lenth_now)
             if times % 5 == 0:
-                logger.warning("警告：文件夹内文件过多：%s/%s", lenth_now, total)
-                logger.info("为防止对服务器造成影响，暂停3秒")
+                logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
+                logger.info("暂停3秒防止对服务器造成影响")
                 time.sleep(3)
 
+        elapsed = time.monotonic() - t0
+        logger.info("目录列表加载完成: file_id=%s, total=%s, pages=%s, %.1fs", file_id, total, times, elapsed)
         if lenth_now < total:
-            logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
+            logger.warning("文件夹内文件过多：%s/%s，未完全加载", lenth_now, total)
             self.all_file = False
         else:
             self.all_file = True
@@ -352,7 +356,10 @@ class Pan123:
         if file_path_obj.is_dir():
             raise IsADirectoryError("不支持文件夹上传")
         fsize = file_path_obj.stat().st_size
+        logger.info("上传开始: %s (%.2f MB)", file_name, fsize / 1024 / 1024)
+        t0 = time.monotonic()
         readable_hash = self._compute_file_md5(file_path)
+        logger.debug("文件 MD5 计算完成: %s", readable_hash)
 
         list_up_request = {
             "driveId": 0,
@@ -473,6 +480,9 @@ class Pan123:
         res_code_up = close_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")
+        elapsed = time.monotonic() - t0
+        speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
+        logger.info("上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)", file_name, fsize / 1024 / 1024, elapsed, speed)
         return up_file_id
 
     def cd(self, dir_num):

@@ -24,8 +24,10 @@ from qfluentwidgets import FluentIcon as FIF
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
-from ..common.log import open_log_file
+from ..common.log import get_logger, open_log_file
 from ..common.api import check_version
+
+logger = get_logger(__name__)
 
 
 class _SpinBoxCard(SettingCard):
@@ -326,40 +328,50 @@ class SettingInterface(ScrollArea):
             return
         self.downloadFolderCard.setContent(folder)
         ConfigManager.set_setting("defaultDownloadPath", folder)
+        logger.info("下载目录变更为: %s", folder)
 
     def __onAskDownloadLocationChanged(self, checked):
         ConfigManager.set_setting("askDownloadLocation", checked)
+        logger.info("询问下载位置: %s", "开启" if checked else "关闭")
 
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
-        # 实时应用到当前 session
         if self.parent() and hasattr(self.parent(), 'pan'):
             self.parent().pan._session.set_multi_thread(checked)
+        logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
+        logger.info("下载限速: %d KB/s", val)
 
     def __onUploadSpeedChanged(self, val):
         ConfigManager.set_setting("uploadSpeedLimit", val)
+        logger.info("上传限速: %d KB/s", val)
 
     def __onProxyEnabledChanged(self, checked):
         ConfigManager.set_setting("proxyEnabled", checked)
+        logger.info("代理: %s", "开启" if checked else "关闭")
 
     def __onProxyTypeChanged(self, text):
         proxy_type = "http" if text == "HTTP" else "socks5"
         ConfigManager.set_setting("proxyType", proxy_type)
+        logger.info("代理类型: %s", proxy_type)
 
     def __onProxyHostChanged(self, text):
         ConfigManager.set_setting("proxyHost", text)
+        logger.debug("代理主机: %s", text)
 
     def __onProxyPortChanged(self, val):
         ConfigManager.set_setting("proxyPort", val)
+        logger.debug("代理端口: %d", val)
 
     def __onProxyUserChanged(self, text):
         ConfigManager.set_setting("proxyUsername", text)
+        logger.debug("代理用户名: %s", text)
 
     def __onProxyPassChanged(self, text):
         ConfigManager.set_setting("proxyPassword", text)
+        logger.debug("代理密码已更新")
 
     def __connectSignalToSlot(self):
         # 下载设置

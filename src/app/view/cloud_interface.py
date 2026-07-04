@@ -9,6 +9,10 @@ from qfluentwidgets import (
     SettingCard,
 )
 
+from ..common.log import get_logger
+
+logger = get_logger(__name__)
+
 
 def _mask_username(username):
     """如果用户名类似手机号，隐藏中间4位"""
@@ -97,3 +101,4 @@ class CloudInterface(QWidget):
         if self.pan and hasattr(self.pan, 'user_name'):
             username = _mask_username(self.pan.user_name)
             self.username_label.setText(f"用户名: {username}")
+            logger.info("云盘界面已设置: %s", username)
