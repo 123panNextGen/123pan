@@ -2,7 +2,7 @@ import importlib
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
+from PyQt6.QtCore import QThreadPool
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -37,35 +37,20 @@ from ..common.style_sheet import StyleSheet
 from ..common.api import format_file_size
 from ..common.const import MAX_STORAGE_CAPACITY
 from ..common.log import get_logger
+from ..tasks.file_tasks import (
+    CreateFolderTask,
+    DeleteFileTask,
+    LoadListTask,
+    RenameFileTask,
+    StorageTask,
+)
+from ..tasks.signals import _LoadListSignals, _OpFinishedSignals, _StorageSignals
 from .newfolder_window import NewFolderDialog
 from .rename_window import RenameDialog
 
 logger = get_logger(__name__)
 
 Pan123 = importlib.import_module("app.common.api").Pan123
-
-
-# ---- 模块级信号类（必须在主线程创建 QObject 实例） ----
-
-
-class _LoadListSignals(QObject):
-    finished = pyqtSignal(list, str)  # file_items, error
-
-
-class _OpFinishedSignals(QObject):
-    """操作完成信号：success, name, error, file_items, folder_items"""
-
-    finished = pyqtSignal(bool, str, str, list, list)
-
-
-class _RenameFinishedSignals(QObject):
-    """重命名完成信号：success, old_name, new_name, error, file_items, folder_items"""
-
-    finished = pyqtSignal(bool, str, str, str, list, list)
-
-
-class _StorageSignals(QObject):
-    finished = pyqtSignal(str)  # formatted storage size string
 
 
 class FileInterface(QWidget):
@@ -421,21 +406,6 @@ class FileInterface(QWidget):
         finally:
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
-    # 后台加载文件列表的信号和任务类
-    class LoadListTask(QRunnable):
-        def __init__(self, fetch_method, dir_id, signals: _LoadListSignals):
-            super().__init__()
-            self.fetch_method = fetch_method
-            self.dir_id = dir_id
-            self.signals = signals
-
-        def run(self):
-            try:
-                file_items = self.fetch_method(self.dir_id)
-                self.signals.finished.emit(file_items, "")
-            except Exception as e:
-                self.signals.finished.emit([], str(e))
-
     def __findTreeItemById(self, dir_id):
         iterator = QTreeWidgetItemIterator(self.folderTree)
         while iterator.value():
@@ -505,46 +475,6 @@ class FileInterface(QWidget):
                 )
                 return
 
-            # 创建任务执行创建文件夹操作
-            class CreateFolderTask(QRunnable):
-                def __init__(
-                    self,
-                    pan,
-                    folder_name,
-                    current_dir_id,
-                    signals: _OpFinishedSignals,
-                    file_interface,
-                ):
-                    super().__init__()
-                    self.pan = pan
-                    self.folder_name = folder_name
-                    self.current_dir_id = current_dir_id
-                    self.signals = signals
-                    self._fi = file_interface
-
-                def run(self):
-                    try:
-                        current_parent_id = self.pan.parent_file_id
-                        self.pan.parent_file_id = self.current_dir_id
-                        result = self.pan.mkdir(self.folder_name)
-                        self.pan.parent_file_id = current_parent_id
-
-                        if result:
-                            items, folder_items = self._fi._reload_dir_data(
-                                self.current_dir_id
-                            )
-                            self.signals.finished.emit(
-                                True, self.folder_name, "", items, folder_items
-                            )
-                        else:
-                            self.signals.finished.emit(
-                                False, self.folder_name, "", [], []
-                            )
-                    except Exception as e:
-                        self.signals.finished.emit(
-                            False, self.folder_name, str(e), [], []
-                        )
-
             # 在主线程创建信号
             signals = _OpFinishedSignals()
             signals.finished.connect(self.__onCreateFolderFinished)
@@ -556,7 +486,7 @@ class FileInterface(QWidget):
             QThreadPool.globalInstance().start(task)
 
     def __onCreateFolderFinished(
-        self, result, folder_name, error, file_items, folder_items
+        self, result, folder_name, new_name, error, file_items, folder_items
     ):
         """创建文件夹完成后的回调 - 只负责UI更新"""
         if result:
@@ -870,64 +800,6 @@ class FileInterface(QWidget):
             #     )
             #     return
 
-        # 创建任务执行删除文件操作
-        class DeleteFileTask(QRunnable):
-            def __init__(
-                self,
-                pan,
-                file_id,
-                file_name,
-                current_dir_id,
-                signals: _OpFinishedSignals,
-                file_interface,
-            ):
-                super().__init__()
-                self.pan = pan
-                self.file_id = file_id
-                self.file_name = file_name
-                self.current_dir_id = current_dir_id
-                self.signals = signals
-                self._fi = file_interface
-
-            def run(self):
-                try:
-                    logger.info(
-                        "删除文件: name=%s, id=%s", self.file_name, self.file_id
-                    )
-                    success = False
-                    for i, file in enumerate(self.pan.list):
-                        if str(file.get("FileId")) == str(self.file_id):
-                            self.pan.delete_file(i, by_num=True, operation=True)
-                            success = True
-                            break
-
-                    if not success:
-                        logger.debug("文件未在当前列表中找到，尝试刷新目录")
-                        code, files = self.pan.get_dir_by_id(
-                            self.current_dir_id, save=True, all=True, limit=1000
-                        )
-                        if code == 0:
-                            for i, file in enumerate(self.pan.list):
-                                if str(file.get("FileId")) == str(self.file_id):
-                                    self.pan.delete_file(i, by_num=True, operation=True)
-                                    success = True
-                                    break
-
-                    if success:
-                        logger.debug("删除成功: %s", self.file_name)
-                        items, folder_items = self._fi._reload_dir_data(
-                            self.current_dir_id
-                        )
-                        self.signals.finished.emit(
-                            True, self.file_name, "", items, folder_items
-                        )
-                    else:
-                        logger.warning("删除失败: 文件未找到 %s", self.file_name)
-                        self.signals.finished.emit(False, self.file_name, "", [], [])
-                except Exception as e:
-                    logger.error("删除异常: %s: %s", self.file_name, e)
-                    self.signals.finished.emit(False, self.file_name, str(e), [], [])
-
         # 在主线程创建信号
         signals = _OpFinishedSignals()
         signals.finished.connect(self.__onDeleteFileFinished)
@@ -939,7 +811,7 @@ class FileInterface(QWidget):
         QThreadPool.globalInstance().start(task)
 
     def __onDeleteFileFinished(
-        self, success, file_name, error, file_items, folder_items
+        self, success, file_name, new_name, error, file_items, folder_items
     ):
         """删除文件完成后的回调 - 只负责UI更新"""
 
@@ -1020,61 +892,8 @@ class FileInterface(QWidget):
             )
             return
 
-        # 创建任务执行重命名操作
-        class RenameFileTask(QRunnable):
-            def __init__(
-                self,
-                pan,
-                file_id,
-                old_name,
-                new_name,
-                current_dir_id,
-                signals: _RenameFinishedSignals,
-                file_interface,
-            ):
-                super().__init__()
-                self.pan = pan
-                self.file_id = file_id
-                self.old_name = old_name
-                self.new_name = new_name
-                self.current_dir_id = current_dir_id
-                self.signals = signals
-                self._fi = file_interface
-
-            def run(self):
-                try:
-                    logger.info(
-                        "重命名文件: %s -> %s (id=%s)",
-                        self.old_name,
-                        self.new_name,
-                        self.file_id,
-                    )
-                    success = self.pan.rename_file(self.file_id, self.new_name)
-                    if success:
-                        logger.debug(
-                            "重命名成功: %s -> %s", self.old_name, self.new_name
-                        )
-                        items, folder_items = self._fi._reload_dir_data(
-                            self.current_dir_id
-                        )
-                        self.signals.finished.emit(
-                            True, self.old_name, self.new_name, "", items, folder_items
-                        )
-                    else:
-                        logger.warning(
-                            "重命名失败: %s -> %s", self.old_name, self.new_name
-                        )
-                        self.signals.finished.emit(
-                            False, self.old_name, self.new_name, "重命名失败", [], []
-                        )
-                except Exception as e:
-                    logger.error("重命名异常: %s: %s", self.old_name, e)
-                    self.signals.finished.emit(
-                        False, self.old_name, self.new_name, str(e), [], []
-                    )
-
         # 在主线程创建信号
-        signals = _RenameFinishedSignals()
+        signals = _OpFinishedSignals()
         signals.finished.connect(self.__onRenameFileFinished)
         task = RenameFileTask(
             self.pan, file_id, old_name, new_name, self.current_dir_id, signals, self
@@ -1321,21 +1140,6 @@ class FileInterface(QWidget):
         """统计并更新云盘存储信息"""
         if not self.pan:
             return
-
-        # 创建后台任务来统计存储信息
-        class StorageTask(QRunnable):
-            def __init__(self, file_interface, signals: _StorageSignals):
-                super().__init__()
-                self.file_interface = file_interface
-                self.signals = signals
-
-            def run(self):
-                try:
-                    total_size = self.file_interface.calculate_total_storage(0)
-                    self.signals.finished.emit(total_size)
-                except Exception as e:
-                    logger.error(f"统计存储信息时发生错误: {e}")
-                    self.signals.finished.emit("0 B")
 
         # 在主线程创建信号
         signals = _StorageSignals()
