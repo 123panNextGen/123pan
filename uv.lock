@@ -9,7 +9,7 @@ resolution-markers = [
 [[package]]
 name = "123pan"
 version = "3.1.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "pyqt6" },
