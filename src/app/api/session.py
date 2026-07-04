@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 import os
 import re
 import time
@@ -8,6 +9,8 @@ from typing import Any, Optional, Callable
 from urllib.parse import urljoin
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 from .model import (
     ApiCode,
@@ -226,7 +229,7 @@ class NetSession:
         """单线程流式下载。"""
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
         try:
-            with self._transfer.get(url, stream=True, timeout=60) as resp:
+            with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
                 resp.raise_for_status()
                 downloaded = 0
                 with open(temp_path, "wb") as f:
@@ -275,35 +278,51 @@ class NetSession:
         def _download_chunk(start: int, end: int, index: int) -> bool:
             part_path = Path(str(temp_path) + f".part{index}")
             headers = {"Range": f"bytes={start}-{end}"}
-            try:
-                with self._transfer.get(
-                    url, headers=headers, stream=True, timeout=60
-                ) as resp:
-                    resp.raise_for_status()
-                    with open(part_path, "wb") as pf:
-                        for data in resp.iter_content(chunk_size=8192):
-                            if data:
-                                pf.write(data)
-                                if self._download_limiter:
-                                    wait = self._download_limiter.consume(len(data))
-                                    if wait > 0:
-                                        time.sleep(wait)
-                                with progress_lock:
-                                    downloaded_bytes[0] += len(data)
-                                    now = time.monotonic()
-                                    if now - last_report[0] >= 0.1:
-                                        _report_progress()
-                                        last_report[0] = now
-                return True
-            except Exception as e:
-                with errors_lock:
-                    errors.append((index, e))
-                if part_path.exists():
-                    try:
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if part_path.exists():
                         part_path.unlink()
-                    except OSError:
-                        pass
-                return False
+                    with self._transfer.get(
+                        url, headers=headers, stream=True,
+                        timeout=(10, 60),
+                    ) as resp:
+                        resp.raise_for_status()
+                        with open(part_path, "wb") as pf:
+                            for data in resp.iter_content(chunk_size=8192):
+                                if data:
+                                    pf.write(data)
+                                    if self._download_limiter:
+                                        wait = self._download_limiter.consume(len(data))
+                                        if wait > 0:
+                                            time.sleep(wait)
+                                    with progress_lock:
+                                        downloaded_bytes[0] += len(data)
+                                        now = time.monotonic()
+                                        if now - last_report[0] >= 0.1:
+                                            _report_progress()
+                                            last_report[0] = now
+                    return True
+                except Exception as e:
+                    if part_path.exists():
+                        try:
+                            part_path.unlink()
+                        except OSError:
+                            pass
+                    if attempt < max_retries - 1:
+                        wait = (attempt + 1) * 1.0
+                        with progress_lock:
+                            saved = downloaded_bytes[0]
+                        logger.warning(
+                            f"分片 {index} 第 {attempt + 1} 次失败，{wait:.0f}s 后重试: {e}"
+                        )
+                        time.sleep(wait)
+                        with progress_lock:
+                            downloaded_bytes[0] = saved
+                        continue
+                    with errors_lock:
+                        errors.append((index, e))
+                    return False
 
         # 计算分片范围
         ranges: list[tuple[int, int]] = []
