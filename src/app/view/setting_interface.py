@@ -375,35 +375,63 @@ class SettingInterface(ScrollArea):
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
+        if self.parent() and hasattr(self.parent(), "pan"):
+            self.parent().pan.set_download_speed_limit(val)
         logger.info("下载限速: %d KB/s", val)
 
     def __onUploadSpeedChanged(self, val):
         ConfigManager.set_setting("uploadSpeedLimit", val)
+        if self.parent() and hasattr(self.parent(), "pan"):
+            self.parent().pan.set_upload_speed_limit(val)
         logger.info("上传限速: %d KB/s", val)
+
+    def _apply_proxy_to_service(self):
+        """将当前代理配置推送到 Service。"""
+        if not (self.parent() and hasattr(self.parent(), "pan")):
+            return
+        enabled = ConfigManager.get_setting("proxyEnabled", False)
+        if enabled:
+            proxy_type = ConfigManager.get_setting("proxyType", "http")
+            host = ConfigManager.get_setting("proxyHost", "")
+            port = ConfigManager.get_setting("proxyPort", 0)
+            username = ConfigManager.get_setting("proxyUsername", "")
+            password = ConfigManager.get_setting("proxyPassword", "")
+            if host and port > 0:
+                self.parent().pan.set_download_proxy(
+                    proxy_type, host, port, username, password
+                )
+                return
+        self.parent().pan.clear_download_proxy()
 
     def __onProxyEnabledChanged(self, checked):
         ConfigManager.set_setting("proxyEnabled", checked)
+        self._apply_proxy_to_service()
         logger.info("代理: %s", "开启" if checked else "关闭")
 
     def __onProxyTypeChanged(self, text):
         proxy_type = "http" if text == "HTTP" else "socks5"
         ConfigManager.set_setting("proxyType", proxy_type)
+        self._apply_proxy_to_service()
         logger.info("代理类型: %s", proxy_type)
 
     def __onProxyHostChanged(self, text):
         ConfigManager.set_setting("proxyHost", text)
+        self._apply_proxy_to_service()
         logger.debug("代理主机: %s", text)
 
     def __onProxyPortChanged(self, val):
         ConfigManager.set_setting("proxyPort", val)
+        self._apply_proxy_to_service()
         logger.debug("代理端口: %d", val)
 
     def __onProxyUserChanged(self, text):
         ConfigManager.set_setting("proxyUsername", text)
+        self._apply_proxy_to_service()
         logger.debug("代理用户名: %s", text)
 
     def __onProxyPassChanged(self, text):
         ConfigManager.set_setting("proxyPassword", text)
+        self._apply_proxy_to_service()
         logger.debug("代理密码已更新")
 
     def __connectSignalToSlot(self):
