@@ -10,12 +10,12 @@ from qfluentwidgets import (
 )
 
 
-class NewFolderDialog(QDialog):
-    """新建文件夹弹窗"""
+class InputDialog(QDialog):
+    """通用文本输入弹窗（取代 NewFolderDialog 和 RenameDialog）。"""
 
-    def __init__(self, parent=None):
+    def __init__(self, title, hint, default_text="", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("新建文件夹")
+        self.setWindowTitle(title)
         self.resize(400, 180)
         self.setWindowFlags(
             self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
@@ -25,31 +25,25 @@ class NewFolderDialog(QDialog):
         layout.setContentsMargins(40, 30, 40, 30)
         layout.setSpacing(20)
 
-        # 标题
-        title = TitleLabel("新建文件夹")
-        layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
+        title_label = TitleLabel(title)
+        layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # 提示信息
-        hint = BodyLabel("请输入文件夹名称")
-        layout.addWidget(hint, alignment=Qt.AlignmentFlag.AlignCenter)
+        hint_label = BodyLabel(hint)
+        layout.addWidget(hint_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # 输入框
-        self.name_input = LineEdit()
-        self.name_input.setText("新建文件夹")
-        self.name_input.selectAll()
-        self.name_input.returnPressed.connect(self.accept)
-        layout.addWidget(self.name_input)
+        self._input = LineEdit()
+        self._input.setText(default_text)
+        self._input.selectAll()
+        self._input.returnPressed.connect(self.accept)
+        layout.addWidget(self._input)
 
-        # 按钮布局
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        # 取消按钮
         cancel_button = PushButton("取消")
         cancel_button.setMinimumWidth(100)
         cancel_button.clicked.connect(self.reject)
 
-        # 确定按钮
         ok_button = PrimaryPushButton("确定")
         ok_button.setMinimumWidth(100)
         ok_button.clicked.connect(self.accept)
@@ -58,6 +52,5 @@ class NewFolderDialog(QDialog):
         button_layout.addWidget(ok_button)
         layout.addLayout(button_layout)
 
-    def get_new_name(self):
-        """获取新名称"""
-        return self.name_input.text().strip()
+    def get_input_text(self):
+        return self._input.text().strip()

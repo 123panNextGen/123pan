@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
+from typing import Optional, Callable
 
 from ..common.log import get_logger
+from ..common.speed_limiter import SpeedLimiter
 
 logger = get_logger(__name__)
 
@@ -52,5 +54,34 @@ class DownloadService:
                     f.write(chunk)
 
         os.rename(temp_path, file_path)
+
+    def set_multi_thread(self, enabled: bool):
+        """启用或禁用多线程下载。"""
+        self._session.set_multi_thread(enabled)
+
+    def set_download_speed_limit(self, kbps: int):
+        """设置下载速度限制（KB/s），0 为不限速。"""
+        if kbps > 0:
+            self._session.set_speed_limiter(SpeedLimiter(kbps), is_upload=False)
+        else:
+            self._session.set_speed_limiter(None, is_upload=False)
+
+    def set_proxy(self, proxy_type: str, host: str, port: int, username: str = "", password: str = ""):
+        """设置下载代理。"""
+        self._session.set_proxy_auth(proxy_type, host, port, username, password)
+
+    def clear_proxy(self):
+        """清除下载代理。"""
+        self._session.set_proxy("")
+
+    def download_file(
+        self,
+        url: str,
+        file_path: Path,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> bool:
+        """多线程分片下载文件。"""
+        return self._session.download_file_multithread(url, file_path, file_size, progress_callback)
 
 
