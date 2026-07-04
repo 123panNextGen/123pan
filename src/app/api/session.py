@@ -377,6 +377,7 @@ class NetSession:
                     with errors_lock:
                         errors.append((index, e))
                     return False
+            return False
 
         # 计算分片范围
         ranges: list[tuple[int, int]] = []
