@@ -47,13 +47,13 @@ tests/
 
 ### 分层职责
 
-| 层 | 目录 | 职责 |
-|---|---|---|
-| **API** | `api/` | HTTP 请求、数据模型。无业务逻辑 |
-| **Service** | `service/` | 业务逻辑编排。无 UI 依赖 |
-| **Facade** | `common/api.py:Pan123` | 向后兼容门面，转发到 Service |
-| **Tasks** | `tasks/` | QRunnable 后台任务 + Qt 信号 |
-| **View** | `view/` | PyQt6 界面。不直接访问 `NetSession` |
+| 层          | 目录                   | 职责                                |
+| ----------- | ---------------------- | ----------------------------------- |
+| **API**     | `api/`                 | HTTP 请求、数据模型。无业务逻辑     |
+| **Service** | `service/`             | 业务逻辑编排。无 UI 依赖            |
+| **Facade**  | `common/api.py:Pan123` | 向后兼容门面，转发到 Service        |
+| **Tasks**   | `tasks/`               | QRunnable 后台任务 + Qt 信号        |
+| **View**    | `view/`                | PyQt6 界面。不直接访问 `NetSession` |
 
 ### 关键约束
 
@@ -83,14 +83,14 @@ type: 简短描述
 - 要点 2
 ```
 
-| type | 含义 |
-|---|---|
-| `feat:` | 新功能 |
-| `fix:` | 修复 |
-| `refactor:` | 重构（不改变行为） |
-| `test:` | 测试 |
-| `docs:` | 文档 |
-| `chore:` | 基础设施（依赖、配置等） |
+| type        | 含义                     |
+| ----------- | ------------------------ |
+| `feat:`     | 新功能                   |
+| `fix:`      | 修复                     |
+| `refactor:` | 重构（不改变行为）       |
+| `test:`     | 测试                     |
+| `docs:`     | 文档                     |
+| `chore:`    | 基础设施（依赖、配置等） |
 
 ### 步骤规范
 
@@ -102,7 +102,7 @@ type: 简短描述
 
 ## 代码风格
 
-- 无注释（除非必须，如 pylint disable）
+- 按情况提交注释
 - 无类型注解（项目风格，不使用 type hints）
 - 文件名：蛇形命名（`file_interface.py`）
 - 类名：帕斯卡命名（`FileInterface`）
@@ -134,3 +134,9 @@ uv sync --group test                # + 测试
 uv sync --group lint                # + 代码检查
 uv sync --group build               # + nuitka 打包
 ```
+
+# AI编写规范
+
+按照顺序进行，新开 refactor/xxx 这样的分支，最后通过规范的 git commit 再进行合并到 fluent-dev 分支中
+每做一小步就提交一次，并且自已review一下是否有潜在问题。
+如果有任何不确定的问题 一定要询问意见，切忌擅自行动。
