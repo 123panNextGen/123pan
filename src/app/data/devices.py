@@ -1,5 +1,6 @@
-{
-  "all_device_type": [
+"""设备伪装数据，用于随机设备指纹。"""
+
+all_device_type = [
     "MI-ONE PLUS",
     "MI-ONE C1",
     "MI-ONE",
@@ -690,9 +691,10 @@
     "2405CPCFBG",
     "24074PCD2I",
     "FYJ01QP",
-    "21051191C"
-  ],
-  "all_os_versions": [
+    "21051191C",
+]
+
+all_os_versions = [
     "Android_7.1.2",
     "Android_8.0.0",
     "Android_8.1.0",
@@ -706,6 +708,5 @@
     "Android_4.4.4",
     "Android_4.3",
     "Android_4.2.2",
-    "Android_4.1.2"
-  ]
-}
+    "Android_4.1.2",
+]
