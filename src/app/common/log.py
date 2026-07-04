@@ -5,6 +5,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from .const import LOG_RETENTION_DAYS
+
 # 配置文件路径
 if platform.system() == "Windows":
     CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan"
@@ -13,6 +15,21 @@ else:
 LOG_DIR = CONFIG_DIR / "logs"
 _LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOG_FILE = LOG_DIR / f"log_{_LOG_TIMESTAMP}.log"
+
+
+def _cleanup_old_logs():
+    """删除超过保留天数的旧日志文件，仅保留最近 LOG_RETENTION_DAYS 天。"""
+    if not LOG_DIR.exists():
+        return
+    cutoff = datetime.now().timestamp() - LOG_RETENTION_DAYS * 86400
+    for f in LOG_DIR.glob("log_*.log"):
+        try:
+            ts_str = f.stem[4:]  # 去掉 "log_" 前缀
+            file_time = datetime.strptime(ts_str, "%Y-%m-%d_%H-%M-%S")
+            if file_time.timestamp() < cutoff:
+                f.unlink()
+        except (ValueError, OSError):
+            pass
 
 
 def get_logger(name: str = "123pan"):
@@ -46,3 +63,6 @@ def open_log_file():
         subprocess.Popen(["open", LOG_FILE])
     else:
         subprocess.Popen(["xdg-open", LOG_FILE])
+
+
+_cleanup_old_logs()
