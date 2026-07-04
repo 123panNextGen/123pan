@@ -112,6 +112,49 @@ uv run src/123pan.py
 | `proxyUsername`       | string | `""`          | 代理认证用户名（可选）                |
 | `proxyPassword`       | string | `""`          | 代理认证密码（可选）                 |
 
+## 测试
+
+项目包含 **61 个测试用例**，覆盖核心逻辑层。
+
+### 运行测试
+
+```shell
+# 运行全部测试
+uv run pytest
+
+# 运行特定文件
+uv run pytest tests/unit/test_speed_limiter.py
+
+# 带覆盖率报告
+uv run pytest --cov
+
+# 详细输出
+uv run pytest -v
+```
+
+### 测试结构
+
+```
+tests/
+  unit/                    # 纯逻辑测试，无外部依赖
+    test_speed_limiter.py  # 令牌桶限速算法（mock time.monotonic）
+    test_credential.py     # AES-256-GCM 加解密（临时 keyfile 隔离）
+    test_model.py          # 数据模型解析/序列化
+    test_api_utils.py      # format_file_size 等工具函数
+    test_config.py         # 配置读写、旧格式迁移（临时目录隔离）
+  integration/             # 依赖 mock 外部服务
+    test_session.py        # NetSession HTTP 方法（responses mock）
+```
+
+### 测试策略
+
+| 层级 | 方式 | 说明 |
+|-------|------|---------|
+| 纯函数 | 直接断言返回值 | `SpeedLimiter`、`format_file_size` |
+| 文件系统 | `tmp_path` fixture | 不碰 `~/.config/123pan` |
+| 加密 | 模块级 `_KEY_FILE` 覆盖 | 测试用临时 `.keyfile` |
+| HTTP | `responses` 拦截 `requests` | 不发起真实网络请求 |
+
 ## 问题反馈
 
 你可以通过多种途径反馈问题。
