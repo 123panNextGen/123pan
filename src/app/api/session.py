@@ -226,7 +226,7 @@ class NetSession:
         """单线程流式下载。"""
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
         try:
-            with self._transfer.get(url, stream=True, timeout=30) as resp:
+            with self._transfer.get(url, stream=True, timeout=60) as resp:
                 resp.raise_for_status()
                 downloaded = 0
                 with open(temp_path, "wb") as f:
@@ -257,71 +257,111 @@ class NetSession:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> bool:
-        """多线程分片下载。"""
-        chunk_size = max(self._chunk_size, file_size // self._num_threads)
-        ranges = []
+        """多线程分片下载（每分片直接写入磁盘 .partN 文件，避免内存爆炸）。"""
+        num_threads = self._num_threads
+        chunk_size = max(self._chunk_size, file_size // num_threads)
+
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        progress_lock = threading.Lock()
+        downloaded_bytes = [0]
+        last_report = [0.0]
+        errors: list = []
+        errors_lock = threading.Lock()
+
+        def _report_progress():
+            if progress_callback:
+                progress_callback(downloaded_bytes[0], file_size)
+
+        def _download_chunk(start: int, end: int, index: int) -> bool:
+            part_path = Path(str(temp_path) + f".part{index}")
+            headers = {"Range": f"bytes={start}-{end}"}
+            try:
+                with self._transfer.get(
+                    url, headers=headers, stream=True, timeout=60
+                ) as resp:
+                    resp.raise_for_status()
+                    with open(part_path, "wb") as pf:
+                        for data in resp.iter_content(chunk_size=8192):
+                            if data:
+                                pf.write(data)
+                                if self._download_limiter:
+                                    wait = self._download_limiter.consume(len(data))
+                                    if wait > 0:
+                                        time.sleep(wait)
+                                with progress_lock:
+                                    downloaded_bytes[0] += len(data)
+                                    now = time.monotonic()
+                                    if now - last_report[0] >= 0.1:
+                                        _report_progress()
+                                        last_report[0] = now
+                return True
+            except Exception as e:
+                with errors_lock:
+                    errors.append((index, e))
+                if part_path.exists():
+                    try:
+                        part_path.unlink()
+                    except OSError:
+                        pass
+                return False
+
+        # 计算分片范围
+        ranges: list[tuple[int, int]] = []
         start = 0
         while start < file_size:
             end = min(start + chunk_size - 1, file_size - 1)
             ranges.append((start, end))
             start = end + 1
 
-        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-        progress_lock = threading.Lock()
-        downloaded_bytes = [0] * len(ranges)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_threads
+            ) as executor:
+                futures = {
+                    executor.submit(_download_chunk, r[0], r[1], i): i
+                    for i, r in enumerate(ranges)
+                }
 
-        def _report_progress():
-            if progress_callback:
-                total = sum(downloaded_bytes)
-                progress_callback(total, file_size)
+                for future in concurrent.futures.as_completed(futures):
+                    if not future.result():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        for i in range(len(ranges)):
+                            p = Path(str(temp_path) + f".part{i}")
+                            if p.exists():
+                                try:
+                                    p.unlink()
+                                except OSError:
+                                    pass
+                        err_msgs = [f"分片{idx}: {e}" for idx, e in errors]
+                        raise RuntimeError(f"分片下载失败: {'; '.join(err_msgs)}")
 
-        def _download_chunk(idx: int, byte_range: tuple):
-            headers = {"Range": f"bytes={byte_range[0]}-{byte_range[1]}"}
-            try:
-                with self._transfer.get(
-                    url, headers=headers, stream=True, timeout=60
-                ) as resp:
-                    resp.raise_for_status()
-                    chunk_data = bytearray()
-                    for data in resp.iter_content(chunk_size=8192):
-                        if data:
-                            chunk_data.extend(data)
-                            if self._download_limiter:
-                                wait = self._download_limiter.consume(len(data))
-                                if wait > 0:
-                                    time.sleep(wait)
-                            with progress_lock:
-                                downloaded_bytes[idx] += len(data)
-                                _report_progress()
-                    return bytes(chunk_data), byte_range[0]
-            except Exception:
-                return None, byte_range[0]
+            # 按顺序合并分片
+            with open(temp_path, "wb") as out_f:
+                for i in range(len(ranges)):
+                    p = Path(str(temp_path) + f".part{i}")
+                    try:
+                        with open(p, "rb") as pf:
+                            while True:
+                                buf = pf.read(1024 * 1024)
+                                if not buf:
+                                    break
+                                out_f.write(buf)
+                        p.unlink()
+                    except OSError as e:
+                        raise RuntimeError(f"合并分片文件 {i} 失败: {e}")
 
-        # 使用线程池并行下载
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self._num_threads
-        ) as executor:
-            futures = {
-                executor.submit(_download_chunk, i, r): i
-                for i, r in enumerate(ranges)
-            }
-            results = {}
-            for future in concurrent.futures.as_completed(futures):
-                data, offset = future.result()
-                if data is None:
-                    raise RuntimeError(f"分片下载失败: offset={offset}")
-                results[offset] = data
-
-        # 按顺序写入文件
-        with open(temp_path, "wb") as f:
-            for byte_range in ranges:
-                f.write(results[byte_range[0]])
-
-        if temp_path.exists():
-            if file_path.exists():
-                file_path.unlink()
-            temp_path.rename(file_path)
-        return True
+            if temp_path.exists():
+                if file_path.exists():
+                    file_path.unlink()
+                temp_path.rename(file_path)
+            return True
+        except Exception:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            raise
 
     def _build_headers(self) -> dict[str, str]:
         """构建设备伪装请求头。"""
