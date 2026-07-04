@@ -45,8 +45,7 @@ from ..tasks.file_tasks import (
     StorageTask,
 )
 from ..tasks.signals import _LoadListSignals, _OpFinishedSignals, _StorageSignals
-from .newfolder_window import NewFolderDialog
-from .rename_window import RenameDialog
+from .dialogs import InputDialog
 
 logger = get_logger(__name__)
 
@@ -464,9 +463,9 @@ class FileInterface(QWidget):
         """创建新文件夹"""
 
         # 使用新建文件夹弹窗
-        dialog = NewFolderDialog(self)
+        dialog = InputDialog("新建文件夹", "请输入文件夹名称", "新建文件夹", self)
         if dialog.exec() == dialog.DialogCode.Accepted:
-            folder_name = dialog.get_new_name()
+            folder_name = dialog.get_input_text()
 
             # 检查文件夹名称是否为空
             if not folder_name.strip():
@@ -864,11 +863,11 @@ class FileInterface(QWidget):
         file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
         # 使用重命名对话框获取新名称
-        dialog = RenameDialog(old_name, self)
+        dialog = InputDialog("重命名", "请输入新的名称", old_name, self)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
-        new_name = dialog.get_new_name()
+        new_name = dialog.get_input_text()
 
         # 检查新名称是否为空
         if not new_name:
