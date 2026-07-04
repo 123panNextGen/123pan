@@ -154,6 +154,9 @@ class DownloadThread(QThread):
                     "未找到文件信息，使用构造数据: file_id=%s", self.task.file_id
                 )
             else:
+                real_size = int(target_file.get("Size", 0) or 0)
+                if real_size > 0:
+                    self.task.file_size = real_size
                 logger.debug(
                     "已找到文件信息: name=%s, size=%s",
                     target_file.get("FileName"),
@@ -511,6 +514,8 @@ class TransferInterface(QWidget):
             if not size_item:
                 size_item = QTableWidgetItem(format_file_size(task.file_size))
                 table.setItem(row, 1, size_item)
+            else:
+                size_item.setText(format_file_size(task.file_size))
 
             progress_bar = table.cellWidget(row, 2)
             if not progress_bar:
