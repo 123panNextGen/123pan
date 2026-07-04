@@ -47,17 +47,20 @@ Pan123 = importlib.import_module("app.common.api").Pan123
 
 # ---- 模块级信号类（必须在主线程创建 QObject 实例） ----
 
+
 class _LoadListSignals(QObject):
     finished = pyqtSignal(list, str)  # file_items, error
 
 
 class _OpFinishedSignals(QObject):
     """操作完成信号：success, name, error, file_items, folder_items"""
+
     finished = pyqtSignal(bool, str, str, list, list)
 
 
 class _RenameFinishedSignals(QObject):
     """重命名完成信号：success, old_name, new_name, error, file_items, folder_items"""
+
     finished = pyqtSignal(bool, str, str, str, list, list)
 
 
@@ -159,7 +162,9 @@ class FileInterface(QWidget):
 
         self.storageValueLabel = BodyLabel("-- / --", self.storageCard)
         self.storageValueLabel.setStyleSheet("font-size: 12px; color: gray;")
-        self.storageTopLayout.addWidget(self.storageValueLabel, 0, Qt.AlignmentFlag.AlignRight)
+        self.storageTopLayout.addWidget(
+            self.storageValueLabel, 0, Qt.AlignmentFlag.AlignRight
+        )
 
         self.storageTopLayout.addStretch()
         self.storageLayout.addLayout(self.storageTopLayout)
@@ -404,10 +409,12 @@ class FileInterface(QWidget):
             if code == 0:
                 for item in items:
                     if int(item.get("Type", 0)) == 1:
-                        folder_items.append({
-                            "FileId": item.get("FileId"),
-                            "FileName": item.get("FileName"),
-                        })
+                        folder_items.append(
+                            {
+                                "FileId": item.get("FileId"),
+                                "FileName": item.get("FileName"),
+                            }
+                        )
             return items, folder_items
         except Exception:
             return [], []
@@ -458,7 +465,7 @@ class FileInterface(QWidget):
 
         try:
             target_dir_id = int(route_key)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return
 
         target_index = -1
@@ -500,7 +507,14 @@ class FileInterface(QWidget):
 
             # 创建任务执行创建文件夹操作
             class CreateFolderTask(QRunnable):
-                def __init__(self, pan, folder_name, current_dir_id, signals: _OpFinishedSignals, file_interface):
+                def __init__(
+                    self,
+                    pan,
+                    folder_name,
+                    current_dir_id,
+                    signals: _OpFinishedSignals,
+                    file_interface,
+                ):
                     super().__init__()
                     self.pan = pan
                     self.folder_name = folder_name
@@ -534,7 +548,9 @@ class FileInterface(QWidget):
             # 在主线程创建信号
             signals = _OpFinishedSignals()
             signals.finished.connect(self.__onCreateFolderFinished)
-            task = CreateFolderTask(self.pan, folder_name, self.current_dir_id, signals, self)
+            task = CreateFolderTask(
+                self.pan, folder_name, self.current_dir_id, signals, self
+            )
 
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
@@ -744,7 +760,12 @@ class FileInterface(QWidget):
                 path = Path(file_path)
                 file_name = path.name
                 file_size = path.stat().st_size
-                logger.debug("上传文件: name=%s, size=%s, dir=%s", file_name, file_size, self.current_dir_id)
+                logger.debug(
+                    "上传文件: name=%s, size=%s, dir=%s",
+                    file_name,
+                    file_size,
+                    self.current_dir_id,
+                )
                 if self.transfer_interface:
                     self.transfer_interface.add_upload_task(
                         file_name, file_size, file_path, self.current_dir_id
@@ -779,7 +800,11 @@ class FileInterface(QWidget):
         default_download_path = ConfigManager.get_setting(
             "defaultDownloadPath", str(Path.home() / "Downloads")
         )
-        logger.debug("下载配置: ask_location=%s, default_path=%s", ask_download_location, default_download_path)
+        logger.debug(
+            "下载配置: ask_location=%s, default_path=%s",
+            ask_download_location,
+            default_download_path,
+        )
 
         save_path = None
         if ask_download_location:
@@ -796,7 +821,12 @@ class FileInterface(QWidget):
                 if str(f.get("FileId")) == str(file_id):
                     file_size = int(f.get("Size", 0) or 0)
                     break
-            logger.info("启动下载: name=%s, size=%s, save_path=%s", file_name, file_size, save_path)
+            logger.info(
+                "启动下载: name=%s, size=%s, save_path=%s",
+                file_name,
+                file_size,
+                save_path,
+            )
 
             if self.transfer_interface:
                 self.transfer_interface.add_download_task(
@@ -842,7 +872,15 @@ class FileInterface(QWidget):
 
         # 创建任务执行删除文件操作
         class DeleteFileTask(QRunnable):
-            def __init__(self, pan, file_id, file_name, current_dir_id, signals: _OpFinishedSignals, file_interface):
+            def __init__(
+                self,
+                pan,
+                file_id,
+                file_name,
+                current_dir_id,
+                signals: _OpFinishedSignals,
+                file_interface,
+            ):
                 super().__init__()
                 self.pan = pan
                 self.file_id = file_id
@@ -853,7 +891,9 @@ class FileInterface(QWidget):
 
             def run(self):
                 try:
-                    logger.info("删除文件: name=%s, id=%s", self.file_name, self.file_id)
+                    logger.info(
+                        "删除文件: name=%s, id=%s", self.file_name, self.file_id
+                    )
                     success = False
                     for i, file in enumerate(self.pan.list):
                         if str(file.get("FileId")) == str(self.file_id):
@@ -983,8 +1023,14 @@ class FileInterface(QWidget):
         # 创建任务执行重命名操作
         class RenameFileTask(QRunnable):
             def __init__(
-                self, pan, file_id, old_name, new_name, current_dir_id,
-                signals: _RenameFinishedSignals, file_interface
+                self,
+                pan,
+                file_id,
+                old_name,
+                new_name,
+                current_dir_id,
+                signals: _RenameFinishedSignals,
+                file_interface,
             ):
                 super().__init__()
                 self.pan = pan
@@ -997,10 +1043,17 @@ class FileInterface(QWidget):
 
             def run(self):
                 try:
-                    logger.info("重命名文件: %s -> %s (id=%s)", self.old_name, self.new_name, self.file_id)
+                    logger.info(
+                        "重命名文件: %s -> %s (id=%s)",
+                        self.old_name,
+                        self.new_name,
+                        self.file_id,
+                    )
                     success = self.pan.rename_file(self.file_id, self.new_name)
                     if success:
-                        logger.debug("重命名成功: %s -> %s", self.old_name, self.new_name)
+                        logger.debug(
+                            "重命名成功: %s -> %s", self.old_name, self.new_name
+                        )
                         items, folder_items = self._fi._reload_dir_data(
                             self.current_dir_id
                         )
@@ -1008,7 +1061,9 @@ class FileInterface(QWidget):
                             True, self.old_name, self.new_name, "", items, folder_items
                         )
                     else:
-                        logger.warning("重命名失败: %s -> %s", self.old_name, self.new_name)
+                        logger.warning(
+                            "重命名失败: %s -> %s", self.old_name, self.new_name
+                        )
                         self.signals.finished.emit(
                             False, self.old_name, self.new_name, "重命名失败", [], []
                         )
@@ -1130,20 +1185,28 @@ class FileInterface(QWidget):
                 clipboard.setText(url)
                 logger.info("下载链接已复制: %s", file_name)
                 InfoBar.success(
-                    title="复制成功", content=f"已复制 {file_name} 的下载链接到剪贴板", parent=self
+                    title="复制成功",
+                    content=f"已复制 {file_name} 的下载链接到剪贴板",
+                    parent=self,
                 )
             else:
                 logger.error("获取下载链接失败: name=%s, url=%s", file_name, url)
-                InfoBar.error(title="复制链接失败", content="获取下载链接失败", parent=self)
+                InfoBar.error(
+                    title="复制链接失败", content="获取下载链接失败", parent=self
+                )
         except Exception as e:
             logger.error(f"复制下载链接失败: {e}")
-            InfoBar.error(title="复制链接失败", content=f"发生错误: {str(e)}", parent=self)
+            InfoBar.error(
+                title="复制链接失败", content=f"发生错误: {str(e)}", parent=self
+            )
 
     def __shareFile(self):
         """为选中文件/文件夹生成分享链接并复制到剪贴板（可选设置密码）。"""
         selected_items = self.fileTable.selectedItems()
         if not selected_items:
-            InfoBar.warning(title="分享失败", content="请选择一个文件或文件夹", parent=self)
+            InfoBar.warning(
+                title="分享失败", content="请选择一个文件或文件夹", parent=self
+            )
             return
 
         row = selected_items[0].row()
@@ -1152,7 +1215,9 @@ class FileInterface(QWidget):
         file_name = name_item.text()
         logger.info("生成分享链接: name=%s, id=%s", file_name, file_id)
 
-        pwd, ok = QInputDialog.getText(self, "设置分享密码(可选)", "分享密码 (留空则无密码):")
+        pwd, ok = QInputDialog.getText(
+            self, "设置分享密码(可选)", "分享密码 (留空则无密码):"
+        )
         if not ok:
             logger.debug("用户取消分享密码设置")
             return
@@ -1200,7 +1265,9 @@ class FileInterface(QWidget):
                     used_bytes = int(value)
 
                 # 计算使用百分比
-                usage_percent = (used_bytes / max_capacity * 100) if max_capacity > 0 else 0
+                usage_percent = (
+                    (used_bytes / max_capacity * 100) if max_capacity > 0 else 0
+                )
             else:
                 usage_percent = 0
         except Exception as e:
@@ -1227,7 +1294,9 @@ class FileInterface(QWidget):
 
         try:
             # 获取当前目录的文件列表，使用 all=True 确保获取所有文件
-            code, items = self.pan.get_dir_by_id(dir_id, save=False, all=True, limit=1000)
+            code, items = self.pan.get_dir_by_id(
+                dir_id, save=False, all=True, limit=1000
+            )
 
             if code != 0 or not items:
                 return "0 B"

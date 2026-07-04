@@ -89,7 +89,9 @@ class Pan123:
             return result.code
         token_data = result.data
         self.authorization = token_data["authorization"]
-        logger.info("登录成功: user=%s, token=%.20s...", self.user_name, self.authorization)
+        logger.info(
+            "登录成功: user=%s, token=%.20s...", self.user_name, self.authorization
+        )
         self.save_file()
         return 200
 
@@ -145,7 +147,12 @@ class Pan123:
                 logger.error("重新登录失败")
                 return result.code, []
             if result.code != 0:
-                logger.error("获取文件列表失败: file_id=%s, code=%s, msg=%s", file_id, result.code, result.msg)
+                logger.error(
+                    "获取文件列表失败: file_id=%s, code=%s, msg=%s",
+                    file_id,
+                    result.code,
+                    result.msg,
+                )
                 return result.code, []
 
             file_list_data = result.data.data
@@ -155,14 +162,26 @@ class Pan123:
             lenth_now += len(lists_page)
             page += 1
             times += 1
-            logger.debug("分页加载: page=%s, got=%s, total=%s, accumulated=%s", page - 1, len(lists_page), total, lenth_now)
+            logger.debug(
+                "分页加载: page=%s, got=%s, total=%s, accumulated=%s",
+                page - 1,
+                len(lists_page),
+                total,
+                lenth_now,
+            )
             if times % 5 == 0:
                 logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
                 logger.info("暂停3秒防止对服务器造成影响")
                 time.sleep(3)
 
         elapsed = time.monotonic() - t0
-        logger.info("目录列表加载完成: file_id=%s, total=%s, pages=%s, %.1fs", file_id, total, times, elapsed)
+        logger.info(
+            "目录列表加载完成: file_id=%s, total=%s, pages=%s, %.1fs",
+            file_id,
+            total,
+            times,
+            elapsed,
+        )
         if lenth_now < total:
             logger.warning("文件夹内文件过多：%s/%s，未完全加载", lenth_now, total)
             self.all_file = False
@@ -482,7 +501,13 @@ class Pan123:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")
         elapsed = time.monotonic() - t0
         speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
-        logger.info("上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)", file_name, fsize / 1024 / 1024, elapsed, speed)
+        logger.info(
+            "上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
+            file_name,
+            fsize / 1024 / 1024,
+            elapsed,
+            speed,
+        )
         return up_file_id
 
     def cd(self, dir_num):
@@ -675,18 +700,14 @@ class Pan123:
                 max_download_threads = ConfigManager.get_setting(
                     "maxDownloadThreads", 8
                 )
-                max_download_threads = min(
-                    max(1, int(max_download_threads)), 16
-                )
+                max_download_threads = min(max(1, int(max_download_threads)), 16)
 
                 num_threads = min(
                     max_download_threads,
                     max(1, int(total / (10 * 1024 * 1024))),
                 )
 
-                chunk_size = min(
-                    1024 * 1024, max(8192, total // (num_threads * 100))
-                )
+                chunk_size = min(1024 * 1024, max(8192, total // (num_threads * 100)))
 
                 part_size = total // num_threads
                 downloaded = [0]
@@ -886,16 +907,12 @@ class Pan123:
             "duplicate": 0,
         }
         url = "https://www.123pan.cn/b/api/file/upload_request"
-        res = self._session.http.post(
-            url, data=list_up_request, timeout=30
-        )
+        res = self._session.http.post(url, data=list_up_request, timeout=30)
         res_json = res.json()
         code = res_json.get("code", -1)
         if code == 5060:
             list_up_request["duplicate"] = dup_choice
-            res = self._session.http.post(
-                url, json=list_up_request, timeout=30
-            )
+            res = self._session.http.post(url, json=list_up_request, timeout=30)
             res_json = res.json()
             code = res_json.get("code", -1)
         if code != 0:
@@ -1154,7 +1171,8 @@ class FileDataManager:
     def is_duplicate_filename(pan_instance, filename):
         """检查是否存在同名文件"""
         return any(item.get("FileName") == filename for item in pan_instance.list)
-    
+
+
 def check_version():
     """获取版本信息"""
     try:

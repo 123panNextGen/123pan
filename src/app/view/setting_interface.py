@@ -1,8 +1,14 @@
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QFileDialog,
-    QHBoxLayout, QSpinBox, QLineEdit, QComboBox,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QFileDialog,
+    QHBoxLayout,
+    QSpinBox,
+    QLineEdit,
+    QComboBox,
 )
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -17,7 +23,7 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     LineEdit,
     BodyLabel,
-    InfoBar
+    InfoBar,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -33,8 +39,19 @@ logger = get_logger(__name__)
 class _SpinBoxCard(SettingCard):
     """通用数值输入设置卡片（带 SpinBox）"""
 
-    def __init__(self, icon, title, content, value=0, parent=None,
-                 min_val=0, max_val=1048576, step=1, suffix="", special_text=""):
+    def __init__(
+        self,
+        icon,
+        title,
+        content,
+        value=0,
+        parent=None,
+        min_val=0,
+        max_val=1048576,
+        step=1,
+        suffix="",
+        special_text="",
+    ):
         super().__init__(icon, title, content, parent)
         self.spinBox = QSpinBox(self)
         self.spinBox.setRange(min_val, max_val)
@@ -59,9 +76,18 @@ class _SpeedLimitCard(_SpinBoxCard):
     """速度限制设置卡片"""
 
     def __init__(self, icon, title, content, value=0, parent=None):
-        super().__init__(icon, title, content, value, parent,
-                         min_val=0, max_val=1048576, step=100,
-                         suffix=" KB/s", special_text="不限制")
+        super().__init__(
+            icon,
+            title,
+            content,
+            value,
+            parent,
+            min_val=0,
+            max_val=1048576,
+            step=100,
+            suffix=" KB/s",
+            special_text="不限制",
+        )
 
 
 class _ProxyHostCard(SettingCard):
@@ -106,6 +132,7 @@ class _ComboCard(SettingCard):
     def currentIndex(self):
         return self.comboBox.currentIndex()
 
+
 class SettingInterface(ScrollArea):
     """设置页面"""
 
@@ -117,14 +144,14 @@ class SettingInterface(ScrollArea):
         self.settingLabel = QLabel(self.tr("设置"), self)
 
         # ---- 下载设置组 ----
-        self.downloadGroup = SettingCardGroup(
-            self.tr("下载设置"), self.scrollWidget
-        )
+        self.downloadGroup = SettingCardGroup(self.tr("下载设置"), self.scrollWidget)
         self.downloadFolderCard = PushSettingCard(
             self.tr("选择文件夹"),
             FIF.DOWNLOAD,
             self.tr("下载目录"),
-            ConfigManager.get_setting("defaultDownloadPath", str(Path.home() / "Downloads")),
+            ConfigManager.get_setting(
+                "defaultDownloadPath", str(Path.home() / "Downloads")
+            ),
             self.downloadGroup,
         )
 
@@ -165,9 +192,7 @@ class SettingInterface(ScrollArea):
         )
 
         # ---- 代理设置组 ----
-        self.proxyGroup = SettingCardGroup(
-            self.tr("网络代理"), self.scrollWidget
-        )
+        self.proxyGroup = SettingCardGroup(self.tr("网络代理"), self.scrollWidget)
 
         self.proxyEnabledCard = SwitchSettingCard(
             FIF.GLOBE,
@@ -184,7 +209,9 @@ class SettingInterface(ScrollArea):
             self.tr("代理类型"),
             self.tr("选择代理协议类型"),
             texts=["HTTP", "SOCKS5"],
-            current_index=0 if ConfigManager.get_setting("proxyType", "http") == "http" else 1,
+            current_index=(
+                0 if ConfigManager.get_setting("proxyType", "http") == "http" else 1
+            ),
             parent=self.proxyGroup,
         )
 
@@ -202,7 +229,9 @@ class SettingInterface(ScrollArea):
             self.tr("代理服务器端口"),
             ConfigManager.get_setting("proxyPort", 0),
             self.proxyGroup,
-            min_val=0, max_val=65535, step=1,
+            min_val=0,
+            max_val=65535,
+            step=1,
         )
 
         self.proxyUserCard = _ProxyHostCard(
@@ -256,7 +285,7 @@ class SettingInterface(ScrollArea):
             self.tr("检查更新"),
             self.tr("检查当前应用是否为最新版"),
             self.aboutGroup,
-        )        
+        )
 
         self.__initWidget()
 
@@ -320,7 +349,11 @@ class SettingInterface(ScrollArea):
         if check_version():
             InfoBar.success(title="检查成功", content="当前是最新版本", parent=self)
         else:
-            InfoBar.error(title="检查失败", content="当前不是最新版本，或当前无法完成检查", parent=self)    
+            InfoBar.error(
+                title="检查失败",
+                content="当前不是最新版本，或当前无法完成检查",
+                parent=self,
+            )
 
     def __onDownloadFolderCardClicked(self):
         folder = QFileDialog.getExistingDirectory(self, self.tr("Choose folder"), "./")
@@ -336,7 +369,7 @@ class SettingInterface(ScrollArea):
 
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
-        if self.parent() and hasattr(self.parent(), 'pan'):
+        if self.parent() and hasattr(self.parent(), "pan"):
             self.parent().pan._session.set_multi_thread(checked)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
@@ -383,13 +416,13 @@ class SettingInterface(ScrollArea):
         self.downloadSpeedCard.spinBox.valueChanged.connect(
             self.__onDownloadSpeedChanged
         )
-        self.uploadSpeedCard.spinBox.valueChanged.connect(
-            self.__onUploadSpeedChanged
-        )
+        self.uploadSpeedCard.spinBox.valueChanged.connect(self.__onUploadSpeedChanged)
 
         # 代理设置
         self.proxyEnabledCard.checkedChanged.connect(self.__onProxyEnabledChanged)
-        self.proxyTypeCard.comboBox.currentTextChanged.connect(self.__onProxyTypeChanged)
+        self.proxyTypeCard.comboBox.currentTextChanged.connect(
+            self.__onProxyTypeChanged
+        )
 
         # 代理主机 - 使用 editingFinished 而不是每次字符变化都触发
         self.proxyHostCard.lineEdit.editingFinished.connect(
@@ -411,6 +444,4 @@ class SettingInterface(ScrollArea):
         self.aboutCard.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ABOUT_URL))
         )
-        self.checkversion.clicked.connect(
-            lambda: self.check()
-        )
+        self.checkversion.clicked.connect(lambda: self.check())

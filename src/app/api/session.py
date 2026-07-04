@@ -33,15 +33,17 @@ class NetSession:
     def __init__(self):
         self._user_info: Optional[UserInfoModel] = None
         self._http = requests.Session()
-        self._http.headers.update({
-            "accept-encoding": "gzip",
-            "content-type": "application/json",
-            "platform": "android",
-            "devicename": "Xiaomi",
-            "host": "www.123pan.cn",
-            "app-version": "61",
-            "x-app-version": "2.4.0",
-        })
+        self._http.headers.update(
+            {
+                "accept-encoding": "gzip",
+                "content-type": "application/json",
+                "platform": "android",
+                "devicename": "Xiaomi",
+                "host": "www.123pan.cn",
+                "app-version": "61",
+                "x-app-version": "2.4.0",
+            }
+        )
 
         # 传输专用会话：用于下载（CDN）与上传（S3）。
         # 不携带 123pan 鉴权头，并扩大连接池以适配多线程分片传输，
@@ -63,7 +65,7 @@ class NetSession:
         self._upload_limiter = None
 
         # 进度回调
-        self._progress_callback: Optional[Callable[[int, int], None]] = None
+        self._progress_callback: Optional[Callable[[int, int], Nne]] = None
 
     @property
     def http(self) -> requests.Session:
@@ -157,8 +159,14 @@ class NetSession:
         self._http.proxies = proxies or {}
         self._transfer.proxies = proxies or {}
 
-    def set_proxy_auth(self, proxy_type: str, host: str, port: int,
-                       username: str = "", password: str = ""):
+    def set_proxy_auth(
+        self,
+        proxy_type: str,
+        host: str,
+        port: int,
+        username: str = "",
+        password: str = "",
+    ):
         """通过参数设置代理。
 
         Args:
@@ -199,9 +207,13 @@ class NetSession:
         Returns:
             是否下载成功。
         """
-        logger.info("下载文件: %s (%.2f MB), multi=%s, threads=%s",
-                     file_path.name, file_size / 1024 / 1024,
-                     self._multi_thread_enabled, self._num_threads)
+        logger.info(
+            "下载文件: %s (%.2f MB), multi=%s, threads=%s",
+            file_path.name,
+            file_size / 1024 / 1024,
+            self._multi_thread_enabled,
+            self._num_threads,
+        )
 
         if file_size == 0:
             logger.info("空文件，跳过下载: %s", file_path.name)
@@ -234,7 +246,9 @@ class NetSession:
         try:
             resp = self._transfer.head(url, timeout=10, allow_redirects=True)
             accept = resp.headers.get("Accept-Ranges", "")
-            logger.debug("Range 支持检查: Accept-Ranges=%s -> %s", accept, accept == "bytes")
+            logger.debug(
+                "Range 支持检查: Accept-Ranges=%s -> %s", accept, accept == "bytes"
+            )
             return accept == "bytes"
         except requests.RequestException as e:
             logger.debug("Range 检查 HEAD 请求失败: %s", e)
@@ -267,8 +281,12 @@ class NetSession:
                             if progress_callback:
                                 progress_callback(downloaded, file_size)
             elapsed = time.monotonic() - t0
-            logger.info("单线程下载完成: %s (%.2f MB / %.1fs)",
-                        file_path.name, downloaded / 1024 / 1024, elapsed)
+            logger.info(
+                "单线程下载完成: %s (%.2f MB / %.1fs)",
+                file_path.name,
+                downloaded / 1024 / 1024,
+                elapsed,
+            )
             if temp_path.exists():
                 if file_path.exists():
                     file_path.unlink()
@@ -276,8 +294,13 @@ class NetSession:
             return True
         except Exception as e:
             elapsed = time.monotonic() - t0
-            logger.error("单线程下载失败: %s (%.1fs): %s:%s",
-                         file_path.name, elapsed, type(e).__name__, e)
+            logger.error(
+                "单线程下载失败: %s (%.1fs): %s:%s",
+                file_path.name,
+                elapsed,
+                type(e).__name__,
+                e,
+            )
             if temp_path.exists():
                 temp_path.unlink()
             raise
@@ -313,7 +336,9 @@ class NetSession:
                     if part_path.exists():
                         part_path.unlink()
                     with self._transfer.get(
-                        url, headers=headers, stream=True,
+                        url,
+                        headers=headers,
+                        stream=True,
                         timeout=(10, 60),
                     ) as resp:
                         resp.raise_for_status()
@@ -430,7 +455,9 @@ class NetSession:
         self._http.headers.update(self._build_headers())
 
     @staticmethod
-    def _safe_json(resp: requests.Response) -> tuple[dict[str, Any], Optional[ApiReturnModel]]:
+    def _safe_json(
+        resp: requests.Response,
+    ) -> tuple[dict[str, Any], Optional[ApiReturnModel]]:
         """安全解析 JSON 响应，失败时返回错误模型。
 
         处理服务器返回空响应、HTML 错误页等非 JSON 内容的情况。
@@ -453,7 +480,11 @@ class NetSession:
         data = {"type": 1, "passport": user_name, "password": "***"}
         t0 = time.monotonic()
         try:
-            resp = self._http.post(url, json={"type": 1, "passport": user_name, "password": password}, timeout=(3, 5))
+            resp = self._http.post(
+                url,
+                json={"type": 1, "passport": user_name, "password": password},
+                timeout=(3, 5),
+            )
         except requests.RequestException as e:
             logger.error("登录请求失败 (%.2fs): %s", time.monotonic() - t0, e)
             return ApiReturnModel(
@@ -468,7 +499,13 @@ class NetSession:
             logger.error("登录响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
             return error
         code = body.get("code", -1)
-        logger.info("登录 %s (%.2fs): HTTP %s, code=%s", user_name, elapsed, resp.status_code, code)
+        logger.info(
+            "登录 %s (%.2fs): HTTP %s, code=%s",
+            user_name,
+            elapsed,
+            resp.status_code,
+            code,
+        )
         if code != 200:
             msg = body.get("message", "")
             logger.error("登录失败: code=%s, msg=%s", code, msg)
@@ -544,8 +581,13 @@ class NetSession:
         try:
             resp = self._http.get(url, params=params, timeout=30)
         except requests.RequestException as e:
-            logger.error("获取文件列表失败 (%.2fs): file_id=%s, page=%s, err=%s",
-                         time.monotonic() - t0, file_id, page, e)
+            logger.error(
+                "获取文件列表失败 (%.2fs): file_id=%s, page=%s, err=%s",
+                time.monotonic() - t0,
+                file_id,
+                page,
+                e,
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
@@ -555,12 +597,24 @@ class NetSession:
         elapsed = time.monotonic() - t0
         body, error = self._safe_json(resp)
         if error:
-            logger.error("文件列表响应异常: file_id=%s, HTTP %s", file_id, resp.status_code)
+            logger.error(
+                "文件列表响应异常: file_id=%s, HTTP %s", file_id, resp.status_code
+            )
             return error
         code = body.get("code", -1)
-        total = body.get("data", {}).get("Total", 0) if isinstance(body.get("data"), dict) else 0
-        logger.debug("获取文件列表 (%.2fs): file_id=%s, page=%s, code=%s, total=%s",
-                     elapsed, file_id, page, code, total)
+        total = (
+            body.get("data", {}).get("Total", 0)
+            if isinstance(body.get("data"), dict)
+            else 0
+        )
+        logger.debug(
+            "获取文件列表 (%.2fs): file_id=%s, page=%s, code=%s, total=%s",
+            elapsed,
+            file_id,
+            page,
+            code,
+            total,
+        )
         if code == 2 and retry_login:
             logger.warning("token 过期，需重新登录: file_id=%s", file_id)
             return ApiReturnModel(
@@ -570,8 +624,12 @@ class NetSession:
                 msg=body.get("message", "token 过期"),
             )
         if code != 0:
-            logger.error("获取文件列表失败: file_id=%s, code=%s, msg=%s",
-                         file_id, code, body.get("message", ""))
+            logger.error(
+                "获取文件列表失败: file_id=%s, code=%s, msg=%s",
+                file_id,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -619,7 +677,12 @@ class NetSession:
         try:
             resp = self._http.post(url, json=data, timeout=10)
         except requests.RequestException as e:
-            logger.error("创建文件夹失败: name=%s, parent=%s, err=%s", dir_name, parent_file_id, e)
+            logger.error(
+                "创建文件夹失败: name=%s, parent=%s, err=%s",
+                dir_name,
+                parent_file_id,
+                e,
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
@@ -631,9 +694,20 @@ class NetSession:
         if error:
             return error
         code = body.get("code", -1)
-        logger.debug("创建文件夹 (%.2fs): name=%s, parent=%s, code=%s", elapsed, dir_name, parent_file_id, code)
+        logger.debug(
+            "创建文件夹 (%.2fs): name=%s, parent=%s, code=%s",
+            elapsed,
+            dir_name,
+            parent_file_id,
+            code,
+        )
         if code != 0:
-            logger.error("创建文件夹失败: name=%s, code=%s, msg=%s", dir_name, code, body.get("message", ""))
+            logger.error(
+                "创建文件夹失败: name=%s, code=%s, msg=%s",
+                dir_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -650,7 +724,9 @@ class NetSession:
 
     # ---- 删除/恢复 ----
 
-    def trash_file(self, file_info: dict | FileItemModel, operation: bool = True) -> ApiReturnModel:
+    def trash_file(
+        self, file_info: dict | FileItemModel, operation: bool = True
+    ) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/a/api/file/trash")
         if isinstance(file_info, FileItemModel):
             payload = file_info.to_json()
@@ -662,7 +738,11 @@ class NetSession:
             "operation": operation,
         }
         op_name = "删除" if operation else "恢复"
-        file_name = payload.get("FileName", payload.get("fileName", "?")) if isinstance(payload, dict) else "?"
+        file_name = (
+            payload.get("FileName", payload.get("fileName", "?"))
+            if isinstance(payload, dict)
+            else "?"
+        )
         t0 = time.monotonic()
         try:
             resp = self._http.post(url, json=data, timeout=10)
@@ -679,9 +759,17 @@ class NetSession:
         if error:
             return error
         code = body.get("code", -1)
-        logger.debug("%s文件 (%.2fs): name=%s, code=%s", op_name, elapsed, file_name, code)
+        logger.debug(
+            "%s文件 (%.2fs): name=%s, code=%s", op_name, elapsed, file_name, code
+        )
         if code != 0:
-            logger.error("%s文件失败: name=%s, code=%s, msg=%s", op_name, file_name, code, body.get("message", ""))
+            logger.error(
+                "%s文件失败: name=%s, code=%s, msg=%s",
+                op_name,
+                file_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -700,7 +788,9 @@ class NetSession:
 
     # ---- 下载链接 ----
 
-    def get_file_link(self, file_info: dict | FileItemModel) -> ApiReturnModel:  # pylint: disable=protected-access
+    def get_file_link(
+        self, file_info: dict | FileItemModel
+    ) -> ApiReturnModel:  # pylint: disable=protected-access
         if isinstance(file_info, FileItemModel):
             type_val = file_info._type  # pylint: disable=protected-access
         else:
@@ -731,9 +821,13 @@ class NetSession:
                     "driveId": 0,
                     "etag": file_info.get("Etag", file_info.get("etag", "")),
                     "fileId": file_info.get("FileId", file_info.get("fileId", 0)),
-                    "s3keyFlag": file_info.get("S3KeyFlag", file_info.get("s3keyFlag", "")),
+                    "s3keyFlag": file_info.get(
+                        "S3KeyFlag", file_info.get("s3keyFlag", "")
+                    ),
                     "type": file_info.get("Type", file_info.get("type", 0)),
-                    "fileName": file_info.get("FileName", file_info.get("fileName", "")),
+                    "fileName": file_info.get(
+                        "FileName", file_info.get("fileName", "")
+                    ),
                     "size": file_info.get("Size", file_info.get("size", 0)),
                 }
         file_name = request_data.get("fileName", "?")
@@ -753,9 +847,20 @@ class NetSession:
         if error:
             return error
         code = body.get("code", -1)
-        logger.debug("获取下载链接 (%.2fs): name=%s, type=%s, code=%s", elapsed, file_name, type_val, code)
+        logger.debug(
+            "获取下载链接 (%.2fs): name=%s, type=%s, code=%s",
+            elapsed,
+            file_name,
+            type_val,
+            code,
+        )
         if code != 0:
-            logger.error("获取下载链接失败: name=%s, code=%s, msg=%s", file_name, code, body.get("message", ""))
+            logger.error(
+                "获取下载链接失败: name=%s, code=%s, msg=%s",
+                file_name,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,
@@ -764,7 +869,9 @@ class NetSession:
             )
         download_url = body["data"]["DownloadUrl"]
         redirect_url = self._resolve_download_url(download_url)
-        logger.info("下载链接已获取: name=%s, size=%s", file_name, request_data.get("size", "?"))
+        logger.info(
+            "下载链接已获取: name=%s, size=%s", file_name, request_data.get("size", "?")
+        )
         return ApiReturnModel(
             code=0,
             api_code=200,
@@ -787,7 +894,11 @@ class NetSession:
                 resolved = match.group(1)
                 logger.debug("下载 URL 已解析: %s ...", resolved[:80])
                 return resolved
-            logger.debug("下载 URL 未找到重定向，返回原始 URL: status=%s, body=%.100s", resp.status_code, text)
+            logger.debug(
+                "下载 URL 未找到重定向，返回原始 URL: status=%s, body=%.100s",
+                resp.status_code,
+                text,
+            )
         except requests.RequestException as e:
             logger.warning("解析下载 URL 失败: %s", e)
         return url
@@ -801,7 +912,9 @@ class NetSession:
         try:
             resp = self._http.post(url, json=data, timeout=10)
         except requests.RequestException as e:
-            logger.error("重命名失败: file_id=%s, new_name=%s, err=%s", file_id, new_name, e)
+            logger.error(
+                "重命名失败: file_id=%s, new_name=%s, err=%s", file_id, new_name, e
+            )
             return ApiReturnModel(
                 code=-1,
                 api_code=-1,
@@ -813,9 +926,20 @@ class NetSession:
         if error:
             return error
         code = body.get("code", -1)
-        logger.debug("重命名 (%.2fs): file_id=%s, new_name=%s, code=%s", elapsed, file_id, new_name, code)
+        logger.debug(
+            "重命名 (%.2fs): file_id=%s, new_name=%s, code=%s",
+            elapsed,
+            file_id,
+            new_name,
+            code,
+        )
         if code != 0:
-            logger.error("重命名失败: file_id=%s, code=%s, msg=%s", file_id, code, body.get("message", ""))
+            logger.error(
+                "重命名失败: file_id=%s, code=%s, msg=%s",
+                file_id,
+                code,
+                body.get("message", ""),
+            )
             return ApiReturnModel(
                 code=code,
                 api_code=code,

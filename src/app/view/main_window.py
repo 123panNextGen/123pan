@@ -77,9 +77,14 @@ class MainWindow(FluentWindow):
     def _startup_login_flow(self):
         cfg_loaded = False
         current_account = ConfigManager.get_current_account_name()
-        current_info = ConfigManager.get_account(current_account) if current_account else {}
-        logger.info("启动登录流程: current_account=%s, has_password=%s",
-                     current_account or "(无)", bool(current_info.get("passWord")))
+        current_info = (
+            ConfigManager.get_account(current_account) if current_account else {}
+        )
+        logger.info(
+            "启动登录流程: current_account=%s, has_password=%s",
+            current_account or "(无)",
+            bool(current_info.get("passWord")),
+        )
         if current_info.get("passWord"):
             try:
                 logger.debug("尝试自动登录")
@@ -103,7 +108,10 @@ class MainWindow(FluentWindow):
                 QTimer.singleShot(0, self.close)
                 return
             self.pan = dlg.get_pan()
-            logger.info("登录成功: %s", self.pan.user_name if hasattr(self.pan, 'user_name') else "?")
+            logger.info(
+                "登录成功: %s",
+                self.pan.user_name if hasattr(self.pan, "user_name") else "?",
+            )
 
         self.file_interface.pan = self.pan
         self.file_interface._FileInterface__loadPanAndData()
@@ -123,6 +131,7 @@ class MainWindow(FluentWindow):
         """处理退出登录请求"""
         logger.info("用户请求退出登录")
         from qfluentwidgets import MessageBox
+
         msg = MessageBox("退出登录", "确定要退出登录吗？", self)
         if msg.exec():
             logger.debug("确认退出登录")
@@ -130,7 +139,10 @@ class MainWindow(FluentWindow):
             dlg = LoginDialog(self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 self.pan = dlg.get_pan()
-                logger.info("新登录成功: %s", self.pan.user_name if hasattr(self.pan, 'user_name') else "?")
+                logger.info(
+                    "新登录成功: %s",
+                    self.pan.user_name if hasattr(self.pan, "user_name") else "?",
+                )
                 self.file_interface.pan = self.pan
                 self.file_interface._FileInterface__loadPanAndData()
                 self.transfer_interface.set_pan(self.pan)
@@ -147,7 +159,10 @@ class MainWindow(FluentWindow):
         dlg = LoginDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.pan = dlg.get_pan()
-            logger.info("切换账号成功: %s", self.pan.user_name if hasattr(self.pan, 'user_name') else "?")
+            logger.info(
+                "切换账号成功: %s",
+                self.pan.user_name if hasattr(self.pan, "user_name") else "?",
+            )
             self.file_interface.pan = self.pan
             self.file_interface._FileInterface__loadPanAndData()
             self.transfer_interface.set_pan(self.pan)

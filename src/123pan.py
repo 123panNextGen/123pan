@@ -3,7 +3,13 @@ import sys
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt
-from qfluentwidgets import FluentTranslator, Theme, SystemThemeListener, qconfig, setTheme
+from qfluentwidgets import (
+    FluentTranslator,
+    Theme,
+    SystemThemeListener,
+    qconfig,
+    setTheme,
+)
 from qfluentwidgets.common.style_sheet import updateStyleSheet
 
 from app.common.log import get_logger

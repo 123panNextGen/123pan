@@ -59,7 +59,11 @@ class ConfigManager:
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                    logger.debug("配置文件已加载: %s (%d KB)", CONFIG_FILE, CONFIG_FILE.stat().st_size // 1024)
+                    logger.debug(
+                        "配置文件已加载: %s (%d KB)",
+                        CONFIG_FILE,
+                        CONFIG_FILE.stat().st_size // 1024,
+                    )
                     # 兼容旧版本配置
                     if "settings" not in config:
                         config["settings"] = default_config["settings"]
@@ -71,23 +75,32 @@ class ConfigManager:
 
                     old_user = config.get("userName", "")
                     if old_user:
-                        config["accounts"].setdefault(old_user, {
-                            "userName": old_user,
-                            "passWord": config.get("passWord", ""),
-                            "authorization": config.get("authorization", ""),
-                            "deviceType": config.get("deviceType", ""),
-                            "osVersion": config.get("osVersion", ""),
-                            "loginuuid": config.get("loginuuid", ""),
-                        })
+                        config["accounts"].setdefault(
+                            old_user,
+                            {
+                                "userName": old_user,
+                                "passWord": config.get("passWord", ""),
+                                "authorization": config.get("authorization", ""),
+                                "deviceType": config.get("deviceType", ""),
+                                "osVersion": config.get("osVersion", ""),
+                                "loginuuid": config.get("loginuuid", ""),
+                            },
+                        )
                         migrated = True
-                        logger.info("配置迁移: 将旧账号 %s 迁移到 accounts 区块", old_user)
+                        logger.info(
+                            "配置迁移: 将旧账号 %s 迁移到 accounts 区块", old_user
+                        )
 
-                    if "currentAccount" not in config or not config.get("currentAccount", ""):
+                    if "currentAccount" not in config or not config.get(
+                        "currentAccount", ""
+                    ):
                         config["currentAccount"] = config.get("userName", "")
                         if not config["currentAccount"] and config["accounts"]:
                             config["currentAccount"] = next(iter(config["accounts"]))
                         migrated = True
-                        logger.info("配置迁移: 补全 currentAccount=%s", config["currentAccount"])
+                        logger.info(
+                            "配置迁移: 补全 currentAccount=%s", config["currentAccount"]
+                        )
 
                     for k in [
                         "userName",
@@ -153,10 +166,13 @@ class ConfigManager:
         else:
             current = config.get("currentAccount", "")
             account = accounts.get(current, {})
-            logger.debug("获取当前账号 %s: %s", current, "存在" if account else "不存在")
+            logger.debug(
+                "获取当前账号 %s: %s", current, "存在" if account else "不存在"
+            )
 
         if account and account.get("passWord", "").startswith("enc:"):
             from .credential import decrypt_credential
+
             account = dict(account)
             account["passWord"] = decrypt_credential(account["passWord"])
             logger.debug("账号密码已解密")
@@ -179,6 +195,7 @@ class ConfigManager:
         pwd = info.get("passWord", "")
         if pwd and not pwd.startswith("enc:"):
             from .credential import encrypt_credential
+
             info["passWord"] = encrypt_credential(pwd)
             logger.debug("账号密码已加密存储")
 

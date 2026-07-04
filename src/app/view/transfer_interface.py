@@ -75,7 +75,11 @@ class UploadThread(QThread):
     def run(self):
         try:
             self.status_updated.emit("上传中")
-            logger.info("上传线程启动: %s (%.2f MB)", self.task.file_name, self.task.file_size / 1024 / 1024)
+            logger.info(
+                "上传线程启动: %s (%.2f MB)",
+                self.task.file_name,
+                self.task.file_size / 1024 / 1024,
+            )
 
             ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
             if ul_limit > 0:
@@ -122,13 +126,18 @@ class DownloadThread(QThread):
     def run(self):
         try:
             self.status_updated.emit("下载中")
-            logger.info("下载线程启动: %s, file_id=%s, size=%.2f MB",
-                        self.task.file_name, self.task.file_id,
-                        self.task.file_size / 1024 / 1024)
+            logger.info(
+                "下载线程启动: %s, file_id=%s, size=%.2f MB",
+                self.task.file_name,
+                self.task.file_id,
+                self.task.file_size / 1024 / 1024,
+            )
 
             multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
             dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
-            logger.debug("下载配置: multi_thread=%s, speed_limit=%d KB/s", multi_thread, dl_limit)
+            logger.debug(
+                "下载配置: multi_thread=%s, speed_limit=%d KB/s", multi_thread, dl_limit
+            )
 
             session = self.pan._session
             session.set_multi_thread(multi_thread)
@@ -156,9 +165,15 @@ class DownloadThread(QThread):
                     "Etag": "",
                     "S3KeyFlag": False,
                 }
-                logger.debug("未找到文件信息，使用构造数据: file_id=%s", self.task.file_id)
+                logger.debug(
+                    "未找到文件信息，使用构造数据: file_id=%s", self.task.file_id
+                )
             else:
-                logger.debug("已找到文件信息: name=%s, size=%s", target_file.get("FileName"), target_file.get("Size"))
+                logger.debug(
+                    "已找到文件信息: name=%s, size=%s",
+                    target_file.get("FileName"),
+                    target_file.get("Size"),
+                )
 
             download_url = self.pan.link_by_fileDetail(target_file, showlink=False)
             if isinstance(download_url, int):
@@ -174,7 +189,9 @@ class DownloadThread(QThread):
             file_size = int(target_file.get("Size", self.task.file_size) or 0)
             t0 = time.monotonic()
             success = session.download_file_multithread(
-                download_url, file_path, file_size,
+                download_url,
+                file_path,
+                file_size,
                 progress_callback=_on_progress,
             )
             elapsed = time.monotonic() - t0
@@ -186,10 +203,17 @@ class DownloadThread(QThread):
             self.status_updated.emit("已完成")
             self.finished.emit()
             speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
-            logger.info("下载完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
-                        self.task.file_name, file_size / 1024 / 1024, elapsed, speed)
+            logger.info(
+                "下载完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
+                self.task.file_name,
+                file_size / 1024 / 1024,
+                elapsed,
+                speed,
+            )
         except Exception as e:
-            logger.error("下载失败: %s: %s:%s", self.task.file_name, type(e).__name__, e)
+            logger.error(
+                "下载失败: %s: %s:%s", self.task.file_name, type(e).__name__, e
+            )
             self.error.emit(str(e))
             self.status_updated.emit("失败")
 
@@ -416,7 +440,12 @@ class TransferInterface(QWidget):
         """添加下载任务"""
         task = DownloadTask(file_name, file_size, file_id, save_path, current_dir_id)
         self.download_tasks.append(task)
-        logger.info("添加下载任务: %s (%.2f MB, id=%s)", file_name, file_size / 1024 / 1024, file_id)
+        logger.info(
+            "添加下载任务: %s (%.2f MB, id=%s)",
+            file_name,
+            file_size / 1024 / 1024,
+            file_id,
+        )
         self.__update_download_table()
 
         if self.pan:
@@ -466,8 +495,12 @@ class TransferInterface(QWidget):
 
     def __task_error(self, task, error):
         """任务错误处理"""
-        logger.error("任务失败: type=%s, name=%s, error=%s",
-                     type(task).__name__, task.file_name, error)
+        logger.error(
+            "任务失败: type=%s, name=%s, error=%s",
+            type(task).__name__,
+            task.file_name,
+            error,
+        )
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):
