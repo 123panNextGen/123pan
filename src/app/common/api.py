@@ -294,8 +294,9 @@ class Pan123:
     def upload_file_stream(
         self, file_path, dup_choice=1, task_id=None, signals=None, task=None
     ):
-        return self._upload.upload_file_stream(
-            file_path, self.parent_file_id, dup_choice, signals=signals, task=task
+        return self._upload.up_load(
+            file_path, self.parent_file_id, dup_choice=dup_choice,
+            signals=signals, task=task,
         )
 
 
