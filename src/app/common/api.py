@@ -291,21 +291,6 @@ class Pan123:
     def _compute_file_md5(file_path):
         return UploadService.compute_file_md5(file_path)
 
-    def stream_download_by_number(
-        self, file_number, download_dir, task_id=None, signals=None, task=None
-    ):
-        file_detail = self.list[file_number]
-        if file_detail["Type"] == 1:
-            redirect_url = self.link_by_fileDetail(file_detail, showlink=False)
-        else:
-            redirect_url = self.link_by_number(file_number, showlink=False)
-        if isinstance(redirect_url, int):
-            raise RuntimeError("获取下载链接失败，返回码: " + str(redirect_url))
-
-        return self._download.stream_download_by_number(
-            file_detail, redirect_url, download_dir, task=task, signals=signals
-        )
-
     def upload_file_stream(
         self, file_path, dup_choice=1, task_id=None, signals=None, task=None
     ):
