@@ -8,8 +8,8 @@ resolution-markers = [
 
 [[package]]
 name = "123pan"
-version = "3.1.1"
-source = { editable = "." }
+version = "3.1.2"
+source = { virtual = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "pyqt6" },
@@ -42,7 +42,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", specifier = ">=44.0.0" },
+    { name = "cryptography", specifier = ">=49.0.0" },
     { name = "pyqt6", specifier = ">=6.10.2" },
     { name = "pyqt6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "pyqt6-sip", specifier = ">=13.11.1" },
