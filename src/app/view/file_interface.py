@@ -355,7 +355,7 @@ class FileInterface(QWidget):
 
         signals = _LoadListSignals()
         signals.finished.connect(self.__onLoadListFinished)
-        task = self.LoadListTask(self.__fetchDirList, self.current_dir_id, signals)
+        task = LoadListTask(self.__fetchDirList, self.current_dir_id, signals)
 
         QThreadPool.globalInstance().start(task)
 
