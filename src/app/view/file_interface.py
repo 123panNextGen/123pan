@@ -740,8 +740,7 @@ class FileInterface(QWidget):
             default_download_path,
         )
 
-        save_path = None
-        if ask_download_location:
+        if not ask_download_location:
             save_path = str(Path(default_download_path) / file_name)
         else:
             save_path, _ = QFileDialog.getSaveFileName(
