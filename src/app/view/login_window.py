@@ -26,6 +26,7 @@ logger = get_logger(__name__)
 class LoginDialog(QDialog):
     """登录对话框"""
 
+    # noinspection PyUnresolvedReferences
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("登录123云盘")

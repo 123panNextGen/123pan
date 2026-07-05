@@ -7,14 +7,22 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="6c6bc183-516a-4e75-9729-649bdb962a91" name="更改" comment="" />
+    <list default="true" id="6c6bc183-516a-4e75-9729-649bdb962a91" name="更改" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/MarsCodeWorkspaceAppSettings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/pyProjectModel.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/123pan.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/123pan.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Default.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app/view/file_interface.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/view/file_interface.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app/view/login_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/view/login_window.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="66" />
+    <option name="cachedIndexableFilesCount" value="101" />
   </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
@@ -44,61 +52,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0003174754133746" />
-      <entry key="S2" value="1.3090973510804798" />
-      <entry key="S5" value="2.561432073032149" />
-      <entry key="S10" value="4.760077524884661" />
-      <entry key="S30" value="11.713238366483184" />
-      <entry key="S60" value="17.29909115560774" />
-      <entry key="M2" value="24.440892535560714" />
-      <entry key="M5" value="39.57002801238966" />
-      <entry key="M10" value="55.371600125616276" />
-      <entry key="M15" value="64.31013094321712" />
-      <entry key="M30" value="76.40442797689813" />
-      <entry key="H1" value="84.0341537461699" />
-      <entry key="H2" value="88.33459305489131" />
-      <entry key="H4" value="90.61957658819394" />
-      <entry key="D1" value="92.59644854446385" />
-      <entry key="W1" value="92.94218042388675" />
+      <entry key="MS100" value="2.737345640417166E-17" />
+      <entry key="MS500" value="4.869293219492527E-4" />
+      <entry key="S2" value="0.1485478881321165" />
+      <entry key="S5" value="0.46638716786039663" />
+      <entry key="S10" value="0.6829254569093155" />
+      <entry key="S30" value="0.8830616066414546" />
+      <entry key="S60" value="1.111869962965146" />
+      <entry key="M2" value="4.026282220006509" />
+      <entry key="M5" value="24.107651981485162" />
+      <entry key="M10" value="53.33027878586624" />
+      <entry key="M15" value="72.23981735680238" />
+      <entry key="M30" value="100.44798594815467" />
+      <entry key="H1" value="119.77958846489736" />
+      <entry key="H2" value="131.195084046236" />
+      <entry key="H4" value="137.41202827642658" />
+      <entry key="D1" value="142.8751618521686" />
+      <entry key="W1" value="143.83863689737578" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="3.839663775538454E-42" />
-      <entry key="MS500" value="5.210250924298397E-9" />
-      <entry key="S2" value="0.008496003053553774" />
-      <entry key="S5" value="0.14848612164708416" />
-      <entry key="S10" value="0.38533897015566354" />
-      <entry key="S30" value="0.7288154960723939" />
-      <entry key="S60" value="0.9023636064128653" />
-      <entry key="M2" value="1.3146772731836143" />
-      <entry key="M5" value="2.8342591696360584" />
-      <entry key="M10" value="4.482155553568375" />
-      <entry key="M15" value="5.365296612256526" />
-      <entry key="M30" value="6.509071951983595" />
-      <entry key="H1" value="7.204648333621244" />
-      <entry key="H2" value="7.588928179542707" />
-      <entry key="H4" value="7.790991700834733" />
-      <entry key="D1" value="7.964672144624752" />
-      <entry key="W1" value="7.994940942297751" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0000000000312577" />
+      <entry key="S10" value="1.0000055908536227" />
+      <entry key="S30" value="1.017773661081539" />
+      <entry key="S60" value="1.1385429454555152" />
+      <entry key="M2" value="1.4599042139724232" />
+      <entry key="M5" value="2.587208114848277" />
+      <entry key="M10" value="4.42023486620405" />
+      <entry key="M15" value="5.724288826603375" />
+      <entry key="M30" value="7.758637260264702" />
+      <entry key="H1" value="9.187771801406507" />
+      <entry key="H2" value="10.039650340471391" />
+      <entry key="H4" value="10.505376379720701" />
+      <entry key="D1" value="10.915475446716624" />
+      <entry key="W1" value="10.987872861553743" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="2.309293439461694E-17" />
-      <entry key="MS500" value="7.852698463783323E-4" />
-      <entry key="S2" value="0.4629276380398975" />
-      <entry key="S5" value="2.162353277502237" />
-      <entry key="S10" value="4.809142913718423" />
-      <entry key="S30" value="12.308361573543845" />
-      <entry key="S60" value="18.12909414545116" />
-      <entry key="M2" value="25.711774730655904" />
-      <entry key="M5" value="42.373240680299055" />
-      <entry key="M10" value="59.829990057349434" />
-      <entry key="M15" value="69.65649636107374" />
-      <entry key="M30" value="82.90198203138331" />
-      <entry key="H1" value="91.23240693442442" />
-      <entry key="H2" value="95.92014619334073" />
-      <entry key="H4" value="98.40883387870575" />
-      <entry key="D1" value="100.56082488302066" />
-      <entry key="W1" value="100.93707894015577" />
+      <entry key="MS100" value="5.867628852235687E-17" />
+      <entry key="MS500" value="5.788358978535004E-4" />
+      <entry key="S2" value="0.21279679447615482" />
+      <entry key="S5" value="0.7947662331441899" />
+      <entry key="S10" value="1.2549127007905405" />
+      <entry key="S30" value="1.7289715698949302" />
+      <entry key="S60" value="2.154727407532439" />
+      <entry key="M2" value="5.429767087261022" />
+      <entry key="M5" value="26.661279562942596" />
+      <entry key="M10" value="57.72459149440248" />
+      <entry key="M15" value="77.94238718341695" />
+      <entry key="M30" value="108.1922379494878" />
+      <entry key="H1" value="128.95891078232435" />
+      <entry key="H2" value="141.23013204406487" />
+      <entry key="H4" value="147.9149998375522" />
+      <entry key="D1" value="153.79022124502671" />
+      <entry key="W1" value="154.82644993751524" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -120,6 +128,7 @@
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "git-widget-placeholder": "fluent-dev",
     "last_opened_file_path": "C:/Users/AImix/Documents/Code/Python/Projects/123pan",
@@ -128,7 +137,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.AcpAgentsConfigurable",
+    "settings.editor.selected.configurable": "com.intellij.ml.llm.agents.skills.settings",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -179,6 +188,7 @@
       <workItem from="1782182333327" duration="1263000" />
       <workItem from="1782183630026" duration="1885000" />
       <workItem from="1783176930293" duration="381000" />
+      <workItem from="1783263569009" duration="888000" />
     </task>
     <task id="LOCAL-00001" summary="doc(README): 修改 README 格式&#10;&#10;- 为 img 添加 alt 属性&#10;- 修复 img 标签&#10;- 重新设置表格格式">
       <option name="closed" value="true" />
@@ -188,7 +198,15 @@
       <option name="project" value="LOCAL" />
       <updated>1782180741857</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="chore: 更新 IDE 配置并添加项目规则文件&#10;&#10;1. 更新 .idea/workspace.xml 中的 git 分支占位符和编辑统计&#10;2. 添加 .idea/dictionaries/ 和 .idea/inspectionProfiles/ 配置目录&#10;3. 添加 .trae/rules/git-commit-message.md 提交规范规则">
+      <option name="closed" value="true" />
+      <created>1783179423838</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1783179423838</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -207,7 +225,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="doc(README): 修改 README 格式&#10;&#10;- 为 img 添加 alt 属性&#10;- 修复 img 标签&#10;- 重新设置表格格式" />
-    <option name="LAST_COMMIT_MESSAGE" value="doc(README): 修改 README 格式&#10;&#10;- 为 img 添加 alt 属性&#10;- 修复 img 标签&#10;- 重新设置表格格式" />
+    <MESSAGE value="chore: 更新 IDE 配置并添加项目规则文件&#10;&#10;1. 更新 .idea/workspace.xml 中的 git 分支占位符和编辑统计&#10;2. 添加 .idea/dictionaries/ 和 .idea/inspectionProfiles/ 配置目录&#10;3. 添加 .trae/rules/git-commit-message.md 提交规范规则" />
+    <option name="LAST_COMMIT_MESSAGE" value="chore: 更新 IDE 配置并添加项目规则文件&#10;&#10;1. 更新 .idea/workspace.xml 中的 git 分支占位符和编辑统计&#10;2. 添加 .idea/dictionaries/ 和 .idea/inspectionProfiles/ 配置目录&#10;3. 添加 .trae/rules/git-commit-message.md 提交规范规则" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/123pan$123pan.coverage" NAME="123pan 覆盖结果" MODIFIED="1782185628026" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
