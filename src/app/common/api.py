@@ -2,6 +2,8 @@ import random
 import uuid
 from pathlib import Path
 
+import requests
+
 from ..api.session import NetSession
 from ..service.auth_service import AuthService
 from ..service.download_service import DownloadService
