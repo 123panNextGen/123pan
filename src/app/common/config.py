@@ -51,6 +51,8 @@ class ConfigManager:
                 "proxyPort": 0,
                 "proxyUsername": "",
                 "proxyPassword": "",
+                # 日志等级
+                "logLevel": "DEBUG",
             },
         }
 
