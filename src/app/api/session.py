@@ -479,7 +479,6 @@ class NetSession:
 
     def login(self, user_name: str, password: str) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/b/api/user/sign_in")
-        data = {"type": 1, "passport": user_name, "password": "***"}
         t0 = time.monotonic()
         try:
             resp = self._http.post(
