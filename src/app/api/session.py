@@ -894,6 +894,24 @@ class NetSession:
     _DOWNLOAD_LIMIT_CODES = frozenset({5113, 5114})
 
     @staticmethod
+    def _b64_decode(data: str) -> str:
+        """安全解码 base64，兼容标准 base64 和 URL-safe base64。"""
+        if not data:
+            return ""
+        # 先尝试标准 base64，失败则尝试 URL-safe base64
+        for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+            try:
+                return decoder(data).decode("utf-8")
+            except Exception:
+                continue
+        return data
+
+    @staticmethod
+    def _b64_encode(data: str) -> str:
+        """URL-safe base64 编码。"""
+        return base64.urlsafe_b64encode(data.encode("utf-8")).decode()
+
+    @staticmethod
     def _rewrite_download_url(url: str) -> str:
         """重写下载 URL，模拟 123pan_unlock.js 的绕过逻辑。
 
@@ -910,9 +928,8 @@ class NetSession:
                 )
                 params_b64 = qs.get("params", "")
                 if params_b64:
-                    try:
-                        decoded = base64.b64decode(params_b64).decode("utf-8")
-                    except Exception:
+                    decoded = NetSession._b64_decode(params_b64)
+                    if not decoded:
                         decoded = params_b64
                     inner_parsed = urlparse(decoded)
                     inner_qs = dict(
@@ -922,7 +939,7 @@ class NetSession:
                     inner_qs["auto_redirect"] = "0"
                     new_query = "&".join(f"{k}={v}" for k, v in inner_qs.items())
                     new_inner = urlunparse(inner_parsed._replace(query=new_query))
-                    qs["params"] = base64.b64encode(new_inner.encode("utf-8")).decode()
+                    qs["params"] = NetSession._b64_encode(new_inner)
                     new_query_str = "&".join(f"{k}={v}" for k, v in qs.items())
                     return urlunparse(parsed._replace(query=new_query_str))
                 return url
@@ -941,7 +958,7 @@ class NetSession:
                     "web-pro2.123952.com",
                     "/download-v2/",
                     "",
-                    "params=" + base64.b64encode(rewritten_orig.encode("utf-8")).decode()
+                    "params=" + NetSession._b64_encode(rewritten_orig)
                     + "&is_s3=0",
                     "",
                 ))
@@ -952,27 +969,77 @@ class NetSession:
             return url
 
     def _resolve_download_url(self, url: str) -> str:
-        """解析 302 重定向获取真实下载链接。
+        """解析重定向获取真实下载链接。
+
+        优先级：
+        1. HTTP 3xx 重定向的 Location 头
+        2. HTML body 中的 href='...' 链接
+        3. download-v2 URL 中 base64 编码的 params 直接解码
 
         对应 Flutter 中用 dart:io HttpClient 手动跟随重定向的逻辑。
         """
         try:
             resp = self._transfer.get(url, timeout=10, allow_redirects=False)
+
+            # 1. 优先检查 HTTP 重定向 Location 头
+            location = resp.headers.get("Location", "")
+            if location and resp.status_code in (301, 302, 303, 307, 308):
+                logger.debug(
+                    "下载 URL 已通过 Location 头解析 (status=%s): %s ...",
+                    resp.status_code,
+                    location[:80],
+                )
+                return location
+
+            # 2. 检查 HTML body 中的 href 链接
             text = resp.text[:500]
             url_pattern = re.compile(r"href='(https?://[^']+)'")
             match = url_pattern.search(text)
             if match:
                 resolved = match.group(1)
-                logger.debug("下载 URL 已解析: %s ...", resolved[:80])
+                logger.debug("下载 URL 已通过 href 解析: %s ...", resolved[:80])
                 return resolved
+
             logger.debug(
                 "下载 URL 未找到重定向，返回原始 URL: status=%s, body=%.100s",
                 resp.status_code,
                 text,
             )
         except requests.RequestException as e:
-            logger.warning("解析下载 URL 失败: %s", e)
+            logger.warning("解析下载 URL HTTP 请求失败: %s", e)
+
+        # 3. 兜底：如果是 download-v2 URL，直接解码 base64 params
+        decoded = self._decode_download_v2_params(url)
+        if decoded:
+            logger.debug("下载 URL 已通过 base64 params 解码: %s ...", decoded[:80])
+            return decoded
+
         return url
+
+    @staticmethod
+    def _decode_download_v2_params(url: str) -> str:
+        """从 download-v2 URL 中解码 base64 编码的下载链接。
+
+        格式: https://web-pro2.123952.com/download-v2/?params=<base64>&is_s3=0
+        返回解码后的 URL，若非 download-v2 格式或解码失败则返回空字符串。
+        """
+        try:
+            parsed = urlparse(url)
+            if "/download-v2/" not in parsed.path:
+                return ""
+            qs = dict(
+                (k, v) for k, v in
+                (p.split("=", 1) for p in parsed.query.split("&") if "=" in p)
+            )
+            params_b64 = qs.get("params", "")
+            if not params_b64:
+                return ""
+            decoded = NetSession._b64_decode(params_b64)
+            if decoded.startswith("http"):
+                return decoded
+        except Exception:
+            pass
+        return ""
 
     # ---- 重命名 ----
 
