@@ -224,24 +224,26 @@ class NetSession:
                 progress_callback(0, 0)
             return True
 
-        # 预检：某些 CDN 会返回 JSON 重定向而非文件内容
-        resolved = self._resolve_json_redirect_url(url)
-        if resolved:
-            url = resolved
-
+        # 单线程路径：_download_single 已内联处理 JSON 重定向，无需预检。
+        # 跳过不必要的 HTTP 请求，避免消耗一次性下载链接（如文件夹 zip）。
         if not self._multi_thread_enabled or self._num_threads <= 1:
             logger.debug("多线程已禁用，使用单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
 
-        supports_range = self._check_range_support(url)
-        min_chunk = 5 * 1024 * 1024
-
-        if not supports_range:
-            logger.debug("服务器不支持 Range，回退单线程")
+        if file_size < 5 * 1024 * 1024:
+            logger.debug("文件小于 5MB，回退单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
 
-        if file_size < min_chunk:
-            logger.debug("文件小于 5MB，回退单线程")
+        # ---- 以下为多线程路径，需要预检 ----
+
+        # 预检 JSON 重定向：CDN 可能返回 redirect_url 而非文件内容
+        resolved = self._resolve_json_redirect_url(url)
+        if resolved:
+            url = resolved
+
+        supports_range = self._check_range_support(url)
+        if not supports_range:
+            logger.debug("服务器不支持 Range，回退单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
 
         logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
@@ -250,7 +252,7 @@ class NetSession:
     def _check_range_support(self, url: str) -> bool:
         """检查 URL 是否支持 Range 请求。"""
         try:
-            resp = self._transfer.head(url, timeout=10, allow_redirects=True)
+            resp = self._transfer.head(url, timeout=5, allow_redirects=True)
             accept = resp.headers.get("Accept-Ranges", "")
             logger.debug(
                 "Range 支持检查: Accept-Ranges=%s -> %s", accept, accept == "bytes"
@@ -264,13 +266,13 @@ class NetSession:
         """快速探测 URL 是否为 JSON 重定向，若是则返回真实下载链接。
 
         发送一个小的 GET 请求（Range: bytes=0-0）检测 Content-Type，
-        避免完整下载 JSON 响应体。
+        避免完整下载 JSON 响应体。仅用于多线程下载前的预检。
         """
         try:
             resp = self._transfer.get(
                 url,
                 headers={"Range": "bytes=0-0"},
-                timeout=(5, 10),
+                timeout=(3, 5),
                 allow_redirects=True,
             )
             redirect_url = NetSession._check_json_redirect(resp)
@@ -328,72 +330,109 @@ class NetSession:
 
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
         logger.debug("单线程下载开始: %s", file_path.name)
-        t0 = time.monotonic()
-        try:
-            with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
-                resp.raise_for_status()
 
-                # 检测 JSON 重定向响应（CDN 可能返回 redirect_url 而非文件内容）
-                content_type = resp.headers.get("Content-Type", "")
-                if "json" in content_type:
-                    body = resp.json()
-                    redirect_url = body.get("data", {}).get(
-                        "RedirectUrl",
-                        body.get("data", {}).get("redirect_url", ""),
-                    )
-                    if redirect_url and redirect_url.startswith("http"):
-                        logger.info(
-                            "单线程下载遇到 JSON 重定向: %s -> %s ...",
-                            file_path.name,
-                            redirect_url[:80],
-                        )
-                        return self._download_single(
-                            redirect_url, file_path, file_size,
-                            progress_callback, _redirect_count + 1,
-                        )
-                    # JSON 响应但不是有效重定向，视为错误
-                    msg = body.get("message", body.get("msg", "未知错误"))
-                    logger.error("CDN 返回 JSON 错误: %s", body)
-                    raise RuntimeError(
-                        f"下载 {file_path.name} 失败，CDN 返回: {msg}"
-                    )
+        # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次
+        max_conn_retries = 3
+        for conn_attempt in range(max_conn_retries):
+            t0 = time.monotonic()
+            try:
+                with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
+                    resp.raise_for_status()
 
-                downloaded = 0
-                with open(temp_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if self._download_limiter:
-                                wait = self._download_limiter.consume(len(chunk))
-                                if wait > 0:
-                                    time.sleep(wait)
-                            if progress_callback:
-                                progress_callback(downloaded, file_size)
-            elapsed = time.monotonic() - t0
-            logger.info(
-                "单线程下载完成: %s (%.2f MB / %.1fs)",
-                file_path.name,
-                downloaded / 1024 / 1024,
-                elapsed,
-            )
-            if temp_path.exists():
-                if file_path.exists():
-                    file_path.unlink()
-                temp_path.rename(file_path)
-            return True
-        except Exception as e:
-            elapsed = time.monotonic() - t0
-            logger.error(
-                "单线程下载失败: %s (%.1fs): %s:%s",
-                file_path.name,
-                elapsed,
-                type(e).__name__,
-                e,
-            )
-            if temp_path.exists():
-                temp_path.unlink()
-            raise
+                    # 检测 JSON 重定向响应
+                    content_type = resp.headers.get("Content-Type", "")
+                    if "json" in content_type:
+                        body = resp.json()
+                        redirect_url = body.get("data", {}).get(
+                            "RedirectUrl",
+                            body.get("data", {}).get("redirect_url", ""),
+                        )
+                        if redirect_url and redirect_url.startswith("http"):
+                            logger.info(
+                                "单线程下载遇到 JSON 重定向: %s -> %s ...",
+                                file_path.name,
+                                redirect_url[:80],
+                            )
+                            return self._download_single(
+                                redirect_url, file_path, file_size,
+                                progress_callback, _redirect_count + 1,
+                            )
+                        # JSON 响应但不是有效重定向，视为错误
+                        msg = body.get("message", body.get("msg", "未知错误"))
+                        logger.error("CDN 返回 JSON 错误: %s", body)
+                        raise RuntimeError(
+                            f"下载 {file_path.name} 失败，CDN 返回: {msg}"
+                        )
+
+                    downloaded = 0
+                    with open(temp_path, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if self._download_limiter:
+                                    wait = self._download_limiter.consume(len(chunk))
+                                    if wait > 0:
+                                        time.sleep(wait)
+                                if progress_callback:
+                                    progress_callback(downloaded, file_size)
+
+                elapsed = time.monotonic() - t0
+                logger.info(
+                    "单线程下载完成: %s (%.2f MB / %.1fs)",
+                    file_path.name,
+                    downloaded / 1024 / 1024,
+                    elapsed,
+                )
+                if temp_path.exists():
+                    if file_path.exists():
+                        file_path.unlink()
+                    temp_path.rename(file_path)
+                return True
+
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ChunkedEncodingError,
+            ) as e:
+                elapsed = time.monotonic() - t0
+                if conn_attempt < max_conn_retries - 1:
+                    wait = (conn_attempt + 1) * 2.0
+                    logger.warning(
+                        "单线程下载连接中断 (第 %d/%d 次): %s (%.1fs)，%ss 后重试",
+                        conn_attempt + 1,
+                        max_conn_retries,
+                        file_path.name,
+                        elapsed,
+                        wait,
+                    )
+                    if temp_path.exists():
+                        temp_path.unlink()
+                    time.sleep(wait)
+                    continue
+                logger.error(
+                    "单线程下载失败（连接中断 %d 次）: %s (%.1fs): %s:%s",
+                    max_conn_retries,
+                    file_path.name,
+                    elapsed,
+                    type(e).__name__,
+                    e,
+                )
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
+
+            except Exception as e:
+                elapsed = time.monotonic() - t0
+                logger.error(
+                    "单线程下载失败: %s (%.1fs): %s:%s",
+                    file_path.name,
+                    elapsed,
+                    type(e).__name__,
+                    e,
+                )
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
 
     def _download_chunked(
         self,
