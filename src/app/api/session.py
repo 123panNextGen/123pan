@@ -224,6 +224,11 @@ class NetSession:
                 progress_callback(0, 0)
             return True
 
+        # 预检：某些 CDN 会返回 JSON 重定向而非文件内容
+        resolved = self._resolve_json_redirect_url(url)
+        if resolved:
+            url = resolved
+
         if not self._multi_thread_enabled or self._num_threads <= 1:
             logger.debug("多线程已禁用，使用单线程")
             return self._download_single(url, file_path, file_size, progress_callback)
@@ -255,20 +260,104 @@ class NetSession:
             logger.debug("Range 检查 HEAD 请求失败: %s", e)
             return False
 
+    def _resolve_json_redirect_url(self, url: str) -> str:
+        """快速探测 URL 是否为 JSON 重定向，若是则返回真实下载链接。
+
+        发送一个小的 GET 请求（Range: bytes=0-0）检测 Content-Type，
+        避免完整下载 JSON 响应体。
+        """
+        try:
+            resp = self._transfer.get(
+                url,
+                headers={"Range": "bytes=0-0"},
+                timeout=(5, 10),
+                allow_redirects=True,
+            )
+            redirect_url = NetSession._check_json_redirect(resp)
+            if redirect_url:
+                logger.info("预检发现 JSON 重定向，切换到真实下载链接")
+                return redirect_url
+        except requests.RequestException as e:
+            logger.debug("JSON 重定向预检请求失败: %s", e)
+        return ""
+
+    @staticmethod
+    def _check_json_redirect(resp: requests.Response) -> str:
+        """检查响应是否为 JSON 重定向，若是则返回 redirect_url。
+
+        CDN 有时不返回文件内容，而是返回 JSON：
+        {"code":0,"data":{"redirect_url":"https://..."}}
+
+        Returns:
+            重定向 URL，若非 JSON 重定向则返回空字符串。
+        """
+        content_type = resp.headers.get("Content-Type", "")
+        if "json" not in content_type:
+            return ""
+        try:
+            body = resp.json()
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            return ""
+        code = body.get("code", -1)
+        if code != 0:
+            return ""
+        redirect_url = body.get("data", {}).get(
+            "RedirectUrl", body.get("data", {}).get("redirect_url", "")
+        )
+        if redirect_url and redirect_url.startswith("http"):
+            logger.debug("检测到 JSON 重定向: %s ...", redirect_url[:80])
+            return redirect_url
+        return ""
+
     def _download_single(
         self,
         url: str,
         file_path: Path,
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        _redirect_count: int = 0,
     ) -> bool:
-        """单线程流式下载。"""
+        """单线程流式下载。
+
+        Args:
+            _redirect_count: 内部参数，跟踪 JSON 重定向次数，防止无限循环。
+        """
+        if _redirect_count >= 3:
+            logger.error("JSON 重定向次数过多，放弃下载: %s", file_path.name)
+            return False
+
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
         logger.debug("单线程下载开始: %s", file_path.name)
         t0 = time.monotonic()
         try:
             with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
                 resp.raise_for_status()
+
+                # 检测 JSON 重定向响应（CDN 可能返回 redirect_url 而非文件内容）
+                content_type = resp.headers.get("Content-Type", "")
+                if "json" in content_type:
+                    body = resp.json()
+                    redirect_url = body.get("data", {}).get(
+                        "RedirectUrl",
+                        body.get("data", {}).get("redirect_url", ""),
+                    )
+                    if redirect_url and redirect_url.startswith("http"):
+                        logger.info(
+                            "单线程下载遇到 JSON 重定向: %s -> %s ...",
+                            file_path.name,
+                            redirect_url[:80],
+                        )
+                        return self._download_single(
+                            redirect_url, file_path, file_size,
+                            progress_callback, _redirect_count + 1,
+                        )
+                    # JSON 响应但不是有效重定向，视为错误
+                    msg = body.get("message", body.get("msg", "未知错误"))
+                    logger.error("CDN 返回 JSON 错误: %s", body)
+                    raise RuntimeError(
+                        f"下载 {file_path.name} 失败，CDN 返回: {msg}"
+                    )
+
                 downloaded = 0
                 with open(temp_path, "wb") as f:
                     for chunk in resp.iter_content(chunk_size=8192):

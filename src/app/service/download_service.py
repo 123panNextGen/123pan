@@ -47,7 +47,28 @@ class DownloadService:
         if temp_path.exists():
             temp_path.unlink()
 
-        resp = self._session.transfer.get(url, stream=True, timeout=10)
+        # 检测 JSON 重定向：CDN 可能返回 redirect_url 而非文件内容
+        redirect_count = 0
+        while redirect_count < 3:
+            resp = self._session.transfer.get(url, stream=True, timeout=10)
+            content_type = resp.headers.get("Content-Type", "")
+            if "json" not in content_type:
+                break
+            body = resp.json()
+            redirect_url = (
+                body.get("data", {}).get("RedirectUrl")
+                or body.get("data", {}).get("redirect_url", "")
+            )
+            if redirect_url and redirect_url.startswith("http"):
+                logger.info("下载遇到 JSON 重定向: %s ...", redirect_url[:80])
+                url = redirect_url
+                redirect_count += 1
+                continue
+            # JSON 但不是有效重定向，视为错误
+            msg = body.get("message", body.get("msg", "未知错误"))
+            logger.error("CDN 返回 JSON 错误: %s", body)
+            raise RuntimeError(f"下载 {file_name} 失败，CDN 返回: {msg}")
+
         with open(temp_path, "wb") as f:
             for chunk in resp.iter_content(8192):
                 if chunk:
