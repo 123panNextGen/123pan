@@ -1,3 +1,4 @@
+import base64
 import concurrent.futures
 import logging
 import os
@@ -6,7 +7,7 @@ import time
 import threading
 from pathlib import Path
 from typing import Any, Optional, Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 
@@ -478,7 +479,6 @@ class NetSession:
 
     def login(self, user_name: str, password: str) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/b/api/user/sign_in")
-        data = {"type": 1, "passport": user_name, "password": "***"}
         t0 = time.monotonic()
         try:
             resp = self._http.post(
@@ -856,20 +856,29 @@ class NetSession:
             code,
         )
         if code != 0:
-            logger.error(
-                "获取下载链接失败: name=%s, code=%s, msg=%s",
-                file_name,
-                code,
-                body.get("message", ""),
-            )
-            return ApiReturnModel(
-                code=code,
-                api_code=code,
-                api_code_enum=ApiCode.fail,
-                msg=body.get("message", ""),
-            )
+            # 5113/5114: 下载流量已超出限制
+            if code in self._DOWNLOAD_LIMIT_CODES:
+                logger.warning(
+                    "下载流量已超出限制 (code=%s)，已绕过拦截: name=%s", code, file_name
+                )
+                # 不返回错误，继续执行 URL 重写绕过
+            else:
+                logger.error(
+                    "获取下载链接失败: name=%s, code=%s, msg=%s",
+                    file_name,
+                    code,
+                    body.get("message", ""),
+                )
+                return ApiReturnModel(
+                    code=code,
+                    api_code=code,
+                    api_code_enum=ApiCode.fail,
+                    msg=body.get("message", ""),
+                )
         download_url = body["data"]["DownloadUrl"]
-        redirect_url = self._resolve_download_url(download_url)
+        # 模拟 123pan_unlock.js: 重写下载 URL 绕过限制
+        rewritten_url = self._rewrite_download_url(download_url)
+        redirect_url = self._resolve_download_url(rewritten_url)
         logger.info(
             "下载链接已获取: name=%s, size=%s", file_name, request_data.get("size", "?")
         )
@@ -880,6 +889,67 @@ class NetSession:
             msg="",
             data=redirect_url,
         )
+
+    # ---- 下载流量限制错误码 ----
+    _DOWNLOAD_LIMIT_CODES = frozenset({5113, 5114})
+
+    @staticmethod
+    def _rewrite_download_url(url: str) -> str:
+        """重写下载 URL，模拟 123pan_unlock.js 的绕过逻辑。
+
+        将下载请求重定向到 web-pro2 代理，并添加 auto_redirect=0 参数，
+        绕过官方 PC 端的下载流量限制。
+        """
+        try:
+            parsed = urlparse(url)
+            if "web-pro" in parsed.netloc:
+                # 已经是 web-pro 域名，解码 params -> 添加 auto_redirect -> 重新编码
+                qs = dict(
+                    (k, v) for k, v in
+                    (p.split("=", 1) for p in parsed.query.split("&") if "=" in p)
+                )
+                params_b64 = qs.get("params", "")
+                if params_b64:
+                    try:
+                        decoded = base64.b64decode(params_b64).decode("utf-8")
+                    except Exception:
+                        decoded = params_b64
+                    inner_parsed = urlparse(decoded)
+                    inner_qs = dict(
+                        (k, v) for k, v in
+                        (p.split("=", 1) for p in inner_parsed.query.split("&") if "=" in p)
+                    )
+                    inner_qs["auto_redirect"] = "0"
+                    new_query = "&".join(f"{k}={v}" for k, v in inner_qs.items())
+                    new_inner = urlunparse(inner_parsed._replace(query=new_query))
+                    qs["params"] = base64.b64encode(new_inner.encode("utf-8")).decode()
+                    new_query_str = "&".join(f"{k}={v}" for k, v in qs.items())
+                    return urlunparse(parsed._replace(query=new_query_str))
+                return url
+            else:
+                # 非 web-pro 域名，重写为 web-pro2 代理
+                orig_parsed = urlparse(url)
+                orig_qs = dict(
+                    (k, v) for k, v in
+                    (p.split("=", 1) for p in orig_parsed.query.split("&") if "=" in p)
+                )
+                orig_qs["auto_redirect"] = "0"
+                new_query = "&".join(f"{k}={v}" for k, v in orig_qs.items())
+                rewritten_orig = urlunparse(orig_parsed._replace(query=new_query))
+                proxy_url = urlunparse((
+                    "https",
+                    "web-pro2.123952.com",
+                    "/download-v2/",
+                    "",
+                    "params=" + base64.b64encode(rewritten_orig.encode("utf-8")).decode()
+                    + "&is_s3=0",
+                    "",
+                ))
+                logger.debug("下载 URL 已重写到 web-pro2 代理")
+                return proxy_url
+        except Exception as e:
+            logger.warning("下载 URL 重写失败，使用原始 URL: %s", e)
+            return url
 
     def _resolve_download_url(self, url: str) -> str:
         """解析 302 重定向获取真实下载链接。

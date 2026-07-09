@@ -30,7 +30,7 @@ from qfluentwidgets import FluentIcon as FIF
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
-from ..common.log import get_logger, open_log_file
+from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
 from ..common.api import check_version
 
 logger = get_logger(__name__)
@@ -262,6 +262,20 @@ class SettingInterface(ScrollArea):
 
         # ---- 调试组 ----
         self.debugGroup = SettingCardGroup(self.tr("调试"), self.scrollWidget)
+
+        _saved_level = ConfigManager.get_setting("logLevel", "DEBUG")
+        _level_names = get_level_names()
+        _current_idx = _level_names.index(_saved_level) if _saved_level in _level_names else 0
+
+        self.logLevelCard = _ComboCard(
+            FIF.FLAG,
+            self.tr("日志等级"),
+            self.tr("设置日志输出详细程度"),
+            texts=_level_names,
+            current_index=_current_idx,
+            parent=self.debugGroup,
+        )
+
         self.openLogFolderCard = PushSettingCard(
             self.tr("打开文件"),
             FIF.FOLDER,
@@ -328,6 +342,7 @@ class SettingInterface(ScrollArea):
         self.personalGroup.addSettingCard(self.micaCard)
 
         # 调试组
+        self.debugGroup.addSettingCard(self.logLevelCard)
         self.debugGroup.addSettingCard(self.openLogFolderCard)
 
         # 关于组
@@ -434,6 +449,11 @@ class SettingInterface(ScrollArea):
         self._apply_proxy_to_service()
         logger.debug("代理密码已更新")
 
+    def __onLogLevelChanged(self, level_name):
+        ConfigManager.set_setting("logLevel", level_name)
+        set_log_level(level_name)
+        logger.info("日志等级切换为: %s", level_name)
+
     def __connectSignalToSlot(self):
         # 下载设置
         self.downloadFolderCard.clicked.connect(self.__onDownloadFolderCardClicked)
@@ -466,6 +486,9 @@ class SettingInterface(ScrollArea):
         )
 
         # 调试
+        self.logLevelCard.comboBox.currentTextChanged.connect(
+            self.__onLogLevelChanged
+        )
         self.openLogFolderCard.clicked.connect(lambda: open_log_file())
 
         # 关于

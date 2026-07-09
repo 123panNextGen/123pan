@@ -21,16 +21,24 @@ permissions:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
-        os: [windows-2025-vs2026, ubuntu-24.04]
+        include:
+          - os: windows-2025-vs2026
+            arch: x64
+          - os: windows-11-arm
+            arch: arm64            
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -72,6 +80,8 @@ jobs:
           choco install upx -y
 
       - name: Build with Nuitka
+        env:
+          BUILD_ARCH: ${{ matrix.arch }}
         run: |
           bash script/build.sh
         shell: bash
@@ -80,29 +90,30 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $suffix = "${{ matrix.arch }}"
           Compress-Archive `
             -Path 123pan.exe `
-            -DestinationPath 123pan-windows.zip `
+            -DestinationPath "123pan-windows-$suffix.zip" `
             -Force
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         run: |
-          zip -9 123pan-linux.zip 123pan
+          zip -9 "123pan-linux-${{ matrix.arch }}.zip" 123pan
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v6
         with:
-          name: 123pan-windows
-          path: 123pan-windows.zip
+          name: 123pan-windows-${{ matrix.arch }}
+          path: 123pan-windows-${{ matrix.arch }}.zip
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v6
         with:
-          name: 123pan-linux
-          path: 123pan-linux.zip
+          name: 123pan-linux-${{ matrix.arch }}
+          path: 123pan-linux-${{ matrix.arch }}.zip
 
   release:
     name: Create GitHub Release
@@ -112,17 +123,29 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
-      - name: Download Windows artifact
+      - name: Download Windows x64 artifact
         uses: actions/download-artifact@v6
         with:
-          name: 123pan-windows
-          path: ./artifacts/windows
+          name: 123pan-windows-x64
+          path: ./artifacts/windows-x64
 
-      - name: Download Linux artifact
+      - name: Download Linux x64 artifact
         uses: actions/download-artifact@v6
         with:
-          name: 123pan-linux
-          path: ./artifacts/linux
+          name: 123pan-linux-x64
+          path: ./artifacts/linux-x64
+
+      - name: Download Windows arm64 artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: 123pan-windows-arm64
+          path: ./artifacts/windows-arm64
+
+      - name: Download Linux arm64 artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: 123pan-linux-arm64
+          path: ./artifacts/linux-arm64
 
       - name: Set version for manual trigger
         if: github.event_name == 'workflow_dispatch'
@@ -140,7 +163,9 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}
           files: |
-            ./artifacts/windows/123pan-windows.zip
-            ./artifacts/linux/123pan-linux.zip
+            ./artifacts/windows-x64/123pan-windows-x64.zip
+            ./artifacts/linux-x64/123pan-linux-x64.zip
+            ./artifacts/windows-arm64/123pan-windows-arm64.zip
+            ./artifacts/linux-arm64/123pan-linux-arm64.zip
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false

@@ -32,9 +32,22 @@ def _cleanup_old_logs():
             pass
 
 
+_LEVEL_MAP = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+_LEVEL_NAMES = list(_LEVEL_MAP.keys())
+
+_current_level = logging.DEBUG
+
+
 def get_logger(name: str = "123pan"):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(_current_level)
 
     if not logger.handlers:
         formatter = logging.Formatter(
@@ -54,6 +67,45 @@ def get_logger(name: str = "123pan"):
         logger.addHandler(console_handler)
 
     return logger
+
+
+def set_log_level(level_name_or_int):
+    """动态调整日志等级。
+
+    Args:
+        level_name_or_int: 字符串（"DEBUG"/"INFO"/"WARNING"/"ERROR"/"CRITICAL"）
+                          或 logging 等级常量（logging.DEBUG 等）。
+    """
+    global _current_level
+
+    if isinstance(level_name_or_int, str):
+        level = _LEVEL_MAP.get(level_name_or_int.upper())
+        if level is None:
+            logger = logging.getLogger("123pan")
+            logger.warning("无效的日志等级: %s，使用 DEBUG", level_name_or_int)
+            level = logging.DEBUG
+    else:
+        level = level_name_or_int
+
+    _current_level = level
+
+    root_logger = logging.getLogger("123pan")
+    root_logger.setLevel(level)
+    for handler in root_logger.handlers:
+        handler.setLevel(level)
+
+
+def get_current_level_name():
+    """获取当前日志等级名称（字符串）。"""
+    for name, val in _LEVEL_MAP.items():
+        if val == _current_level:
+            return name
+    return "DEBUG"
+
+
+def get_level_names():
+    """获取所有可用的日志等级名称列表。"""
+    return _LEVEL_NAMES.copy()
 
 
 def open_log_file():

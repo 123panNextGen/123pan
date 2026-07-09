@@ -12,13 +12,18 @@ from qfluentwidgets import (
 )
 from qfluentwidgets.common.style_sheet import updateStyleSheet
 
-from app.common.log import get_logger
+from app.common.log import get_logger, set_log_level
+from app.common.config import ConfigManager
 from app.view.main_window import MainWindow
 
 logger = get_logger("123pan")
 
 
 def main():
+    # 从配置加载日志等级
+    _level = ConfigManager.get_setting("logLevel", "DEBUG")
+    set_log_level(_level)
+    logger.info("日志等级: %s", _level)
     logger.info("=" * 60)
     logger.info("123pan 启动")
     logger.info("Python: %s", sys.version)
