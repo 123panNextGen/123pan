@@ -875,7 +875,35 @@ class NetSession:
                     api_code_enum=ApiCode.fail,
                     msg=body.get("message", ""),
                 )
-        download_url = body["data"]["DownloadUrl"]
+        data = body["data"]
+
+        # API 可能直接返回已解析的 CDN 下载链接（redirect_url）
+        redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))
+        if redirect_url:
+            logger.info(
+                "下载链接已获取（直链）: name=%s, size=%s",
+                file_name,
+                request_data.get("size", "?"),
+            )
+            return ApiReturnModel(
+                code=0,
+                api_code=200,
+                api_code_enum=ApiCode.success,
+                msg="",
+                data=redirect_url,
+            )
+
+        # 否则使用 DownloadUrl 并通过 web-pro2 代理重写
+        download_url = data.get("DownloadUrl", data.get("downloadUrl", ""))
+        if not download_url:
+            logger.error("响应中未找到下载链接: name=%s", file_name)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg="响应中未找到下载链接",
+            )
+
         # 模拟 123pan_unlock.js: 重写下载 URL 绕过限制
         rewritten_url = self._rewrite_download_url(download_url)
         redirect_url = self._resolve_download_url(rewritten_url)
