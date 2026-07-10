@@ -365,6 +365,7 @@ class NetSession:
                         )
 
                     downloaded = 0
+                    last_report_ts = 0.0
                     with open(temp_path, "wb") as f:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
@@ -375,7 +376,10 @@ class NetSession:
                                     if wait > 0:
                                         time.sleep(wait)
                                 if progress_callback:
-                                    progress_callback(downloaded, file_size)
+                                    now_ts = time.monotonic()
+                                    if now_ts - last_report_ts >= 0.1:
+                                        progress_callback(downloaded, file_size)
+                                        last_report_ts = now_ts
 
                 elapsed = time.monotonic() - t0
                 logger.info(
