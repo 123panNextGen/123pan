@@ -406,8 +406,12 @@ class TransferInterface(QWidget):
             thread.status_updated.connect(
                 lambda status, t=task: self.__update_task_status(t, status)
             )
-            thread.finished.connect(lambda: self.__task_finished(task, "upload"))
-            thread.error.connect(lambda error, t=task: self.__task_error(t, error))
+            thread.finished.connect(
+                lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
+            )
+            thread.error.connect(
+                lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
+            )
             self.upload_threads.append(thread)
             thread.start()
             logger.debug("上传线程已启动: %s", file_name)
@@ -436,8 +440,12 @@ class TransferInterface(QWidget):
             thread.status_updated.connect(
                 lambda status, t=task: self.__update_task_status(t, status)
             )
-            thread.finished.connect(lambda: self.__task_finished(task, "download"))
-            thread.error.connect(lambda error, t=task: self.__task_error(t, error))
+            thread.finished.connect(
+                lambda t=task, th=thread: self.__on_thread_finished(t, th, "download")
+            )
+            thread.error.connect(
+                lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
+            )
             self.download_threads.append(thread)
             thread.start()
             logger.debug("下载线程已启动: %s", file_name)
@@ -460,9 +468,10 @@ class TransferInterface(QWidget):
         elif isinstance(task, DownloadTask):
             self.__update_download_table()
 
-    def __task_finished(self, task, task_type):
-        """任务完成处理"""
+    def __on_thread_finished(self, task, thread, task_type):
+        """线程完成回调：更新 UI 并清理线程资源。"""
         logger.info("任务完成: type=%s, name=%s", task_type, task.file_name)
+        self.__cleanup_thread(thread, task_type)
         if task_type == "upload":
             self.__update_upload_table()
             InfoBar.success(
@@ -473,36 +482,77 @@ class TransferInterface(QWidget):
         else:
             self.__update_download_table()
 
-    def __task_error(self, task, error):
-        """任务错误处理"""
+    def __on_thread_error(self, task, thread, error):
+        """线程错误回调：更新 UI 并清理线程资源。"""
         logger.error(
             "任务失败: type=%s, name=%s, error=%s",
             type(task).__name__,
             task.file_name,
             error,
         )
+        self.__cleanup_thread(thread, "upload" if isinstance(task, UploadTask) else "download")
         if isinstance(task, UploadTask):
             self.__update_upload_table()
         elif isinstance(task, DownloadTask):
             self.__update_download_table()
 
+    def __cleanup_thread(self, thread, task_type):
+        """断开线程所有信号并从列表中移除，释放资源。"""
+        try:
+            thread.progress_updated.disconnect()
+        except TypeError:
+            pass
+        try:
+            thread.status_updated.disconnect()
+        except TypeError:
+            pass
+        try:
+            thread.finished.disconnect()
+        except TypeError:
+            pass
+        try:
+            thread.error.disconnect()
+        except TypeError:
+            pass
+        thread_list = self.upload_threads if task_type == "upload" else self.download_threads
+        if thread in thread_list:
+            thread_list.remove(thread)
+        if not thread.isFinished():
+            thread.quit()
+            thread.wait(3000)
+
     def __remove_task(self, task, task_type):
-        """删除任务"""
+        """删除任务及其关联线程。"""
         if task_type == "upload":
             if task in self.upload_tasks:
                 self.upload_tasks.remove(task)
+                # 查找并清理关联线程
+                for t in list(self.upload_threads):
+                    if t.task is task:
+                        self.__cleanup_thread(t, "upload")
+                        break
                 self.__update_upload_table()
         else:
             if task in self.download_tasks:
                 self.download_tasks.remove(task)
+                # 查找并清理关联线程
+                for t in list(self.download_threads):
+                    if t.task is task:
+                        self.__cleanup_thread(t, "download")
+                        break
                 self.__update_download_table()
 
     def __update_table(self, table, tasks, task_type):
-        """更新传输表格（上传/下载共用）"""
+        """更新传输表格（上传/下载共用）。
+
+        只在行数变化时增删行；进度更新时仅刷新文字和进度条，
+        不再重建操作按钮等重量级控件。
+        """
         if table.rowCount() != len(tasks):
             table.setRowCount(len(tasks))
 
         for row, task in enumerate(tasks):
+            # ---- 文件名 ----
             name_item = table.item(row, 0)
             if not name_item:
                 name_item = QTableWidgetItem(task.file_name)
@@ -510,6 +560,7 @@ class TransferInterface(QWidget):
             else:
                 name_item.setText(task.file_name)
 
+            # ---- 文件大小 ----
             size_item = table.item(row, 1)
             if not size_item:
                 size_item = QTableWidgetItem(format_file_size(task.file_size))
@@ -517,6 +568,7 @@ class TransferInterface(QWidget):
             else:
                 size_item.setText(format_file_size(task.file_size))
 
+            # ---- 进度条 ----
             progress_bar = table.cellWidget(row, 2)
             if not progress_bar:
                 progress_bar = ProgressBar()
@@ -524,6 +576,7 @@ class TransferInterface(QWidget):
                 table.setCellWidget(row, 2, progress_bar)
             progress_bar.setValue(task.progress)
 
+            # ---- 百分比 ----
             percent_item = table.item(row, 3)
             if not percent_item:
                 percent_item = QTableWidgetItem(f"{task.progress}%")
@@ -532,6 +585,7 @@ class TransferInterface(QWidget):
             else:
                 percent_item.setText(f"{task.progress}%")
 
+            # ---- 状态 ----
             status_item = table.item(row, 4)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
@@ -539,18 +593,21 @@ class TransferInterface(QWidget):
             else:
                 status_item.setText(task.status)
 
-            action_layout = QHBoxLayout()
-            delete_button = PushButton(
-                FIF.DELETE.icon(), "删除任务", table
-            )
-            delete_button.setFixedSize(128, 24)
-            delete_button.clicked.connect(
-                lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
-            )
-            action_layout.addWidget(delete_button)
-            action_widget = QWidget()
-            action_widget.setLayout(action_layout)
-            table.setCellWidget(row, 5, action_widget)
+            # ---- 操作按钮（仅在行首次创建时构建，避免每 100ms 重建控件导致内存泄漏） ----
+            if not table.cellWidget(row, 5):
+                action_layout = QHBoxLayout()
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                delete_button = PushButton(
+                    FIF.DELETE.icon(), "删除任务", table
+                )
+                delete_button.setFixedSize(128, 24)
+                delete_button.clicked.connect(
+                    lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
+                )
+                action_layout.addWidget(delete_button)
+                action_widget = QWidget()
+                action_widget.setLayout(action_layout)
+                table.setCellWidget(row, 5, action_widget)
 
     def __update_upload_table(self):
         self.__update_table(self.uploadTable, self.upload_tasks, "upload")
