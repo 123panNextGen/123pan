@@ -28,9 +28,7 @@ jobs:
       matrix:
         include:
           - os: windows-2025-vs2026
-            arch: x64
-          - os: windows-11-arm
-            arch: arm64            
+            arch: x64      
           - os: ubuntu-24.04
             arch: x64
           - os: ubuntu-24.04-arm
@@ -38,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -48,11 +46,6 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: |
-          uv sync --group build --group lint
-    
-      
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -73,11 +66,15 @@ jobs:
             clang \
             ccache
 
-      - name: Install UPX (Windows)
+      - name: Install Windows Dependencies
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install upx -y
+
+      - name: Install dependencies
+        run: |
+          uv sync --group build --group lint
 
       - name: Build with Nuitka
         env:
@@ -103,14 +100,14 @@ jobs:
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: 123pan-windows-${{ matrix.arch }}
           path: 123pan-windows-${{ matrix.arch }}.zip
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: 123pan-linux-${{ matrix.arch }}
           path: 123pan-linux-${{ matrix.arch }}.zip
@@ -124,25 +121,19 @@ jobs:
 
     steps:
       - name: Download Windows x64 artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: 123pan-windows-x64
           path: ./artifacts/windows-x64
 
       - name: Download Linux x64 artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: 123pan-linux-x64
           path: ./artifacts/linux-x64
 
-      - name: Download Windows arm64 artifact
-        uses: actions/download-artifact@v6
-        with:
-          name: 123pan-windows-arm64
-          path: ./artifacts/windows-arm64
-
       - name: Download Linux arm64 artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: 123pan-linux-arm64
           path: ./artifacts/linux-arm64
@@ -158,7 +149,7 @@ jobs:
           echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}
