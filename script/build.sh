@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 检测目标架构；CI 通过 BUILD_ARCH 环境变量传入，本地构建从 uname -m 推断
+if [ -n "${BUILD_ARCH:-}" ]; then
+  ARCH="$BUILD_ARCH"
+else
+  case "$(uname -m)" in
+    aarch64|arm64) ARCH=arm64 ;;
+    *) ARCH=x64 ;;
+  esac
+fi
+
 project=$(realpath "$(dirname "$0")/..")
 
 if command -v nproc &>/dev/null; then
@@ -40,6 +50,13 @@ NOFOLLOW=(
   curses readline netrc getpass
 )
 
+# UPX 不支持 ARM64 Windows PE 文件，仅在 x64 上启用
+if [ "$ARCH" = "x64" ]; then
+  UPX_ARGS=(--plugin-enable=upx)
+else
+  UPX_ARGS=()
+fi
+
 (
   cd "$project"
 
@@ -48,7 +65,7 @@ NOFOLLOW=(
     --onefile \
     --standalone \
     --enable-plugin=pyqt6 \
-    --plugin-enable=upx \
+    "${UPX_ARGS[@]}" \
     --jobs="$JOBS" \
     --nofollow-import-to="$(IFS=,; echo "${NOFOLLOW[*]}")" \
     --assume-yes-for-downloads \

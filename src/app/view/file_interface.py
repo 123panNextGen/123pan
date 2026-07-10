@@ -52,6 +52,7 @@ logger = get_logger(__name__)
 Pan123 = importlib.import_module("app.common.api").Pan123
 
 
+# noinspection PyUnresolvedReferences
 class FileInterface(QWidget):
     """文件页面（仅浏览）"""
 
@@ -244,7 +245,8 @@ class FileInterface(QWidget):
         self.folderTree.expandItem(root_item)
         self.folderTree.setCurrentItem(root_item)
 
-    def __addPlaceholder(self, parent_item):
+    @staticmethod
+    def __addPlaceholder(parent_item):
         placeholder = QTreeWidgetItem([""])
         placeholder.setData(0, Qt.ItemDataRole.UserRole, None)
         parent_item.addChild(placeholder)
@@ -295,7 +297,8 @@ class FileInterface(QWidget):
         self.__updateBreadcrumb()
         self.__updateBackButtonState()
 
-    def __buildPathStackFromTree(self, item):
+    @staticmethod
+    def __buildPathStackFromTree(item):
         stack = []
         current = item
         while current is not None:
@@ -645,6 +648,7 @@ class FileInterface(QWidget):
                 # 添加占位符
                 self.__addPlaceholder(child)
 
+    # noinspection PyTypeChecker
     def __getExpandedItems(self):
         """获取树的展开状态"""
         expanded_items = []
@@ -664,6 +668,7 @@ class FileInterface(QWidget):
 
         return expanded_items
 
+    # noinspection PyTypeChecker
     def __restoreExpandedItems(self, expanded_items):
         """恢复树的展开状态"""
 
@@ -735,8 +740,7 @@ class FileInterface(QWidget):
             default_download_path,
         )
 
-        save_path = None
-        if ask_download_location:
+        if not ask_download_location:
             save_path = str(Path(default_download_path) / file_name)
         else:
             save_path, _ = QFileDialog.getSaveFileName(
@@ -936,6 +940,7 @@ class FileInterface(QWidget):
                 # 显示错误信息
                 InfoBar.error(title="重命名失败", content="重命名失败", parent=self)
 
+    # noinspection PyTypeChecker
     def __onFileTableContextMenu(self, position):
         """文件表格右键菜单"""
         # 获取鼠标点击位置的行

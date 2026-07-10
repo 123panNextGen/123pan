@@ -40,15 +40,13 @@ class Pan123:
         self.osversion = random.choice(all_os_versions)
         self.loginuuid = uuid.uuid4().hex
 
-        self.recycle_list = None
+        # 目录浏览状态
         self.list = []
         self.total = 0
-        self.parent_file_name_list = []
         self.all_file = False
         self.file_page = 0
-        self.file_list = []
-        self.dir_list = []
-        self.name_dict = {}
+        self.parent_file_id = 0
+
         if readfile:
             self._auth.read_ini(user_name, password, input_pwd, authorization)
             self._sync_from_auth()
@@ -61,8 +59,6 @@ class Pan123:
             self._sync_from_auth()
 
         self._sync_to_session()
-        self.parent_file_id = 0
-        self.parent_file_list = [0]
         res_code_getdir = self.get_dir()[0]
         if res_code_getdir != 0:
             self.login()
@@ -134,69 +130,8 @@ class Pan123:
 
         return 0, items
 
-    def show(self):
-        self._file.show(len(self.list), self.total, self.all_file)
-
-    def link_by_number(self, file_number, showlink=True):
-        file_detail = self.list[file_number]
-        return self.link_by_fileDetail(file_detail, showlink)
-
     def link_by_fileDetail(self, file_detail, showlink=True):
         return self._download.link_by_fileDetail(file_detail, showlink)
-
-    def download(self, file_number, download_path="download"):
-        file_detail = self.list[file_number]
-        if file_detail["Type"] == 1:
-            logger.info("开始下载")
-            file_name = file_detail["FileName"] + ".zip"
-        else:
-            file_name = file_detail["FileName"]
-
-        down_load_url = self.link_by_number(file_number, showlink=False)
-        if isinstance(down_load_url, int):
-            return
-        self._download.download_from_url(down_load_url, file_name, download_path)
-
-    def download_from_url(self, url, file_name, download_path="download"):
-        self._download.download_from_url(url, file_name, download_path)
-
-    def get_all_things(self, id):
-        self.dir_list.remove(id)
-        all_list = self.get_dir_by_id(id, save=False)[1]
-
-        for i in all_list:
-            if i["Type"] == 0:
-                self.file_list.append(i)
-            else:
-                self.dir_list.append(i["FileId"])
-                self.name_dict[i["FileId"]] = i["FileName"]
-
-        for i in self.dir_list:
-            self.get_all_things(i)
-
-    def download_dir(self, file_detail, download_path_root="download"):
-        self.name_dict[file_detail["FileId"]] = file_detail["FileName"]
-        if file_detail["Type"] != 1:
-            logger.warning("不是文件夹")
-            return
-
-        all_list = self.get_dir_by_id(
-            file_detail["FileId"], save=False, all=True, limit=100
-        )[1]
-        for i in all_list[::-1]:
-            if i["Type"] == 0:
-                AbsPath = i["AbsPath"]
-                for key, value in self.name_dict.items():
-                    AbsPath = AbsPath.replace(str(key), value)
-                download_path = download_path_root + AbsPath
-                download_path = download_path.replace("/" + str(i["FileId"]), "")
-                self.download_from_url(i["DownloadUrl"], i["FileName"], download_path)
-
-            else:
-                self.download_dir(i, download_path_root)
-
-    def recycle(self):
-        self.recycle_list = self._file.recycle()
 
     def delete_file(self, file, by_num=True, operation=True):
         self._file.delete_file(self.list, file, by_num, operation)
@@ -209,6 +144,12 @@ class Pan123:
 
     def up_load(self, file_path):
         return self._upload.up_load(file_path, self.parent_file_id)
+
+    def mkdir(self, dirname, remakedir=False):
+        file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
+        if file_id is not None:
+            self.get_dir()
+        return file_id
 
     # ---- Session 配置（门面方法） ----
 
@@ -229,83 +170,6 @@ class Pan123:
 
     def download_file(self, url, file_path, file_size, progress_callback=None):
         return self._download.download_file(url, file_path, file_size, progress_callback)
-
-    def create_folder(self, dirname, parent_file_id):
-        return self._file.create_folder(dirname, parent_file_id)
-
-    def delete_file_by_id(self, file_id, parent_file_id):
-        return self._file.delete_file_by_id(file_id, parent_file_id)
-
-    def share_files(self, file_id_list, share_pwd=""):
-        return self._file.share(file_id_list, share_pwd)
-
-    def cd(self, dir_num):
-        if dir_num == "..":
-            if len(self.parent_file_list) > 1:
-                self.all_file = False
-                self.file_page = 0
-                self.parent_file_list.pop()
-                self.parent_file_id = self.parent_file_list[-1]
-                self.list = []
-                self.parent_file_name_list.pop()
-                self.get_dir()
-            else:
-                raise RuntimeError("已经是根目录")
-            return
-        if dir_num == "/":
-            self.all_file = False
-            self.file_page = 0
-            self.parent_file_id = 0
-            self.parent_file_list = [0]
-            self.list = []
-            self.parent_file_name_list = []
-            self.get_dir()
-            return
-        if not str(dir_num).isdigit():
-            raise ValueError("文件夹编号必须是数字")
-        dir_num = int(dir_num) - 1
-        if dir_num > (len(self.list) - 1) or dir_num < 0:
-            raise IndexError("文件夹编号超出范围")
-        if self.list[dir_num]["Type"] != 1:
-            raise TypeError("选中项不是文件夹")
-        self.all_file = False
-        self.file_page = 0
-        self.parent_file_id = self.list[dir_num]["FileId"]
-        self.parent_file_list.append(self.parent_file_id)
-        self.parent_file_name_list.append(self.list[dir_num]["FileName"])
-        self.list = []
-        self.get_dir()
-
-    def cdById(self, file_id):
-        self.all_file = False
-        self.file_page = 0
-        self.list = []
-        self.parent_file_id = file_id
-        self.parent_file_list.append(self.parent_file_id)
-        self.get_dir()
-        self.show()
-
-    def read_ini(self, user_name="", password="", input_pwd=False, authorization=""):
-        self._auth.read_ini(user_name, password, input_pwd, authorization)
-        self._sync_from_auth()
-
-    def mkdir(self, dirname, remakedir=False):
-        file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
-        if file_id is not None:
-            self.get_dir()
-        return file_id
-
-    @staticmethod
-    def _compute_file_md5(file_path):
-        return UploadService.compute_file_md5(file_path)
-
-    def upload_file_stream(
-        self, file_path, dup_choice=1, task_id=None, signals=None, task=None
-    ):
-        return self._upload.up_load(
-            file_path, self.parent_file_id, dup_choice=dup_choice,
-            signals=signals, task=task,
-        )
 
 
 # ==================== 工具函数和任务管理模块 ====================
