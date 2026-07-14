@@ -303,9 +303,8 @@ class NetSession:
         code = body.get("code", -1)
         if code != 0:
             return ""
-        redirect_url = body.get("data", {}).get(
-            "RedirectUrl", body.get("data", {}).get("redirect_url", "")
-        )
+        data = body.get("data") or {}
+        redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))
         if redirect_url and redirect_url.startswith("http"):
             logger.debug("检测到 JSON 重定向: %s ...", redirect_url[:80])
             return redirect_url
@@ -343,9 +342,10 @@ class NetSession:
                     content_type = resp.headers.get("Content-Type", "")
                     if "json" in content_type:
                         body = resp.json()
-                        redirect_url = body.get("data", {}).get(
+                        data = body.get("data") or {}
+                        redirect_url = data.get(
                             "RedirectUrl",
-                            body.get("data", {}).get("redirect_url", ""),
+                            data.get("redirect_url", ""),
                         )
                         if redirect_url and redirect_url.startswith("http"):
                             logger.info(
@@ -1007,7 +1007,7 @@ class NetSession:
                     api_code_enum=ApiCode.fail,
                     msg=body.get("message", ""),
                 )
-        data = body["data"]
+        data = body.get("data") or {}
 
         # API 可能直接返回已解析的 CDN 下载链接（redirect_url）
         redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))

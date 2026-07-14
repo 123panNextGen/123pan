@@ -55,10 +55,8 @@ class DownloadService:
             if "json" not in content_type:
                 break
             body = resp.json()
-            redirect_url = (
-                body.get("data", {}).get("RedirectUrl")
-                or body.get("data", {}).get("redirect_url", "")
-            )
+            data = body.get("data") or {}
+            redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))
             if redirect_url and redirect_url.startswith("http"):
                 logger.info("下载遇到 JSON 重定向: %s ...", redirect_url[:80])
                 url = redirect_url
