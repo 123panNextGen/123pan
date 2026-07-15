@@ -88,4 +88,4 @@ uv sync --group build               # + nuitka 打包
 如果有任何不确定的问题 一定要询问意见，切忌擅自行动。
 
 ## 文档
-关于API文档，请在[WIKI](https://github.com/123panNextGen/123pan/wiki/API)页面查看
+关于文档，请在[WIKI](https://github.com/123panNextGen/123pan/wiki/)页面查看
