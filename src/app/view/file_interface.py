@@ -64,6 +64,8 @@ class FileInterface(QWidget):
         self.is_loading_tree = False
         self.is_updating_breadcrumb = False
         self.transfer_interface = None
+        # 当前目录的文件列表（用于下载/预览/分享等操作的文件查找）
+        self._current_file_items = []
 
         # 排序模式: 0=按名称, 2=按大小
         self.sort_mode = 0
@@ -520,6 +522,8 @@ class FileInterface(QWidget):
 
     def __updateFileListUI(self, file_items):
         """更新文件列表UI - 轻量级操作"""
+        # 缓存当前文件列表，供下载/预览/分享等操作查找文件详情
+        self._current_file_items = file_items
         self.fileTable.setRowCount(len(file_items))
 
         for row, file_item in enumerate(file_items):
@@ -749,11 +753,8 @@ class FileInterface(QWidget):
             logger.debug("用户选择保存路径: %s", save_path)
 
         if save_path:
-            file_size = 0
-            for f in self.pan.list:
-                if str(f.get("FileId")) == str(file_id):
-                    file_size = int(f.get("Size", 0) or 0)
-                    break
+            file_info = self.__findFileById(file_id)
+            file_size = int(file_info.get("Size", 0) or 0) if file_info else 0
             logger.info(
                 "启动下载: name=%s, size=%s, save_path=%s",
                 file_name,
@@ -995,11 +996,7 @@ class FileInterface(QWidget):
         file_name = name_item.text()
         logger.info("获取下载链接: name=%s, id=%s", file_name, file_id)
 
-        file_detail = None
-        for item in self.pan.list:
-            if str(item.get("FileId")) == str(file_id):
-                file_detail = item
-                break
+        file_detail = self.__findFileById(file_id)
 
         if not file_detail:
             logger.warning("未找到文件详情: id=%s", file_id)
@@ -1067,6 +1064,22 @@ class FileInterface(QWidget):
             logger.error(f"生成分享链接失败: {e}")
             InfoBar.error(title="分享失败", content=str(e), parent=self)
 
+    def __findFileById(self, file_id):
+        """从缓存的文件列表中根据 file_id 查找文件详情。
+
+        优先搜索 _current_file_items（当前目录），
+        回退到 pan.list（历史缓存）。
+        """
+        # 先在当前目录缓存中查找
+        for item in self._current_file_items:
+            if str(item.get("FileId")) == str(file_id):
+                return item
+        # 回退到 pan.list
+        for item in self.pan.list:
+            if str(item.get("FileId")) == str(file_id):
+                return item
+        return None
+
     def __previewFile(self):
         """预览选中的文件。
 
@@ -1098,12 +1111,8 @@ class FileInterface(QWidget):
         file_name = name_item.text()
         logger.info("预览文件: name=%s, id=%s", file_name, file_id)
 
-        # 查找文件详情
-        file_detail = None
-        for item in self.pan.list:
-            if str(item.get("FileId")) == str(file_id):
-                file_detail = item
-                break
+        # 查找文件详情（从缓存的文件列表中查找，而非 pan.list）
+        file_detail = self.__findFileById(file_id)
 
         if not file_detail:
             InfoBar.error(
