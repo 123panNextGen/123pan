@@ -3,7 +3,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QThreadPool
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -223,7 +223,37 @@ class FileInterface(QWidget):
         # 启用拖拽上传
         self.setAcceptDrops(True)
         self.fileTable.setAcceptDrops(True)
+        # 初始化快捷键
+        self.__initShortcuts()
         self.__loadPanAndData()
+
+    def __initShortcuts(self):
+        """初始化键盘快捷键"""
+        # F5: 刷新
+        QShortcut(QKeySequence(Qt.Key.Key_F5), self, self.__refreshFileList)
+        # Ctrl+N: 新建文件夹
+        QShortcut(QKeySequence("Ctrl+N"), self, self.__createNewFolder)
+        # Ctrl+U: 上传文件
+        QShortcut(QKeySequence("Ctrl+U"), self, self.__uploadFile)
+        # Ctrl+D: 下载选中文件
+        QShortcut(QKeySequence("Ctrl+D"), self, self.__downloadFile)
+        # Delete: 删除选中文件
+        QShortcut(QKeySequence(Qt.Key.Key_Delete), self, self.__deleteFile)
+        # F2: 重命名
+        QShortcut(QKeySequence(Qt.Key.Key_F2), self, self.__renameFile)
+        # Backspace: 返回上级
+        QShortcut(QKeySequence(Qt.Key.Key_Backspace), self, self.__goParentDir)
+        # Ctrl+F: 聚焦搜索框
+        QShortcut(QKeySequence("Ctrl+F"), self, lambda: self.searchBox.setFocus())
+        # Ctrl+A: 全选
+        QShortcut(QKeySequence("Ctrl+A"), self, self.fileTable.selectAll)
+        # Enter: 进入文件夹或预览文件
+        QShortcut(
+            QKeySequence(Qt.Key.Key_Return),
+            self,
+            lambda: self.__onTableItemDoubleClicked(self.fileTable.currentItem())
+            if self.fileTable.currentItem() else None,
+        )
 
     def __connectSignalToSlot(self):
         self.backButton.clicked.connect(self.__goParentDir)
