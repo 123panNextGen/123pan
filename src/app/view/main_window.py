@@ -28,6 +28,7 @@ from .file_interface import FileInterface
 from .transfer_interface import TransferInterface
 from .setting_interface import SettingInterface
 from .cloud_interface import CloudInterface
+from .trash_interface import TrashInterface
 from .login_window import LoginDialog
 
 from ..common import resource
@@ -50,6 +51,7 @@ class MainWindow(FluentWindow):
         self.transfer_interface = TransferInterface(self)
         self.setting_interface = SettingInterface(self)
         self.cloud_interface = CloudInterface(self)
+        self.trash_interface = TrashInterface(self)
 
         # 传递传输界面引用给文件界面
         self.file_interface.transfer_interface = self.transfer_interface
@@ -61,6 +63,7 @@ class MainWindow(FluentWindow):
     def _initNavigation(self):
         self.addSubInterface(self.file_interface, FIF.FOLDER, "文件")
         self.addSubInterface(self.transfer_interface, FIF.SYNC, "传输")
+        self.addSubInterface(self.trash_interface, FIF.DELETE, "回收站")
         self.addSubInterface(
             self.cloud_interface,
             FIF.CLOUD,
@@ -117,6 +120,7 @@ class MainWindow(FluentWindow):
         self.file_interface._FileInterface__loadPanAndData()
 
         self.transfer_interface.set_pan(self.pan)
+        self.trash_interface.set_pan(self.pan)
         self.cloud_interface.set_pan(self.pan)
 
         self.cloud_interface.logoutRequested.connect(self.handle_logout)
@@ -146,6 +150,7 @@ class MainWindow(FluentWindow):
                 self.file_interface.pan = self.pan
                 self.file_interface._FileInterface__loadPanAndData()
                 self.transfer_interface.set_pan(self.pan)
+                self.trash_interface.set_pan(self.pan)
                 self.cloud_interface.set_pan(self.pan)
             else:
                 logger.info("用户取消重新登录，退出程序")
@@ -166,6 +171,7 @@ class MainWindow(FluentWindow):
             self.file_interface.pan = self.pan
             self.file_interface._FileInterface__loadPanAndData()
             self.transfer_interface.set_pan(self.pan)
+            self.trash_interface.set_pan(self.pan)
             self.cloud_interface.set_pan(self.pan)
         else:
             logger.debug("用户取消切换账号")
