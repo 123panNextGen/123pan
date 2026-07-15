@@ -260,6 +260,17 @@ class SettingInterface(ScrollArea):
         )
         self.micaCard.setChecked(isWin11())
 
+        self.languageCard = _ComboCard(
+            FIF.LANGUAGE,
+            self.tr("界面语言"),
+            self.tr("选择应用程序的显示语言"),
+            texts=["简体中文", "English"],
+            current_index=(
+                0 if ConfigManager.get_setting("language", "zh_CN") == "zh_CN" else 1
+            ),
+            parent=self.personalGroup,
+        )
+
         # ---- 调试组 ----
         self.debugGroup = SettingCardGroup(self.tr("调试"), self.scrollWidget)
 
@@ -281,6 +292,14 @@ class SettingInterface(ScrollArea):
             FIF.FOLDER,
             self.tr("日志文件"),
             self.tr("打开应用日志文件"),
+            self.debugGroup,
+        )
+
+        self.clearCacheCard = PushSettingCard(
+            self.tr("清除"),
+            FIF.DELETE,
+            self.tr("清理缓存"),
+            self.tr("清除临时下载文件和缓存数据"),
             self.debugGroup,
         )
 
@@ -340,10 +359,12 @@ class SettingInterface(ScrollArea):
 
         # 个性化组
         self.personalGroup.addSettingCard(self.micaCard)
+        self.personalGroup.addSettingCard(self.languageCard)
 
         # 调试组
         self.debugGroup.addSettingCard(self.logLevelCard)
         self.debugGroup.addSettingCard(self.openLogFolderCard)
+        self.debugGroup.addSettingCard(self.clearCacheCard)
 
         # 关于组
         self.aboutGroup.addSettingCard(self.aboutCard)
@@ -357,6 +378,78 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.debugGroup)
         self.expandLayout.addWidget(self.aboutGroup)
+
+    def __onLanguageChanged(self, text):
+        """语言切换"""
+        lang_code = "zh_CN" if text == "简体中文" else "en_US"
+        ConfigManager.set_setting("language", lang_code)
+        logger.info("界面语言切换为: %s (%s)", text, lang_code)
+        InfoBar.info(
+            title="语言设置",
+            content="语言设置将在重启应用后生效",
+            parent=self,
+        )
+
+    def __onClearCacheClicked(self):
+        """清理缓存（临时文件和下载残留）"""
+        import shutil
+        from pathlib import Path
+
+        temp_dir = Path.home() / ".cache" / "123pan" / "temp"
+        download_dir = Path(
+            ConfigManager.get_setting(
+                "defaultDownloadPath", str(Path.home() / "Downloads")
+            )
+        )
+
+        cleaned_count = 0
+        cleaned_size = 0
+
+        # 清理临时目录
+        if temp_dir.exists():
+            for f in temp_dir.glob("*.tmp"):
+                try:
+                    cleaned_size += f.stat().st_size
+                    f.unlink()
+                    cleaned_count += 1
+                except OSError:
+                    pass
+            for f in temp_dir.glob("*.part*"):
+                try:
+                    cleaned_size += f.stat().st_size
+                    f.unlink()
+                    cleaned_count += 1
+                except OSError:
+                    pass
+
+        # 清理下载目录中的 .tmp 文件
+        if download_dir.exists():
+            for f in download_dir.glob("*.tmp"):
+                try:
+                    cleaned_size += f.stat().st_size
+                    f.unlink()
+                    cleaned_count += 1
+                except OSError:
+                    pass
+
+        if cleaned_count > 0:
+            from ..common.utils import format_file_size
+            InfoBar.success(
+                title="清理完成",
+                content=f"已清理 {cleaned_count} 个临时文件，释放 {format_file_size(cleaned_size)}",
+                parent=self,
+            )
+            logger.info(
+                "缓存清理完成: %d 个文件, %s",
+                cleaned_count,
+                format_file_size(cleaned_size),
+            )
+        else:
+            InfoBar.info(
+                title="无需清理",
+                content="没有找到可清理的临时文件",
+                parent=self,
+            )
 
     # ---- 事件处理 ----
 
@@ -490,6 +583,12 @@ class SettingInterface(ScrollArea):
             self.__onLogLevelChanged
         )
         self.openLogFolderCard.clicked.connect(lambda: open_log_file())
+        self.clearCacheCard.clicked.connect(self.__onClearCacheClicked)
+
+        # 个性化
+        self.languageCard.comboBox.currentTextChanged.connect(
+            self.__onLanguageChanged
+        )
 
         # 关于
         self.aboutCard.clicked.connect(
