@@ -1,4 +1,3 @@
-import importlib
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -36,6 +35,7 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.const import MAX_STORAGE_CAPACITY
+from ..common.api import Pan123
 from ..common.log import get_logger
 from ..tasks.file_tasks import (
     CreateFolderTask,
@@ -48,8 +48,6 @@ from ..tasks.signals import _LoadListSignals, _OpFinishedSignals, _StorageSignal
 from .dialogs import InputDialog
 
 logger = get_logger(__name__)
-
-Pan123 = importlib.import_module("app.common.api").Pan123
 
 
 # noinspection PyUnresolvedReferences
