@@ -2,6 +2,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -218,6 +220,9 @@ class FileInterface(QWidget):
         # 为文件表格添加右键菜单
         self.fileTable.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.fileTable.customContextMenuRequested.connect(self.__onFileTableContextMenu)
+        # 启用拖拽上传
+        self.setAcceptDrops(True)
+        self.fileTable.setAcceptDrops(True)
         self.__loadPanAndData()
 
     def __connectSignalToSlot(self):
@@ -730,27 +735,60 @@ class FileInterface(QWidget):
         file_paths, _ = QFileDialog.getOpenFileNames(self, "选择要上传的文件")
 
         if file_paths:
-            logger.info("用户选择了 %d 个文件上传", len(file_paths))
-            for file_path in file_paths:
-                path = Path(file_path)
-                file_name = path.name
-                file_size = path.stat().st_size
-                logger.debug(
-                    "上传文件: name=%s, size=%s, dir=%s",
-                    file_name,
-                    file_size,
-                    self.current_dir_id,
-                )
-                if self.transfer_interface:
-                    self.transfer_interface.add_upload_task(
-                        file_name, file_size, file_path, self.current_dir_id
-                    )
+            self.__addUploadTasks(file_paths)
 
-            InfoBar.success(
-                title="上传文件",
-                content=f"已添加 {len(file_paths)} 个上传任务",
-                parent=self,
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """拖拽进入时接受文件拖放"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        """拖拽移动时接受"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent):
+        """处理拖放文件"""
+        urls = event.mimeData().urls()
+        if urls:
+            file_paths = []
+            for url in urls:
+                path = url.toLocalFile()
+                if path and Path(path).is_file():
+                    file_paths.append(path)
+
+            if file_paths:
+                self.__addUploadTasks(file_paths)
+            else:
+                InfoBar.warning(
+                    title="拖拽上传",
+                    content="只支持拖放文件，不支持文件夹",
+                    parent=self,
+                )
+
+    def __addUploadTasks(self, file_paths):
+        """添加上传任务（共用方法）"""
+        logger.info("准备上传 %d 个文件", len(file_paths))
+        for file_path in file_paths:
+            path = Path(file_path)
+            file_name = path.name
+            file_size = path.stat().st_size
+            logger.debug(
+                "上传文件: name=%s, size=%s, dir=%s",
+                file_name,
+                file_size,
+                self.current_dir_id,
             )
+            if self.transfer_interface:
+                self.transfer_interface.add_upload_task(
+                    file_name, file_size, file_path, self.current_dir_id
+                )
+
+        InfoBar.success(
+            title="上传文件",
+            content=f"已添加 {len(file_paths)} 个上传任务",
+            parent=self,
+        )
 
     def __downloadFile(self):
         """下载文件（支持批量）"""
