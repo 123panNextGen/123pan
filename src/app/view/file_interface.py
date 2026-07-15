@@ -331,22 +331,24 @@ class FileInterface(QWidget):
             return
 
         item_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
-        if item_type != 1:
-            return
+        if item_type == 1:
+            # 文件夹：进入目录
+            file_id = int(name_item.data(Qt.ItemDataRole.UserRole))
+            name = name_item.text()
 
-        file_id = int(name_item.data(Qt.ItemDataRole.UserRole))
-        name = name_item.text()
+            self.current_dir_id = file_id
+            self.path_stack.append((file_id, name))
+            self.__loadCurrentList()
+            self.__updateBreadcrumb()
+            self.__updateBackButtonState()
 
-        self.current_dir_id = file_id
-        self.path_stack.append((file_id, name))
-        self.__loadCurrentList()
-        self.__updateBreadcrumb()
-        self.__updateBackButtonState()
-
-        tree_item = self.__findTreeItemById(file_id)
-        if tree_item:
-            self.folderTree.setCurrentItem(tree_item)
-            self.folderTree.expandItem(tree_item)
+            tree_item = self.__findTreeItemById(file_id)
+            if tree_item:
+                self.folderTree.setCurrentItem(tree_item)
+                self.folderTree.expandItem(tree_item)
+        else:
+            # 文件：尝试预览
+            self.__previewFile()
 
     def __loadCurrentList(self):
         if not self.pan:
@@ -959,6 +961,11 @@ class FileInterface(QWidget):
         copy_link_action.triggered.connect(self.__copyDownloadLink)
         menu.addAction(copy_link_action)
 
+        # 添加预览菜单项
+        preview_action = QAction(FIF.VIEW.icon(), "预览", self)
+        preview_action.triggered.connect(self.__previewFile)
+        menu.addAction(preview_action)
+
         # 添加分享菜单项
         share_action = QAction(FIF.LINK.icon(), "分享", self)
         share_action.triggered.connect(self.__shareFile)
@@ -1061,6 +1068,69 @@ class FileInterface(QWidget):
         except Exception as e:
             logger.error(f"生成分享链接失败: {e}")
             InfoBar.error(title="分享失败", content=str(e), parent=self)
+
+    def __previewFile(self):
+        """预览选中的文件。
+
+        支持图片、视频、音频、文本等格式。
+        不支持预览的格式将弹出提示。
+        """
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            InfoBar.warning(
+                title="预览失败", content="请选择一个文件", parent=self
+            )
+            return
+
+        row = selected_items[0].row()
+        name_item = self.fileTable.item(row, 0)
+        if name_item is None:
+            return
+
+        file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
+        if file_type == 1:
+            InfoBar.warning(
+                title="预览失败",
+                content="文件夹不支持预览，请双击打开",
+                parent=self,
+            )
+            return
+
+        file_id = name_item.data(Qt.ItemDataRole.UserRole)
+        file_name = name_item.text()
+        logger.info("预览文件: name=%s, id=%s", file_name, file_id)
+
+        # 查找文件详情
+        file_detail = None
+        for item in self.pan.list:
+            if str(item.get("FileId")) == str(file_id):
+                file_detail = item
+                break
+
+        if not file_detail:
+            InfoBar.error(
+                title="预览失败",
+                content="无法找到文件详情",
+                parent=self,
+            )
+            return
+
+        # 检查是否支持预览
+        from ..preview import is_preview_supported
+
+        if not is_preview_supported(file_name):
+            InfoBar.warning(
+                title="不支持预览",
+                content=f"不支持预览此文件类型: {file_name}",
+                parent=self,
+            )
+            return
+
+        # 打开预览对话框
+        from ..preview.preview_dialog import PreviewDialog
+
+        dialog = PreviewDialog(self.pan, file_detail, self)
+        dialog.exec()
 
     def update_storage_info(self, used_text="0 B"):
         """更新云盘存储信息"""
