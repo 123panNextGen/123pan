@@ -14,6 +14,7 @@ from qfluentwidgets.common.style_sheet import updateStyleSheet
 
 from app.common.log import get_logger, set_log_level
 from app.common.config import ConfigManager
+from app.common.i18n import init_i18n
 from app.view.main_window import MainWindow
 
 logger = get_logger("123pan")
@@ -23,6 +24,11 @@ def main():
     # 从配置加载日志等级
     _level = ConfigManager.get_setting("logLevel", "DEBUG")
     set_log_level(_level)
+
+    # 初始化国际化
+    _lang = ConfigManager.get_setting("language", "zh_CN")
+    i18n = init_i18n(_lang)
+    logger.info("语言: %s", _lang)
     logger.info("日志等级: %s", _level)
     logger.info("=" * 60)
     logger.info("123pan 启动")

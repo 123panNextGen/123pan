@@ -19,6 +19,7 @@ from qfluentwidgets import (
 from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
+from ..common.i18n import tr
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ class LoginDialog(QDialog):
     # noinspection PyUnresolvedReferences
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("登录123云盘")
+        self.setWindowTitle(tr("login.title", "登录123云盘"))
         self.resize(460, 320)
         self.setFixedSize(460, 320)
         logger.debug("LoginDialog 初始化")
@@ -40,7 +41,7 @@ class LoginDialog(QDialog):
 
         # 标题
         title = TitleLabel()
-        title.setText("欢迎使用123云盘")
+        title.setText(tr("login.welcome", "欢迎使用123云盘"))
         layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
 
         form = QFormLayout()
@@ -50,14 +51,14 @@ class LoginDialog(QDialog):
         self.cbo_accounts = QComboBox()
         self.cbo_accounts.setEditable(True)
         self.cbo_accounts.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.cbo_accounts.lineEdit().setPlaceholderText("选择或输入账户")
-        form.addRow("账户", self.cbo_accounts)
+        self.cbo_accounts.lineEdit().setPlaceholderText(tr("login.account_placeholder", "选择或输入账户"))
+        form.addRow(tr("login.account_label", "账户"), self.cbo_accounts)
 
         # 密码输入框
         self.le_pass = LineEdit()
-        self.le_pass.setPlaceholderText("请输入密码")
+        self.le_pass.setPlaceholderText(tr("login.password_placeholder", "请输入密码"))
         self.le_pass.setEchoMode(LineEdit.EchoMode.Password)
-        form.addRow("密码", self.le_pass)
+        form.addRow(tr("login.password_label", "密码"), self.le_pass)
 
         layout.addLayout(form)
 
@@ -66,12 +67,12 @@ class LoginDialog(QDialog):
 
         # 登录按钮
         self.btn_ok = PrimaryPushButton()
-        self.btn_ok.setText("登录")
+        self.btn_ok.setText(tr("login.login_btn", "登录"))
         self.btn_ok.setMinimumWidth(100)
 
         # 取消按钮
         self.btn_cancel = PushButton()
-        self.btn_cancel.setText("取消")
+        self.btn_cancel.setText(tr("login.cancel_btn", "取消"))
         self.btn_cancel.setMinimumWidth(100)
 
         h.addWidget(self.btn_ok)
@@ -119,7 +120,11 @@ class LoginDialog(QDialog):
         logger.info("登录尝试: user=%s, has_pwd=%s", user, bool(pwd))
         if not user or not pwd:
             logger.warning("登录失败: 用户名或密码为空")
-            MessageBox("提示", "请输入用户名和密码。", self).exec()
+            MessageBox(
+                tr("login.msg_prompt", "提示"),
+                tr("login.msg_enter_credentials", "请输入用户名和密码。"),
+                self,
+            ).exec()
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -134,15 +139,23 @@ class LoginDialog(QDialog):
             code = self.pan.login()
             logger.info("登录结果: user=%s, code=%s", user, code)
             if code != 200 and code != 0:
-                self.login_error = f"登录失败，返回码: {code}"
+                self.login_error = tr("login.msg_login_failed_code", "登录失败，返回码: {}").format(code)
                 QApplication.restoreOverrideCursor()
-                MessageBox("登录失败", self.login_error, self).exec()
+                MessageBox(
+                    tr("login.msg_login_failed", "登录失败"),
+                    self.login_error,
+                    self,
+                ).exec()
                 return
         except Exception as e:
             self.login_error = str(e)
             logger.error("登录异常: %s", e)
             QApplication.restoreOverrideCursor()
-            MessageBox("登录异常", "登录时发生异常:\n" + str(e), self).exec()
+            MessageBox(
+                tr("login.msg_login_error", "登录异常"),
+                tr("login.msg_login_exception", "登录时发生异常:\n{}").format(str(e)),
+                self,
+            ).exec()
             return
         finally:
             QApplication.restoreOverrideCursor()

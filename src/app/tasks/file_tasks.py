@@ -120,6 +120,65 @@ class RenameFileTask(QRunnable):
             self.signals.finished.emit(False, self.old_name, self.new_name, str(e), [], [])
 
 
+class BatchDeleteTask(QRunnable):
+    """批量删除文件任务"""
+
+    def __init__(self, pan, file_infos, current_dir_id, signals, file_interface):
+        super().__init__()
+        self.pan = pan
+        self.file_infos = file_infos  # list of (file_id, file_name)
+        self.current_dir_id = current_dir_id
+        self.signals = signals
+        self._fi = file_interface
+
+    def run(self):
+        try:
+            names = [name for _, name in self.file_infos]
+            logger.info("批量删除文件: %s", names)
+
+            # 先获取完整文件列表
+            code, files = self.pan.get_dir_by_id(
+                self.current_dir_id, save=True, all=True, limit=1000
+            )
+            if code != 0:
+                self.signals.finished.emit(False, "", "", "获取文件列表失败", [], [])
+                return
+
+            success_count = 0
+            fail_count = 0
+            last_error = ""
+
+            for file_id, file_name in self.file_infos:
+                try:
+                    # 在 pan.list 中查找并删除
+                    deleted = False
+                    for i, file in enumerate(self.pan.list):
+                        if str(file.get("FileId")) == str(file_id):
+                            self.pan.delete_file(i, by_num=True, operation=True)
+                            deleted = True
+                            break
+
+                    if deleted:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                        logger.warning("批量删除中未找到文件: %s (id=%s)", file_name, file_id)
+                except Exception as e:
+                    fail_count += 1
+                    last_error = str(e)
+                    logger.error("批量删除 %s 失败: %s", file_name, e)
+
+            # 重新加载目录
+            items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
+            msg = f"成功 {success_count} 个"
+            if fail_count > 0:
+                msg += f"，失败 {fail_count} 个"
+            self.signals.finished.emit(True, msg, "", last_error, items, folder_items)
+        except Exception as e:
+            logger.error("批量删除异常: %s", e)
+            self.signals.finished.emit(False, "", "", str(e), [], [])
+
+
 class StorageTask(QRunnable):
     def __init__(self, file_interface, signals):
         super().__init__()
