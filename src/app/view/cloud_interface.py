@@ -10,6 +10,7 @@ from qfluentwidgets import (
 )
 
 from ..common.log import get_logger
+from ..common.i18n import tr
 
 logger = get_logger(__name__)
 
@@ -43,7 +44,7 @@ class CloudInterface(QWidget):
         self.mainLayout.setSpacing(12)
 
         # 添加标题
-        title_label = QLabel("云盘信息")
+        title_label = QLabel(tr("cloud.title", "云盘信息"))
         title_font = QFont()
         title_font.setPointSize(20)
         title_font.setBold(True)
@@ -51,11 +52,14 @@ class CloudInterface(QWidget):
         self.mainLayout.addWidget(title_label)
 
         # 创建设置卡片组
-        self.accountGroup = SettingCardGroup("账户信息", self)
+        self.accountGroup = SettingCardGroup(tr("cloud.account_info", "账户信息"), self)
 
         # 添加用户名显示（使用SettingCard样式）
         self.username_card = SettingCard(
-            FIF.PEOPLE, "账户", "当前登录的账户信息", self.accountGroup
+            FIF.PEOPLE,
+            tr("cloud.account", "账户"),
+            tr("cloud.account_desc", "当前登录的账户信息"),
+            self.accountGroup,
         )
         self.username_label = QLabel()
         font = QFont()
@@ -69,10 +73,10 @@ class CloudInterface(QWidget):
 
         # 添加切换账号卡片
         self.switch_card = PushSettingCard(
-            "切换账号",
+            tr("cloud.switch_account", "切换账号"),
             FIF.SYNC,
-            "切换登录账号",
-            "从已保存账号或新账号登录",
+            tr("cloud.switch_account_title", "切换登录账号"),
+            tr("cloud.switch_account_desc", "从已保存账号或新账号登录"),
             self.accountGroup,
         )
         self.switch_card.clicked.connect(self.switchAccountRequested.emit)
@@ -80,10 +84,10 @@ class CloudInterface(QWidget):
 
         # 添加退出登录卡片
         self.logout_card = PushSettingCard(
-            "退出登录",
+            tr("cloud.logout", "退出登录"),
             FIF.CLOSE,
-            "退出登录",
-            "退出当前登录的账户",
+            tr("cloud.logout_title", "退出登录"),
+            tr("cloud.logout_desc", "退出当前登录的账户"),
             self.accountGroup,
         )
         self.logout_card.clicked.connect(self.logoutRequested.emit)
@@ -99,5 +103,5 @@ class CloudInterface(QWidget):
         self.pan = pan
         if self.pan and hasattr(self.pan, "user_name"):
             username = _mask_username(self.pan.user_name)
-            self.username_label.setText(f"用户名: {username}")
+            self.username_label.setText(tr("cloud.username_prefix", "用户名: {}").format(username))
             logger.info("云盘界面已设置: %s", username)

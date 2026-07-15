@@ -32,6 +32,7 @@ from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
 from ..common.api import check_version
+from ..common.i18n import tr
 
 logger = get_logger(__name__)
 
@@ -86,7 +87,7 @@ class _SpeedLimitCard(_SpinBoxCard):
             max_val=1048576,
             step=100,
             suffix=" KB/s",
-            special_text="不限制",
+            special_text=tr("settings.speed_unlimited", "不限制"),
         )
 
 
@@ -97,7 +98,7 @@ class _ProxyHostCard(SettingCard):
         super().__init__(icon, title, content, parent)
         self.lineEdit = LineEdit(self)
         self.lineEdit.setText(text)
-        self.lineEdit.setPlaceholderText("例如: 127.0.0.1")
+        self.lineEdit.setPlaceholderText(tr("settings.proxy_host_placeholder", "例如: 127.0.0.1"))
         self.lineEdit.setMinimumWidth(180)
         self.lineEdit.textChanged.connect(self._onTextChanged)
         self.hBoxLayout.addWidget(self.lineEdit, 0, Qt.AlignmentFlag.AlignRight)
@@ -141,14 +142,14 @@ class SettingInterface(ScrollArea):
         self.scrollWidget = QWidget()
         self.expandLayout = ExpandLayout(self.scrollWidget)
 
-        self.settingLabel = QLabel(self.tr("设置"), self)
+        self.settingLabel = QLabel(tr("settings.title", "设置"), self)
 
         # ---- 下载设置组 ----
-        self.downloadGroup = SettingCardGroup(self.tr("下载设置"), self.scrollWidget)
+        self.downloadGroup = SettingCardGroup(tr("settings.group_download", "下载设置"), self.scrollWidget)
         self.downloadFolderCard = PushSettingCard(
-            self.tr("选择文件夹"),
+            tr("settings.download_folder", "选择文件夹"),
             FIF.DOWNLOAD,
-            self.tr("下载目录"),
+            tr("settings.download_dir", "下载目录"),
             ConfigManager.get_setting(
                 "defaultDownloadPath", str(Path.home() / "Downloads")
             ),
@@ -157,8 +158,8 @@ class SettingInterface(ScrollArea):
 
         self.askDownloadLocationCard = SwitchSettingCard(
             FIF.DOWNLOAD,
-            self.tr("每次询问下载位置"),
-            self.tr("下载文件时是否每次都询问保存位置"),
+            tr("settings.ask_download", "每次询问下载位置"),
+            tr("settings.ask_download_desc", "下载文件时是否每次都询问保存位置"),
             parent=self.downloadGroup,
         )
         self.askDownloadLocationCard.setChecked(
@@ -167,8 +168,8 @@ class SettingInterface(ScrollArea):
 
         self.multiThreadCard = SwitchSettingCard(
             FIF.SYNC,
-            self.tr("多线程下载"),
-            self.tr("启用多线程分片下载以提升下载速度"),
+            tr("settings.multi_thread", "多线程下载"),
+            tr("settings.multi_thread_desc", "启用多线程分片下载以提升下载速度"),
             parent=self.downloadGroup,
         )
         self.multiThreadCard.setChecked(
@@ -177,27 +178,27 @@ class SettingInterface(ScrollArea):
 
         self.downloadSpeedCard = _SpeedLimitCard(
             FIF.SPEED_HIGH,
-            self.tr("下载限速"),
-            self.tr("限制下载速度，0 表示不限制"),
+            tr("下载限速"),
+            tr("限制下载速度，0 表示不限制"),
             ConfigManager.get_setting("downloadSpeedLimit", 0),
             self.downloadGroup,
         )
 
         self.uploadSpeedCard = _SpeedLimitCard(
             FIF.SPEED_HIGH,
-            self.tr("上传限速"),
-            self.tr("限制上传速度，0 表示不限制"),
+            tr("上传限速"),
+            tr("限制上传速度，0 表示不限制"),
             ConfigManager.get_setting("uploadSpeedLimit", 0),
             self.downloadGroup,
         )
 
         # ---- 代理设置组 ----
-        self.proxyGroup = SettingCardGroup(self.tr("网络代理"), self.scrollWidget)
+        self.proxyGroup = SettingCardGroup(tr("网络代理"), self.scrollWidget)
 
         self.proxyEnabledCard = SwitchSettingCard(
             FIF.GLOBE,
-            self.tr("启用代理"),
-            self.tr("开启后所有网络请求将通过代理服务器"),
+            tr("启用代理"),
+            tr("开启后所有网络请求将通过代理服务器"),
             parent=self.proxyGroup,
         )
         self.proxyEnabledCard.setChecked(
@@ -206,8 +207,8 @@ class SettingInterface(ScrollArea):
 
         self.proxyTypeCard = _ComboCard(
             FIF.GLOBE,
-            self.tr("代理类型"),
-            self.tr("选择代理协议类型"),
+            tr("代理类型"),
+            tr("选择代理协议类型"),
             texts=["HTTP", "SOCKS5"],
             current_index=(
                 0 if ConfigManager.get_setting("proxyType", "http") == "http" else 1
@@ -217,16 +218,16 @@ class SettingInterface(ScrollArea):
 
         self.proxyHostCard = _ProxyHostCard(
             FIF.GLOBE,
-            self.tr("代理主机"),
-            self.tr("代理服务器地址"),
+            tr("代理主机"),
+            tr("代理服务器地址"),
             ConfigManager.get_setting("proxyHost", ""),
             self.proxyGroup,
         )
 
         self.proxyPortCard = _SpinBoxCard(
             FIF.GLOBE,
-            self.tr("代理端口"),
-            self.tr("代理服务器端口"),
+            tr("代理端口"),
+            tr("代理服务器端口"),
             ConfigManager.get_setting("proxyPort", 0),
             self.proxyGroup,
             min_val=0,
@@ -236,35 +237,35 @@ class SettingInterface(ScrollArea):
 
         self.proxyUserCard = _ProxyHostCard(
             FIF.PEOPLE,
-            self.tr("代理用户名"),
-            self.tr("代理认证用户名（可选）"),
+            tr("代理用户名"),
+            tr("代理认证用户名（可选）"),
             ConfigManager.get_setting("proxyUsername", ""),
             self.proxyGroup,
         )
 
         self.proxyPassCard = _ProxyHostCard(
             FIF.PEOPLE,
-            self.tr("代理密码"),
-            self.tr("代理认证密码（可选）"),
+            tr("代理密码"),
+            tr("代理认证密码（可选）"),
             ConfigManager.get_setting("proxyPassword", ""),
             self.proxyGroup,
         )
 
         # ---- 个性化组 ----
-        self.personalGroup = SettingCardGroup(self.tr("个性化"), self.scrollWidget)
+        self.personalGroup = SettingCardGroup(tr("个性化"), self.scrollWidget)
         self.micaCard = SwitchSettingCard(
             FIF.TRANSPARENT,
-            self.tr("Mica 效果"),
-            self.tr("在窗口和表面上应用半透明效果"),
+            tr("Mica 效果"),
+            tr("在窗口和表面上应用半透明效果"),
             parent=self.personalGroup,
         )
         self.micaCard.setChecked(isWin11())
 
         self.languageCard = _ComboCard(
             FIF.LANGUAGE,
-            self.tr("界面语言"),
-            self.tr("选择应用程序的显示语言"),
-            texts=["简体中文", "English"],
+            tr("界面语言"),
+            tr("选择应用程序的显示语言"),
+            texts=[tr("settings.lang_zh", "简体中文"), tr("settings.lang_en", "English")],
             current_index=(
                 0 if ConfigManager.get_setting("language", "zh_CN") == "zh_CN" else 1
             ),
@@ -272,7 +273,7 @@ class SettingInterface(ScrollArea):
         )
 
         # ---- 调试组 ----
-        self.debugGroup = SettingCardGroup(self.tr("调试"), self.scrollWidget)
+        self.debugGroup = SettingCardGroup(tr("调试"), self.scrollWidget)
 
         _saved_level = ConfigManager.get_setting("logLevel", "DEBUG")
         _level_names = get_level_names()
@@ -280,43 +281,43 @@ class SettingInterface(ScrollArea):
 
         self.logLevelCard = _ComboCard(
             FIF.FLAG,
-            self.tr("日志等级"),
-            self.tr("设置日志输出详细程度"),
+            tr("日志等级"),
+            tr("设置日志输出详细程度"),
             texts=_level_names,
             current_index=_current_idx,
             parent=self.debugGroup,
         )
 
         self.openLogFolderCard = PushSettingCard(
-            self.tr("打开文件"),
+            tr("打开文件"),
             FIF.FOLDER,
-            self.tr("日志文件"),
-            self.tr("打开应用日志文件"),
+            tr("日志文件"),
+            tr("打开应用日志文件"),
             self.debugGroup,
         )
 
         self.clearCacheCard = PushSettingCard(
-            self.tr("清除"),
+            tr("清除"),
             FIF.DELETE,
-            self.tr("清理缓存"),
-            self.tr("清除临时下载文件和缓存数据"),
+            tr("清理缓存"),
+            tr("清除临时下载文件和缓存数据"),
             self.debugGroup,
         )
 
         # ---- 关于组 ----
-        self.aboutGroup = SettingCardGroup(self.tr("关于"), self.scrollWidget)
+        self.aboutGroup = SettingCardGroup(tr("关于"), self.scrollWidget)
         self.aboutCard = PrimaryPushSettingCard(
-            self.tr("项目页面"),
+            tr("项目页面"),
             FIF.INFO,
-            self.tr("关于"),
+            tr("关于"),
             "123pan" + f"{VERSION}" + " © Copyright" + f" {YEAR}",
             self.aboutGroup,
         )
         self.checkversion = PushSettingCard(
-            self.tr("检查"),
+            tr("检查"),
             FIF.FOLDER,
-            self.tr("检查更新"),
-            self.tr("检查当前应用是否为最新版"),
+            tr("检查更新"),
+            tr("检查当前应用是否为最新版"),
             self.aboutGroup,
         )
 
@@ -381,12 +382,12 @@ class SettingInterface(ScrollArea):
 
     def __onLanguageChanged(self, text):
         """语言切换"""
-        lang_code = "zh_CN" if text == "简体中文" else "en_US"
+        lang_code = "zh_CN" if text == tr("settings.lang_zh", "简体中文") else "en_US"
         ConfigManager.set_setting("language", lang_code)
         logger.info("界面语言切换为: %s (%s)", text, lang_code)
         InfoBar.info(
-            title="语言设置",
-            content="语言设置将在重启应用后生效",
+            title=tr("settings.msg_lang_restart", "语言设置"),
+            content=tr("settings.msg_lang_restart_desc", "语言设置将在重启应用后生效"),
             parent=self,
         )
 
@@ -435,8 +436,10 @@ class SettingInterface(ScrollArea):
         if cleaned_count > 0:
             from ..common.utils import format_file_size
             InfoBar.success(
-                title="清理完成",
-                content=f"已清理 {cleaned_count} 个临时文件，释放 {format_file_size(cleaned_size)}",
+                title=tr("settings.msg_cache_cleaned", "清理完成"),
+                content=tr("settings.msg_cache_cleaned_desc", "已清理 {} 个临时文件，释放 {}").format(
+                    cleaned_count, format_file_size(cleaned_size)
+                ),
                 parent=self,
             )
             logger.info(
@@ -446,8 +449,8 @@ class SettingInterface(ScrollArea):
             )
         else:
             InfoBar.info(
-                title="无需清理",
-                content="没有找到可清理的临时文件",
+                title=tr("settings.msg_no_cache", "无需清理"),
+                content=tr("settings.msg_no_cache_desc", "没有找到可清理的临时文件"),
                 parent=self,
             )
 
@@ -455,16 +458,22 @@ class SettingInterface(ScrollArea):
 
     def check(self):
         if check_version():
-            InfoBar.success(title="检查成功", content="当前是最新版本", parent=self)
+            InfoBar.success(
+                title=tr("settings.msg_check_success", "检查成功"),
+                content=tr("settings.msg_latest_version", "当前是最新版本"),
+                parent=self,
+            )
         else:
             InfoBar.error(
-                title="检查失败",
-                content="当前不是最新版本，或当前无法完成检查",
+                title=tr("settings.msg_check_failed", "检查失败"),
+                content=tr("settings.msg_not_latest", "当前不是最新版本，或当前无法完成检查"),
                 parent=self,
             )
 
     def __onDownloadFolderCardClicked(self):
-        folder = QFileDialog.getExistingDirectory(self, self.tr("Choose folder"), "./")
+        folder = QFileDialog.getExistingDirectory(
+            self, tr("settings.choose_folder", "Choose folder"), "./"
+        )
         if not folder or ConfigManager.get_setting("defaultDownloadPath") == folder:
             return
         self.downloadFolderCard.setContent(folder)

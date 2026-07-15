@@ -17,6 +17,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..common.config import ConfigManager
 from ..common.log import get_logger
+from ..common.i18n import tr
 
 logger = get_logger(__name__)
 
@@ -28,7 +29,7 @@ class TransferTask:
         self.file_name = file_name
         self.file_size = file_size
         self.progress = 0
-        self.status = "等待中"
+        self.status = tr("transfer.status_waiting", "等待中")
 
 
 class UploadTask(TransferTask):
@@ -69,12 +70,12 @@ class UploadThread(QThread):
     def pause(self):
         """暂停传输"""
         self._pause_event.clear()
-        self.status_updated.emit("已暂停")
+        self.status_updated.emit(tr("transfer.status_paused", "已暂停"))
 
     def resume(self):
         """恢复传输"""
         self._pause_event.set()
-        self.status_updated.emit("上传中")
+        self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
 
     def cancel(self):
         """取消传输"""
@@ -84,7 +85,7 @@ class UploadThread(QThread):
     def run(self):
         try:
             self._pause_event.wait()  # 检查是否立即暂停
-            self.status_updated.emit("上传中")
+            self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
             logger.info(
                 "上传线程启动: %s (%.2f MB)",
                 self.task.file_name,
@@ -105,17 +106,17 @@ class UploadThread(QThread):
             self.pan.parent_file_id = current_parent_id
 
             if self._cancelled:
-                self.status_updated.emit("已取消")
+                self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
 
             self.progress_updated.emit(100)
-            self.status_updated.emit("已完成")
+            self.status_updated.emit(tr("transfer.status_completed", "已完成"))
             self.finished.emit()
             logger.info("上传完成: %s (%.1fs)", self.task.file_name, elapsed)
         except Exception as e:
             logger.error("上传失败: %s: %s", self.task.file_name, e)
             self.error.emit(str(e))
-            self.status_updated.emit("失败")
+            self.status_updated.emit(tr("transfer.status_failed", "失败"))
 
 
 class DownloadThread(QThread):
@@ -137,12 +138,12 @@ class DownloadThread(QThread):
     def pause(self):
         """暂停传输"""
         self._pause_event.clear()
-        self.status_updated.emit("已暂停")
+        self.status_updated.emit(tr("transfer.status_paused", "已暂停"))
 
     def resume(self):
         """恢复传输"""
         self._pause_event.set()
-        self.status_updated.emit("下载中")
+        self.status_updated.emit(tr("transfer.status_downloading", "下载中"))
 
     def cancel(self):
         """取消传输"""
@@ -151,7 +152,7 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            self.status_updated.emit("下载中")
+            self.status_updated.emit(tr("transfer.status_downloading", "下载中"))
             logger.info(
                 "下载线程启动: %s, file_id=%s, size=%.2f MB",
                 self.task.file_name,
@@ -226,11 +227,11 @@ class DownloadThread(QThread):
                 raise RuntimeError("下载失败")
 
             if self._cancelled:
-                self.status_updated.emit("已取消")
+                self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
 
             self.progress_updated.emit(100)
-            self.status_updated.emit("已完成")
+            self.status_updated.emit(tr("transfer.status_completed", "已完成"))
             self.finished.emit()
             speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
             logger.info(
@@ -248,7 +249,7 @@ class DownloadThread(QThread):
                 e,
             )
             self.error.emit(str(e))
-            self.status_updated.emit("失败")
+            self.status_updated.emit(tr("transfer.status_failed", "失败"))
 
     def _find_file_info(self):
         """在多个数据源中查找文件信息。"""

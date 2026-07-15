@@ -24,6 +24,7 @@ from ..common.utils import format_file_size
 from ..common.config import ConfigManager
 
 from ..common.log import get_logger
+from ..common.i18n import tr
 
 from ..tasks.transfer_tasks import (
     UploadTask,
@@ -101,18 +102,18 @@ class TransferInterface(QWidget):
         self.topBarLayout.setContentsMargins(12, 10, 12, 10)
         self.topBarLayout.setSpacing(8)
 
-        self.titleLabel = QLabel("传输管理", self.topBarFrame)
+        self.titleLabel = QLabel(tr("transfer.title", "传输管理"), self.topBarFrame)
         self.segmentedWidget = SegmentedWidget(self.topBarFrame)
 
         # 添加分段项
-        self.segmentedWidget.addItem(routeKey="upload", icon=FIF.UP.icon(), text="上传")
+        self.segmentedWidget.addItem(routeKey="upload", icon=FIF.UP.icon(), text=tr("transfer.upload_tab", "上传"))
         self.segmentedWidget.addItem(
-            routeKey="download", icon=FIF.DOWNLOAD.icon(), text="下载"
+            routeKey="download", icon=FIF.DOWNLOAD.icon(), text=tr("transfer.download_tab", "下载")
         )
         self.segmentedWidget.setCurrentItem("upload")
 
         self.clearCompletedButton = PushButton(
-            FIF.DELETE.icon(), "清除已完成", self.topBarFrame
+            FIF.DELETE.icon(), tr("transfer.clear_completed", "清除已完成"), self.topBarFrame
         )
 
         self.topBarLayout.addWidget(self.titleLabel)
@@ -133,7 +134,7 @@ class TransferInterface(QWidget):
         self.uploadTable.setAlternatingRowColors(True)
         self.uploadTable.setColumnCount(6)
         self.uploadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
@@ -160,7 +161,7 @@ class TransferInterface(QWidget):
         self.downloadTable.setAlternatingRowColors(True)
         self.downloadTable.setColumnCount(6)
         self.downloadTable.setHorizontalHeaderLabels(
-            ["文件名", "大小", "进度", "百分比", "状态", "操作"]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
@@ -283,8 +284,8 @@ class TransferInterface(QWidget):
         if task_type == "upload":
             self.__update_upload_table()
             InfoBar.success(
-                title="上传完成",
-                content=f"文件 '{task.file_name}' 上传成功",
+                title=tr("transfer.msg_upload_complete", "上传完成"),
+                content=tr("transfer.msg_file_uploaded", "文件 '{}' 上传成功").format(task.file_name),
                 parent=self,
             )
         else:
@@ -341,7 +342,7 @@ class TransferInterface(QWidget):
 
         removed = 0
         for task in list(tasks):
-            if task.status in ("已完成", "已取消", "失败"):
+            if task.status in (tr("transfer.status_completed", "已完成"), tr("transfer.status_cancelled", "已取消"), tr("transfer.status_failed", "失败")):
                 # 清理关联线程
                 for t in list(threads):
                     if t.task is task:
@@ -356,14 +357,14 @@ class TransferInterface(QWidget):
             else:
                 self.__update_download_table()
             InfoBar.success(
-                title="清理完成",
-                content=f"已清除 {removed} 个已完成任务",
+                title=tr("transfer.msg_cleanup_done", "清理完成"),
+                content=tr("transfer.msg_cleaned_tasks", "已清除 {} 个已完成任务").format(removed),
                 parent=self,
             )
         else:
             InfoBar.info(
-                title="无需清理",
-                content="没有已完成的任务",
+                title=tr("transfer.msg_no_cleanup", "无需清理"),
+                content=tr("transfer.msg_no_completed_tasks", "没有已完成的任务"),
                 parent=self,
             )
 
@@ -473,18 +474,18 @@ class TransferInterface(QWidget):
                 action_layout.setContentsMargins(0, 0, 0, 0)
 
                 # 暂停/恢复按钮
-                if task.status in ("上传中", "下载中"):
+                if task.status in (tr("transfer.status_uploading", "上传中"), tr("transfer.status_downloading", "下载中")):
                     pause_btn = PushButton(
-                        FIF.PAUSE.icon(), "暂停", table
+                        FIF.PAUSE.icon(), tr("transfer.btn_pause", "暂停"), table
                     )
                     pause_btn.setFixedSize(64, 24)
                     pause_btn.clicked.connect(
                         lambda _, t=task, tt=task_type: self.__pause_task(t, tt)
                     )
                     action_layout.addWidget(pause_btn)
-                elif task.status == "已暂停":
+                elif task.status == tr("transfer.status_paused", "已暂停"):
                     resume_btn = PushButton(
-                        FIF.PLAY.icon(), "继续", table
+                        FIF.PLAY.icon(), tr("transfer.btn_resume", "继续"), table
                     )
                     resume_btn.setFixedSize(64, 24)
                     resume_btn.clicked.connect(
@@ -493,7 +494,7 @@ class TransferInterface(QWidget):
                     action_layout.addWidget(resume_btn)
 
                 delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除", table
+                    FIF.DELETE.icon(), tr("transfer.btn_delete", "删除"), table
                 )
                 delete_button.setFixedSize(64, 24)
                 delete_button.clicked.connect(

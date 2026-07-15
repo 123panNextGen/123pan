@@ -35,6 +35,7 @@ from ..common import resource
 from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
+from ..common.i18n import tr
 
 logger = get_logger(__name__)
 
@@ -61,19 +62,19 @@ class MainWindow(FluentWindow):
         logger.info("MainWindow 初始化完成")
 
     def _initNavigation(self):
-        self.addSubInterface(self.file_interface, FIF.FOLDER, "文件")
-        self.addSubInterface(self.transfer_interface, FIF.SYNC, "传输")
-        self.addSubInterface(self.trash_interface, FIF.DELETE, "回收站")
+        self.addSubInterface(self.file_interface, FIF.FOLDER, tr("nav.file", "文件"))
+        self.addSubInterface(self.transfer_interface, FIF.SYNC, tr("nav.transfer", "传输"))
+        self.addSubInterface(self.trash_interface, FIF.DELETE, tr("nav.trash", "回收站"))
         self.addSubInterface(
             self.cloud_interface,
             FIF.CLOUD,
-            "云盘",
+            tr("nav.cloud", "云盘"),
             position=NavigationItemPosition.BOTTOM,
         )
         self.addSubInterface(
             self.setting_interface,
             FIF.SETTING,
-            "设置",
+            tr("nav.settings", "设置"),
             position=NavigationItemPosition.BOTTOM,
         )
 
@@ -136,7 +137,11 @@ class MainWindow(FluentWindow):
         logger.info("用户请求退出登录")
         from qfluentwidgets import MessageBox
 
-        msg = MessageBox("退出登录", "确定要退出登录吗？", self)
+        msg = MessageBox(
+            tr("main.logout_title", "退出登录"),
+            tr("main.logout_confirm", "确定要退出登录吗？"),
+            self,
+        )
         if msg.exec():
             logger.debug("确认退出登录")
             self.clear_login_config()

@@ -9,6 +9,8 @@ from qfluentwidgets import (
     BodyLabel,
 )
 
+from ..common.i18n import tr
+
 
 class InputDialog(QDialog):
     """通用文本输入弹窗（取代 NewFolderDialog 和 RenameDialog）。"""
@@ -40,11 +42,11 @@ class InputDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        cancel_button = PushButton("取消")
+        cancel_button = PushButton(tr("dialog.cancel", "取消"))
         cancel_button.setMinimumWidth(100)
         cancel_button.clicked.connect(self.reject)
 
-        ok_button = PrimaryPushButton("确定")
+        ok_button = PrimaryPushButton(tr("dialog.ok", "确定"))
         ok_button.setMinimumWidth(100)
         ok_button.clicked.connect(self.accept)
 

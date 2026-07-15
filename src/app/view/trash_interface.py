@@ -25,6 +25,7 @@ from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.api import Pan123
 from ..common.log import get_logger
+from ..common.i18n import tr
 from ..tasks.signals import _OpFinishedSignals
 
 logger = get_logger(__name__)
@@ -60,13 +61,13 @@ class TrashInterface(QWidget):
         self.topBarLayout.setSpacing(8)
 
         self.refreshButton = PushButton(
-            FIF.UPDATE.icon(), "刷新", self.topBarFrame
+            FIF.UPDATE.icon(), tr("trash.refresh", "刷新"), self.topBarFrame
         )
         self.restoreButton = PushButton(
-            FIF.LEFT_ARROW.icon(), "恢复", self.topBarFrame
+            FIF.LEFT_ARROW.icon(), tr("trash.restore", "恢复"), self.topBarFrame
         )
         self.deleteButton = PushButton(
-            FIF.DELETE.icon(), "永久删除", self.topBarFrame
+            FIF.DELETE.icon(), tr("trash.permanent_delete", "永久删除"), self.topBarFrame
         )
 
         self.topBarLayout.addWidget(self.refreshButton, 0)
@@ -86,7 +87,7 @@ class TrashInterface(QWidget):
         self.trashTable = TableWidget(self.listFrame)
         self.trashTable.setAlternatingRowColors(True)
         self.trashTable.setColumnCount(3)
-        self.trashTable.setHorizontalHeaderLabels(["名称", "类型", "大小"])
+        self.trashTable.setHorizontalHeaderLabels([tr("trash.col_name", "名称"), tr("trash.col_type", "类型"), tr("trash.col_size", "大小")])
         self.trashTable.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
@@ -139,8 +140,8 @@ class TrashInterface(QWidget):
         except Exception as e:
             logger.error("回收站刷新失败: %s", e)
             InfoBar.error(
-                title="刷新失败",
-                content=f"获取回收站列表失败: {e}",
+                title=tr("trash.msg_refresh_failed", "刷新失败"),
+                content=tr("trash.msg_trash_list_error", "获取回收站列表失败: {}").format(e),
                 parent=self,
             )
 
@@ -152,7 +153,7 @@ class TrashInterface(QWidget):
             file_type = int(item.get("Type", 0))
             file_size = int(item.get("Size", 0) or 0)
 
-            type_text = "文件夹" if file_type == 1 else "文件"
+            type_text = tr("trash.type_folder", "文件夹") if file_type == 1 else tr("trash.type_file", "文件")
             size_text = format_file_size(file_size)
 
             name_item = QTableWidgetItem(file_name)
@@ -183,8 +184,8 @@ class TrashInterface(QWidget):
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
-                title="恢复文件",
-                content="请选择要恢复的文件",
+                title=tr("trash.msg_restore_file", "恢复文件"),
+                content=tr("trash.msg_select_to_restore", "请选择要恢复的文件"),
                 parent=self,
             )
             return
@@ -200,16 +201,16 @@ class TrashInterface(QWidget):
             )
             suffix = "..." if len(selected) > 3 else ""
             InfoBar.success(
-                title="恢复成功",
-                content=f"已恢复 {len(selected)} 个文件: {file_names}{suffix}",
+                title=tr("trash.msg_restore_success", "恢复成功"),
+                content=tr("trash.msg_files_restored", "已恢复 {} 个文件: {}").format(len(selected), file_names + suffix),
                 parent=self,
             )
             self.__refreshTrashList()
         except Exception as e:
             logger.error("恢复文件失败: %s", e)
             InfoBar.error(
-                title="恢复失败",
-                content=f"恢复文件时发生错误: {e}",
+                title=tr("trash.msg_restore_failed", "恢复失败"),
+                content=tr("trash.msg_restore_error", "恢复文件时发生错误: {}").format(e),
                 parent=self,
             )
 
@@ -218,8 +219,8 @@ class TrashInterface(QWidget):
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
-                title="永久删除",
-                content="请选择要永久删除的文件",
+                title=tr("trash.permanent_delete", "永久删除"),
+                content=tr("trash.msg_select_to_perm_delete", "请选择要永久删除的文件"),
                 parent=self,
             )
             return
@@ -235,15 +236,15 @@ class TrashInterface(QWidget):
             )
             suffix = "..." if len(selected) > 3 else ""
             InfoBar.success(
-                title="删除成功",
-                content=f"已永久删除 {len(selected)} 个文件: {file_names}{suffix}",
+                title=tr("trash.msg_perm_delete_success", "删除成功"),
+                content=tr("trash.msg_files_perm_deleted", "已永久删除 {} 个文件: {}").format(len(selected), file_names + suffix),
                 parent=self,
             )
             self.__refreshTrashList()
         except Exception as e:
             logger.error("永久删除失败: %s", e)
             InfoBar.error(
-                title="删除失败",
-                content=f"永久删除文件时发生错误: {e}",
+                title=tr("trash.msg_perm_delete_failed", "删除失败"),
+                content=tr("trash.msg_perm_delete_error", "永久删除文件时发生错误: {}").format(e),
                 parent=self,
             )
