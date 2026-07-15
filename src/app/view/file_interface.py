@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QApplication,
     QInputDialog,
+    QLineEdit,
 )
 from PyQt6.QtGui import QAction
 
@@ -73,6 +74,9 @@ class FileInterface(QWidget):
         # 排序方向: True=升序, False=降序
         self.sort_ascending = True
 
+        # 搜索文本
+        self._search_text = ""
+
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
         self.mainLayout.setSpacing(12)
@@ -94,6 +98,13 @@ class FileInterface(QWidget):
 
         self.breadcrumbBar = BreadcrumbBar(self.topBarFrame)
 
+        # 搜索框
+        self.searchBox = QLineEdit(self.topBarFrame)
+        self.searchBox.setPlaceholderText("搜索文件名...")
+        self.searchBox.setClearButtonEnabled(True)
+        self.searchBox.setMaximumWidth(200)
+        self.searchBox.textChanged.connect(self.__onSearchTextChanged)
+
         # 右侧按钮
         self.newFolderButton = PushButton(
             FIF.FOLDER_ADD.icon(), "新建文件夹", self.topBarFrame
@@ -105,6 +116,7 @@ class FileInterface(QWidget):
 
         self.topBarLayout.addWidget(self.backButton, 0)
         self.topBarLayout.addWidget(self.breadcrumbBar, 1)
+        self.topBarLayout.addWidget(self.searchBox, 0)
         self.topBarLayout.addWidget(self.newFolderButton, 0)
         self.topBarLayout.addWidget(self.uploadButton, 0)
         self.topBarLayout.addWidget(self.downloadButton, 0)
@@ -564,6 +576,30 @@ class FileInterface(QWidget):
             # 更新文件列表（轻量级UI操作）
             self.__updateFileListUI(sorted_items)
 
+    def __onSearchTextChanged(self, text):
+        """搜索文本变化时过滤文件列表"""
+        self._search_text = text.strip().lower()
+        self.__applySearchFilter()
+
+    def __applySearchFilter(self):
+        """根据搜索文本过滤当前文件列表"""
+        if not hasattr(self, "_current_file_items") or not self._current_file_items:
+            return
+
+        if not self._search_text:
+            # 无搜索条件，恢复完整列表
+            sorted_items = self.__sortFileList(self._current_file_items)
+            self.__updateFileListUI(sorted_items)
+            return
+
+        # 按搜索文本过滤
+        filtered = [
+            item for item in self._current_file_items
+            if self._search_text in item.get("FileName", "").lower()
+        ]
+        sorted_items = self.__sortFileList(filtered)
+        self.__updateFileListUI(sorted_items)
+
     def __sortFileList(self, file_items):
         """对文件列表进行排序，文件夹始终在前"""
         # 分离文件夹和文件
@@ -778,6 +814,8 @@ class FileInterface(QWidget):
 
     def __refreshFileList(self):
         """刷新文件列表"""
+        self.searchBox.clear()
+        self._search_text = ""
         self.__loadCurrentList()
         # 同时更新云盘存储信息
         self.load_and_update_storage_info()
