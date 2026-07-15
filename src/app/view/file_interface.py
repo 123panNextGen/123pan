@@ -40,6 +40,7 @@ from ..common.log import get_logger
 from ..tasks.file_tasks import (
     CreateFolderTask,
     DeleteFileTask,
+    BatchDeleteTask,
     LoadListTask,
     RenameFileTask,
     StorageTask,
@@ -176,7 +177,7 @@ class FileInterface(QWidget):
         self.fileTable.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
-        self.fileTable.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.fileTable.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.fileTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         vertical_header = self.fileTable.verticalHeader()
         if vertical_header is not None:
@@ -716,21 +717,11 @@ class FileInterface(QWidget):
             )
 
     def __downloadFile(self):
-        """下载文件"""
-        selected_items = self.fileTable.selectedItems()
-        if not selected_items:
+        """下载文件（支持批量）"""
+        selected_rows = self.__getSelectedRows()
+        if not selected_rows:
             InfoBar.warning(title="下载错误", content="请选择要下载的文件", parent=self)
             return
-
-        row = selected_items[0].row()
-        name_item = self.fileTable.item(row, 0)
-        file_id = name_item.data(Qt.ItemDataRole.UserRole)
-        file_name = name_item.text()
-        file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
-        logger.debug("下载请求: name=%s, id=%s, type=%s", file_name, file_id, file_type)
-
-        if file_type == 1:
-            file_name = file_name + ".zip"
 
         from app.common.config import ConfigManager
 
@@ -738,38 +729,50 @@ class FileInterface(QWidget):
         default_download_path = ConfigManager.get_setting(
             "defaultDownloadPath", str(Path.home() / "Downloads")
         )
-        logger.debug(
-            "下载配置: ask_location=%s, default_path=%s",
-            ask_download_location,
-            default_download_path,
-        )
 
-        if not ask_download_location:
-            save_path = str(Path(default_download_path) / file_name)
-        else:
-            save_path, _ = QFileDialog.getSaveFileName(
-                self, "保存文件", str(Path(default_download_path) / file_name)
+        # 批量下载时：如果"每次询问"，先选目录；如果不询问，统一使用默认目录
+        if ask_download_location and len(selected_rows) > 1:
+            save_dir = QFileDialog.getExistingDirectory(
+                self, "选择下载保存目录", default_download_path
             )
-            logger.debug("用户选择保存路径: %s", save_path)
+            if not save_dir:
+                return
+            ask_download_location = False  # 批量模式下不再逐个询问
+        else:
+            save_dir = default_download_path
 
-        if save_path:
+        count = 0
+        for row in selected_rows:
+            name_item = self.fileTable.item(row, 0)
+            file_id = name_item.data(Qt.ItemDataRole.UserRole)
+            file_name = name_item.text()
+            file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
+
+            if file_type == 1:
+                file_name = file_name + ".zip"
+
+            if ask_download_location:
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self, "保存文件", str(Path(default_download_path) / file_name)
+                )
+                if not save_path:
+                    continue
+            else:
+                save_path = str(Path(save_dir) / file_name)
+
             file_info = self.__findFileById(file_id)
             file_size = int(file_info.get("Size", 0) or 0) if file_info else 0
-            logger.info(
-                "启动下载: name=%s, size=%s, save_path=%s",
-                file_name,
-                file_size,
-                save_path,
-            )
 
             if self.transfer_interface:
                 self.transfer_interface.add_download_task(
                     file_name, file_size, file_id, save_path, self.current_dir_id
                 )
+            count += 1
 
+        if count > 0:
             InfoBar.success(
                 title="下载文件",
-                content=f"已添加下载任务: {file_name}",
+                content=f"已添加 {count} 个下载任务",
                 parent=self,
             )
 
@@ -779,40 +782,87 @@ class FileInterface(QWidget):
         # 同时更新云盘存储信息
         self.load_and_update_storage_info()
 
-    def __deleteFile(self, file_id=None, file_name=None):
-        """删除文件"""
+    def __getSelectedRows(self):
+        """获取所有选中行的行号列表（去重）。"""
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            return []
+        rows = sorted(set(item.row() for item in selected_items))
+        return rows
 
-        # 如果没有提供file_id和file_name，则从选中的文件获取
+    def __deleteFile(self, file_id=None, file_name=None):
+        """删除文件（支持批量）"""
+
+        # 如果没有提供file_id和file_name，则从选中的文件批量获取
         if file_id is None or file_name is None:
-            selected_items = self.fileTable.selectedItems()
-            if not selected_items:
+            selected_rows = self.__getSelectedRows()
+            if not selected_rows:
                 InfoBar.warning(
                     title="删除错误", content="请选择要删除的文件", parent=self
                 )
                 return
 
-            # 获取选中行的文件信息
-            row = selected_items[0].row()
-            name_item = self.fileTable.item(row, 0)
-            file_id = name_item.data(Qt.ItemDataRole.UserRole)
-            file_name = name_item.text()
-            file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
+            if len(selected_rows) == 1:
+                # 单文件删除走原有路径
+                row = selected_rows[0]
+                name_item = self.fileTable.item(row, 0)
+                file_id = name_item.data(Qt.ItemDataRole.UserRole)
+                file_name = name_item.text()
+            else:
+                # 批量删除
+                self.__batchDeleteFiles(selected_rows)
+                return
 
-            # if file_type == 1:  # 文件夹
-            #     InfoBar.warning(
-            #         title="删除错误", content="暂不支持删除文件夹", parent=self
-            #     )
-            #     return
-
-        # 在主线程创建信号
+        # 单文件删除
         signals = _OpFinishedSignals()
         signals.finished.connect(self.__onDeleteFileFinished)
         task = DeleteFileTask(
             self.pan, file_id, file_name, self.current_dir_id, signals, self
         )
-
-        # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
+
+    def __batchDeleteFiles(self, selected_rows):
+        """批量删除文件。"""
+        file_infos = []
+        for row in selected_rows:
+            name_item = self.fileTable.item(row, 0)
+            fid = name_item.data(Qt.ItemDataRole.UserRole)
+            fname = name_item.text()
+            file_infos.append((fid, fname))
+
+        # 在主线程创建信号
+        signals = _OpFinishedSignals()
+        signals.finished.connect(
+            lambda success, name, new_name, error, items, folders: self.__onBatchDeleteFinished(
+                success, name, new_name, error, items, folders
+            )
+        )
+        task = BatchDeleteTask(
+            self.pan, file_infos, self.current_dir_id, signals, self
+        )
+        QThreadPool.globalInstance().start(task)
+
+    def __onBatchDeleteFinished(
+        self, success, file_name, new_name, error, file_items, folder_items
+    ):
+        """批量删除完成后的回调"""
+        if success:
+            InfoBar.success(
+                title="批量删除成功",
+                content=file_name,
+                parent=self,
+            )
+            self.__updateFileListUI(file_items)
+            self.__updateTreeUI(folder_items)
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+        else:
+            InfoBar.error(
+                title="批量删除失败",
+                content=error or "批量删除失败",
+                parent=self,
+            )
 
     def __onDeleteFileFinished(
         self, success, file_name, new_name, error, file_items, folder_items
