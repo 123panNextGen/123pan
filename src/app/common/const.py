@@ -4,7 +4,7 @@
 
 # 版本信息
 YEAR = 2026
-VERSION = "3.1.4"
+VERSION = "3.1.5"
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
 
 # 日志保留天数
