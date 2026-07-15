@@ -3,12 +3,13 @@
 
 包含：
 - TransferTask / UploadTask / DownloadTask: 数据传输任务模型
-- UploadThread: 后台上传线程（支持速度限制）
-- DownloadThread: 后台下载线程（支持多线程分片和速度限制）
+- UploadThread: 后台上传线程（支持速度限制、暂停/恢复）
+- DownloadThread: 后台下载线程（支持多线程分片和速度限制、暂停/恢复）
 
 从 view/transfer_interface.py 提取，以分离 UI 和业务逻辑。
 """
 
+import threading
 import time
 from pathlib import Path
 
@@ -50,7 +51,7 @@ class DownloadTask(TransferTask):
 
 
 class UploadThread(QThread):
-    """上传线程（支持速度限制）"""
+    """上传线程（支持速度限制、暂停/恢复）"""
 
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
@@ -61,9 +62,28 @@ class UploadThread(QThread):
         super().__init__()
         self.task = task
         self.pan = pan
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # 初始状态：不暂停
+        self._cancelled = False
+
+    def pause(self):
+        """暂停传输"""
+        self._pause_event.clear()
+        self.status_updated.emit("已暂停")
+
+    def resume(self):
+        """恢复传输"""
+        self._pause_event.set()
+        self.status_updated.emit("上传中")
+
+    def cancel(self):
+        """取消传输"""
+        self._cancelled = True
+        self._pause_event.set()  # 解除暂停以便退出
 
     def run(self):
         try:
+            self._pause_event.wait()  # 检查是否立即暂停
             self.status_updated.emit("上传中")
             logger.info(
                 "上传线程启动: %s (%.2f MB)",
@@ -84,6 +104,10 @@ class UploadThread(QThread):
 
             self.pan.parent_file_id = current_parent_id
 
+            if self._cancelled:
+                self.status_updated.emit("已取消")
+                return
+
             self.progress_updated.emit(100)
             self.status_updated.emit("已完成")
             self.finished.emit()
@@ -95,7 +119,7 @@ class UploadThread(QThread):
 
 
 class DownloadThread(QThread):
-    """下载线程（支持多线程分片和速度限制）"""
+    """下载线程（支持多线程分片、速度限制、暂停/恢复）"""
 
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
@@ -106,6 +130,24 @@ class DownloadThread(QThread):
         super().__init__()
         self.task = task
         self.pan = pan
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._cancelled = False
+
+    def pause(self):
+        """暂停传输"""
+        self._pause_event.clear()
+        self.status_updated.emit("已暂停")
+
+    def resume(self):
+        """恢复传输"""
+        self._pause_event.set()
+        self.status_updated.emit("下载中")
+
+    def cancel(self):
+        """取消传输"""
+        self._cancelled = True
+        self._pause_event.set()
 
     def run(self):
         try:
@@ -129,6 +171,9 @@ class DownloadThread(QThread):
             self.pan.set_download_speed_limit(dl_limit)
 
             def _on_progress(downloaded, total):
+                if self._cancelled:
+                    return
+                self._pause_event.wait()  # 暂停时阻塞回调
                 if total > 0:
                     pct = int(downloaded * 100 / total)
                     self.progress_updated.emit(pct)
@@ -179,6 +224,10 @@ class DownloadThread(QThread):
 
             if not success:
                 raise RuntimeError("下载失败")
+
+            if self._cancelled:
+                self.status_updated.emit("已取消")
+                return
 
             self.progress_updated.emit(100)
             self.status_updated.emit("已完成")

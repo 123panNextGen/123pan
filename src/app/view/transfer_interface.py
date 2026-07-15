@@ -111,8 +111,14 @@ class TransferInterface(QWidget):
         )
         self.segmentedWidget.setCurrentItem("upload")
 
+        self.clearCompletedButton = PushButton(
+            FIF.DELETE.icon(), "清除已完成", self.topBarFrame
+        )
+
         self.topBarLayout.addWidget(self.titleLabel)
         self.topBarLayout.addWidget(self.segmentedWidget)
+        self.topBarLayout.addStretch(1)
+        self.topBarLayout.addWidget(self.clearCompletedButton, 0)
 
         self.mainLayout.addWidget(self.topBarFrame)
 
@@ -183,6 +189,7 @@ class TransferInterface(QWidget):
 
     def __connectSignalToSlot(self):
         self.segmentedWidget.currentItemChanged.connect(self.__onSegmentChanged)
+        self.clearCompletedButton.clicked.connect(self.__clearCompletedTasks)
 
     def __onSegmentChanged(self, routeKey):
         if routeKey == "upload":
@@ -322,6 +329,72 @@ class TransferInterface(QWidget):
             thread.quit()
             thread.wait(3000)
 
+    def __clearCompletedTasks(self):
+        """清除所有已完成/已取消/失败的任务"""
+        route = self.segmentedWidget.currentItem().routeKey()
+        if route == "upload":
+            tasks = self.upload_tasks
+            threads = self.upload_threads
+        else:
+            tasks = self.download_tasks
+            threads = self.download_threads
+
+        removed = 0
+        for task in list(tasks):
+            if task.status in ("已完成", "已取消", "失败"):
+                # 清理关联线程
+                for t in list(threads):
+                    if t.task is task:
+                        self.__cleanup_thread(t, route)
+                        break
+                tasks.remove(task)
+                removed += 1
+
+        if removed > 0:
+            if route == "upload":
+                self.__update_upload_table()
+            else:
+                self.__update_download_table()
+            InfoBar.success(
+                title="清理完成",
+                content=f"已清除 {removed} 个已完成任务",
+                parent=self,
+            )
+        else:
+            InfoBar.info(
+                title="无需清理",
+                content="没有已完成的任务",
+                parent=self,
+            )
+
+    def __pause_task(self, task, task_type):
+        """暂停任务"""
+        thread_list = (
+            self.upload_threads if task_type == "upload" else self.download_threads
+        )
+        for t in thread_list:
+            if t.task is task:
+                t.pause()
+                if task_type == "upload":
+                    self.__update_upload_table()
+                else:
+                    self.__update_download_table()
+                return
+
+    def __resume_task(self, task, task_type):
+        """恢复任务"""
+        thread_list = (
+            self.upload_threads if task_type == "upload" else self.download_threads
+        )
+        for t in thread_list:
+            if t.task is task:
+                t.resume()
+                if task_type == "upload":
+                    self.__update_upload_table()
+                else:
+                    self.__update_download_table()
+                return
+
     def __remove_task(self, task, task_type):
         """删除任务及其关联线程。"""
         if task_type == "upload":
@@ -394,14 +467,35 @@ class TransferInterface(QWidget):
             else:
                 status_item.setText(task.status)
 
-            # ---- 操作按钮（仅在行首次创建时构建，避免每 100ms 重建控件导致内存泄漏） ----
+            # ---- 操作按钮 ----
             if not table.cellWidget(row, 5):
                 action_layout = QHBoxLayout()
                 action_layout.setContentsMargins(0, 0, 0, 0)
+
+                # 暂停/恢复按钮
+                if task.status in ("上传中", "下载中"):
+                    pause_btn = PushButton(
+                        FIF.PAUSE.icon(), "暂停", table
+                    )
+                    pause_btn.setFixedSize(64, 24)
+                    pause_btn.clicked.connect(
+                        lambda _, t=task, tt=task_type: self.__pause_task(t, tt)
+                    )
+                    action_layout.addWidget(pause_btn)
+                elif task.status == "已暂停":
+                    resume_btn = PushButton(
+                        FIF.PLAY.icon(), "继续", table
+                    )
+                    resume_btn.setFixedSize(64, 24)
+                    resume_btn.clicked.connect(
+                        lambda _, t=task, tt=task_type: self.__resume_task(t, tt)
+                    )
+                    action_layout.addWidget(resume_btn)
+
                 delete_button = PushButton(
-                    FIF.DELETE.icon(), "删除任务", table
+                    FIF.DELETE.icon(), "删除", table
                 )
-                delete_button.setFixedSize(128, 24)
+                delete_button.setFixedSize(64, 24)
                 delete_button.clicked.connect(
                     lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
                 )
