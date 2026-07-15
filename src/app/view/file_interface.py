@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QTimer
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
@@ -79,6 +80,12 @@ class FileInterface(QWidget):
 
         # 搜索文本
         self._search_text = ""
+
+        # 搜索防抖：300ms 内无新输入才执行过滤，避免每键都重建表格
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self.__applySearchFilter)
 
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
@@ -570,33 +577,51 @@ class FileInterface(QWidget):
                 InfoBar.error(title=tr("file.msg_create_failed", "创建失败"), content=tr("file.msg_create_folder_failed", "创建文件夹失败"), parent=self)
 
     def __updateFileListUI(self, file_items):
-        """更新文件列表UI - 轻量级操作"""
-        # 缓存当前文件列表，供下载/预览/分享等操作查找文件详情
+        """更新文件列表UI - 批量操作，避免大量文件时逐行重绘卡死"""
         self._current_file_items = file_items
-        self.fileTable.setRowCount(len(file_items))
 
-        for row, file_item in enumerate(file_items):
-            file_name = file_item.get("FileName", "")
-            file_type = int(file_item.get("Type", 0))
-            file_size = int(file_item.get("Size", 0) or 0)
-            file_id = int(file_item.get("FileId", 0) or 0)
+        # 暂停重绘和信号，批量更新完成后再一次性刷新
+        self.fileTable.setUpdatesEnabled(False)
+        self.fileTable.blockSignals(True)
+        try:
+            count = len(file_items)
+            self.fileTable.setRowCount(count)
 
-            type_text = tr("file.type_folder", "文件夹") if file_type == 1 else tr("file.type_file", "文件")
-            size_text = format_file_size(file_size)
+            for row, file_item in enumerate(file_items):
+                file_name = file_item.get("FileName", "")
+                file_type = int(file_item.get("Type", 0))
+                file_size = int(file_item.get("Size", 0) or 0)
+                file_id = int(file_item.get("FileId", 0) or 0)
 
-            name_item = QTableWidgetItem(file_name)
-            name_item.setData(Qt.ItemDataRole.UserRole, file_id)
-            name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
-            name_item.setIcon(
-                FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
-            )
+                type_text = tr("file.type_folder", "文件夹") if file_type == 1 else tr("file.type_file", "文件")
+                size_text = format_file_size(file_size)
 
-            type_item = QTableWidgetItem(type_text)
-            size_item = QTableWidgetItem(size_text)
+                # 复用已有的 QTableWidgetItem，没有才新建
+                name_item = self.fileTable.item(row, 0)
+                if name_item is None:
+                    name_item = QTableWidgetItem()
+                    self.fileTable.setItem(row, 0, name_item)
+                name_item.setText(file_name)
+                name_item.setData(Qt.ItemDataRole.UserRole, file_id)
+                name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
+                name_item.setIcon(
+                    FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
+                )
 
-            self.fileTable.setItem(row, 0, name_item)
-            self.fileTable.setItem(row, 1, type_item)
-            self.fileTable.setItem(row, 2, size_item)
+                type_item = self.fileTable.item(row, 1)
+                if type_item is None:
+                    type_item = QTableWidgetItem()
+                    self.fileTable.setItem(row, 1, type_item)
+                type_item.setText(type_text)
+
+                size_item = self.fileTable.item(row, 2)
+                if size_item is None:
+                    size_item = QTableWidgetItem()
+                    self.fileTable.setItem(row, 2, size_item)
+                size_item.setText(size_text)
+        finally:
+            self.fileTable.blockSignals(False)
+            self.fileTable.setUpdatesEnabled(True)
 
     def __onLoadListFinished(self, file_items, error):
         """加载文件列表完成后的回调 - 只负责UI更新"""
@@ -613,9 +638,13 @@ class FileInterface(QWidget):
             self.__updateFileListUI(sorted_items)
 
     def __onSearchTextChanged(self, text):
-        """搜索文本变化时过滤文件列表"""
+        """搜索文本变化时启动防抖，清空时立即恢复"""
         self._search_text = text.strip().lower()
-        self.__applySearchFilter()
+        if not self._search_text:
+            self._search_timer.stop()
+            self.__applySearchFilter()
+        else:
+            self._search_timer.start()
 
     def __applySearchFilter(self):
         """根据搜索文本过滤当前文件列表"""
