@@ -21,7 +21,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
-from ..common.api import format_file_size
+from ..common.utils import format_file_size
 from ..common.config import ConfigManager
 
 from ..common.log import get_logger

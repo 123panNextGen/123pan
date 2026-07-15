@@ -34,7 +34,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
-from ..common.api import format_file_size
+from ..common.utils import format_file_size
 from ..common.const import MAX_STORAGE_CAPACITY
 from ..common.log import get_logger
 from ..tasks.file_tasks import (
