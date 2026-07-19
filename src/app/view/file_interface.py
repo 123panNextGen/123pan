@@ -576,9 +576,14 @@ class FileInterface(QWidget):
             else:
                 InfoBar.error(title=tr("file.msg_create_failed", "创建失败"), content=tr("file.msg_create_folder_failed", "创建文件夹失败"), parent=self)
 
-    def __updateFileListUI(self, file_items):
-        """更新文件列表UI - 批量操作，避免大量文件时逐行重绘卡死"""
-        self._current_file_items = file_items
+    def __updateFileListUI(self, file_items, update_cache=True):
+        """更新文件列表UI - 批量操作，避免大量文件时逐行重绘卡死
+
+        update_cache=False 时不会覆盖 _current_file_items，
+        用于搜索过滤场景，避免过滤结果覆盖完整列表缓存。
+        """
+        if update_cache:
+            self._current_file_items = file_items
 
         # 暂停重绘和信号，批量更新完成后再一次性刷新
         self.fileTable.setUpdatesEnabled(False)
@@ -657,13 +662,13 @@ class FileInterface(QWidget):
             self.__updateFileListUI(sorted_items)
             return
 
-        # 按搜索文本过滤
+        # 按搜索文本过滤（不覆盖 _current_file_items 缓存，确保清空搜索后能恢复完整列表）
         filtered = [
             item for item in self._current_file_items
             if self._search_text in item.get("FileName", "").lower()
         ]
         sorted_items = self.__sortFileList(filtered)
-        self.__updateFileListUI(sorted_items)
+        self.__updateFileListUI(sorted_items, update_cache=False)
 
     def __sortFileList(self, file_items):
         """对文件列表进行排序，文件夹始终在前"""
