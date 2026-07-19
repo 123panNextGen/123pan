@@ -4,6 +4,7 @@
 设计原则：
 - 以目录 ID 为键，存储该目录下的完整文件列表
 - 增量更新：仅标记需要刷新的目录，避免每次全量请求
+- TTL 自动过期：缓存超过指定时间后自动失效，防止多端操作导致数据过时
 - 支持强制刷新指定目录和清空整个数据库
 - 线程安全：使用简单的锁保护写操作
 """
@@ -12,6 +13,7 @@ import json
 import os
 import threading
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .const import CONFIG_DIR
@@ -20,6 +22,9 @@ from .log import get_logger
 logger = get_logger(__name__)
 
 FILE_DB_PATH = CONFIG_DIR / "file_list_db.json"
+
+# 缓存默认有效期（秒），超过此时间未更新的缓存视为过期
+DEFAULT_CACHE_TTL_SECONDS = 5 * 60  # 5 分钟
 
 
 class FileListDB:
@@ -152,13 +157,13 @@ class FileListDB:
                 "files": files,
                 "total": total,
                 "all_loaded": all_loaded,
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             self._dirty_dirs.discard(dir_key)
             self._save()
 
     def is_dirty(self, dir_id):
-        """检查目录是否需要刷新。
+        """检查目录是否需要刷新（手动标记脏）。
 
         Args:
             dir_id: 目录 ID
@@ -169,6 +174,39 @@ class FileListDB:
         dir_key = str(dir_id)
         with self._lock:
             return dir_key in self._dirty_dirs
+
+    def is_stale(self, dir_id, ttl_seconds=None):
+        """检查目录缓存是否已过期（超过 TTL 未更新）。
+
+        用于检测其他客户端操作导致的数据变更。
+        缓存过期后会自动从服务器刷新，无需手动标记。
+
+        Args:
+            dir_id: 目录 ID
+            ttl_seconds: 过期时间（秒），默认使用 DEFAULT_CACHE_TTL_SECONDS
+
+        Returns:
+            True 表示缓存已过期，需要从服务器刷新
+        """
+        if ttl_seconds is None:
+            ttl_seconds = DEFAULT_CACHE_TTL_SECONDS
+
+        dir_key = str(dir_id)
+        with self._lock:
+            dir_data = self._data.get("dirs", {}).get(dir_key)
+            if dir_data is None:
+                return True  # 无缓存视为过期
+
+            updated_at_str = dir_data.get("updated_at", "")
+            if not updated_at_str:
+                return True
+
+            try:
+                updated_at = datetime.fromisoformat(updated_at_str)
+                age = datetime.now(timezone.utc) - updated_at
+                return age > timedelta(seconds=ttl_seconds)
+            except (ValueError, TypeError):
+                return True
 
     def mark_dirty(self, dir_id):
         """标记目录需要强制刷新。"""
@@ -221,7 +259,7 @@ class FileListDB:
                 dir_data["files"] = files
 
             from datetime import datetime
-            dir_data["updated_at"] = datetime.now().isoformat()
+            dir_data["updated_at"] = datetime.now(timezone.utc).isoformat()
             self._save()
 
     def delete_dir(self, dir_id):

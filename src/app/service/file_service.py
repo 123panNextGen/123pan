@@ -36,7 +36,11 @@ class FileService:
         # 非强制刷新时，优先使用缓存
         if not force_refresh:
             cached_files, cached_total, cached_all = self._db.get_dir(file_id)
-            cache_valid = cached_files is not None and not self._db.is_dirty(file_id)
+            cache_valid = (
+                cached_files is not None
+                and not self._db.is_dirty(file_id)
+                and not self._db.is_stale(file_id)
+            )
 
             if cache_valid:
                 # 缓存有完整数据 → 直接返回，不请求服务器
