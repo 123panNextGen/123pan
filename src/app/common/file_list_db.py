@@ -14,7 +14,7 @@ import threading
 import tempfile
 from pathlib import Path
 
-from .config import CONFIG_DIR
+from .const import CONFIG_DIR
 from .log import get_logger
 
 logger = get_logger(__name__)

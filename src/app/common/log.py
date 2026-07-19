@@ -4,8 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .config import CONFIG_DIR
-from .const import LOG_RETENTION_DAYS
+from .const import CONFIG_DIR, LOG_RETENTION_DAYS
 LOG_DIR = CONFIG_DIR / "logs"
 _LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOG_FILE = LOG_DIR / f"log_{_LOG_TIMESTAMP}.log"

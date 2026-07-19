@@ -1,9 +1,9 @@
 import json
 import os
-import platform
 import sys
 import tempfile
 from pathlib import Path
+from .const import CONFIG_DIR
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -13,11 +13,6 @@ def isWin11():
     return sys.platform == "win32" and sys.getwindowsversion().build >= 22000
 
 
-# 配置文件路径
-if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan"
-else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
@@ -26,6 +21,7 @@ class ConfigManager:
 
     _config_cache = None
     _cache_dirty = False
+    _cache_file = None  # 缓存对应的文件路径，用于检测路径变化
 
     @staticmethod
     def ensure_config_dir():
@@ -59,10 +55,16 @@ class ConfigManager:
         """标记缓存为脏，下次 load_config 时重新读取。"""
         ConfigManager._config_cache = None
         ConfigManager._cache_dirty = False
+        ConfigManager._cache_file = None
 
     @staticmethod
     def load_config():
         """加载配置（带内存缓存，避免重复磁盘 I/O）。"""
+        # 如果配置文件路径发生变化，失效缓存
+        if ConfigManager._cache_file != str(CONFIG_FILE):
+            ConfigManager._config_cache = None
+            ConfigManager._cache_file = str(CONFIG_FILE)
+
         if ConfigManager._config_cache is not None and not ConfigManager._cache_dirty:
             return ConfigManager._config_cache
 

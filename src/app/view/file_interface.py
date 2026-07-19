@@ -688,36 +688,26 @@ class FileInterface(QWidget):
 
     def __sortFileList(self, file_items):
         """对文件列表进行排序，文件夹始终在前"""
-        # 分离文件夹和文件
         folders = []
         files = []
 
         for item in file_items:
             file_type = int(item.get("Type", 0))
-            if file_type == 1:  # 文件夹
+            if file_type == 1:
                 folders.append(item)
-            else:  # 文件
+            else:
                 files.append(item)
 
-        # 根据排序模式对文件夹和文件分别排序
-        if self.sort_mode == 0:  # 按名称排序（仅翻转，不按字母排序）
-            # 不排序，保持原始顺序，但可以翻转
-            pass
+        if self.sort_mode == 0:  # 按名称排序
+            key_func = lambda x: x.get("FileName", "").lower()
+            folders.sort(key=key_func, reverse=not self.sort_ascending)
+            files.sort(key=key_func, reverse=not self.sort_ascending)
         elif self.sort_mode == 2:  # 按大小排序
-            # sort_ascending=True 表示升序（小到大），reverse=False
-            # sort_ascending=False 表示降序（大到小），reverse=True
             reverse = not self.sort_ascending
             folders.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
             files.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
 
-        # 合并结果：文件夹在前，文件在后
-        result = folders + files
-
-        # 如果是按名称排序且需要降序，则翻转整个列表
-        if self.sort_mode == 0 and not self.sort_ascending:
-            result.reverse()
-
-        return result
+        return folders + files
 
     def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
         """列头排序指示器改变时的处理（纯客户端排序，不请求服务器）。"""
