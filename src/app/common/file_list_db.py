@@ -14,7 +14,6 @@ import os
 import threading
 import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from .const import CONFIG_DIR
 from .log import get_logger
@@ -24,7 +23,7 @@ logger = get_logger(__name__)
 FILE_DB_PATH = CONFIG_DIR / "file_list_db.json"
 
 # 缓存默认有效期（秒），超过此时间未更新的缓存视为过期
-DEFAULT_CACHE_TTL_SECONDS = 5 * 60  # 5 分钟
+DEFAULT_CACHE_TTL_SECONDS = 30 * 60  # 30 分钟
 
 
 class FileListDB:
