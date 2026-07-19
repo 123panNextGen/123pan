@@ -8,7 +8,7 @@ from pathlib import Path
 
 # 版本信息
 YEAR = 2026
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
 
 # 日志保留天数
