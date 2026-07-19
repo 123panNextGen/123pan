@@ -26,7 +26,7 @@ class FileService:
             file_id: 文件夹ID
             page: 当前页码（0基）
             list_len: 已加载的文件数量
-            all: 是否强制获取所有文件
+            all: 是否获取所有文件（仅当缓存不完整时才请求服务器）
             limit: 每页限制数量
             force_refresh: 是否跳过缓存强制从服务器获取
 
@@ -34,14 +34,32 @@ class FileService:
             (code, lists, total, all_file, pages_read)
         """
         # 非强制刷新时，优先使用缓存
-        if not force_refresh and not all and page == 0:
+        if not force_refresh:
             cached_files, cached_total, cached_all = self._db.get_dir(file_id)
-            if cached_files is not None and not self._db.is_dirty(file_id):
+            cache_valid = cached_files is not None and not self._db.is_dirty(file_id)
+
+            if cache_valid:
+                # 缓存有完整数据 → 直接返回，不请求服务器
+                if cached_all:
+                    logger.debug(
+                        "使用完整缓存: file_id=%s, files=%d, total=%d",
+                        file_id, len(cached_files), cached_total,
+                    )
+                    return 0, cached_files, cached_total, True, 1
+
+                # 缓存不完整但调用方不要求全量 → 返回已有缓存
+                if not all:
+                    logger.debug(
+                        "使用部分缓存: file_id=%s, files=%d, total=%d",
+                        file_id, len(cached_files), cached_total,
+                    )
+                    return 0, cached_files, cached_total, False, 1
+
+                # 缓存不完整且调用方要求全量 → 继续请求服务器补全
                 logger.debug(
-                    "使用缓存: file_id=%s, files=%d, total=%d",
+                    "缓存不完整，继续从服务器获取: file_id=%s, cached=%d, total=%d",
                     file_id, len(cached_files), cached_total,
                 )
-                return 0, cached_files, cached_total, cached_all, 1
 
         get_pages = 3
         start_page = page * get_pages + 1
