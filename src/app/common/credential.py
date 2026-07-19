@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from .config import CONFIG_DIR
+from .const import CONFIG_DIR
 from .log import get_logger
 
 logger = get_logger(__name__)

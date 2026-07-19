@@ -9,7 +9,8 @@
 
 设计原则：
 - 预览组件与下载逻辑完全分离
-- 不使用额外依赖（仅 PyQt6 内置）
+- 使用 Fluent 主题控件
+- 不使用额外依赖（仅 PyQt6 + qfluentwidgets 内置）
 """
 
 import shutil
@@ -21,11 +22,16 @@ from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QProgressBar,
     QWidget,
-    QMessageBox,
+    QLabel,
+)
+
+from qfluentwidgets import (
+    PushButton,
+    ProgressBar,
+    MessageBox,
+    StrongBodyLabel,
+    BodyLabel,
 )
 
 from .preview_manager import is_preview_supported, create_preview_widget
@@ -131,26 +137,30 @@ class PreviewDialog(QDialog):
 
         # 进度区域（下载时显示）
         self._progress_widget = QWidget()
+        self._progress_widget.setObjectName("previewProgressWidget")
         progress_layout = QVBoxLayout(self._progress_widget)
         progress_layout.setContentsMargins(40, 40, 40, 40)
-        progress_layout.setSpacing(12)
+        progress_layout.setSpacing(16)
 
-        self._status_label = QLabel("准备下载...")
+        self._status_label = StrongBodyLabel("准备下载...")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_label.setStyleSheet("color: #888; font-size: 14px;")
         progress_layout.addWidget(self._status_label)
 
-        self._progress_bar = QProgressBar()
+        progress_layout.addSpacing(8)
+
+        self._progress_bar = ProgressBar(self._progress_widget)
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(0)
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setFixedHeight(24)
         progress_layout.addWidget(self._progress_bar)
 
+        progress_layout.addSpacing(12)
+
         cancel_layout = QHBoxLayout()
         cancel_layout.addStretch()
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setFixedWidth(100)
+        cancel_btn = PushButton("取消")
+        cancel_btn.setMinimumWidth(100)
         cancel_btn.clicked.connect(self.reject)
         cancel_layout.addWidget(cancel_btn)
         cancel_layout.addStretch()
@@ -172,8 +182,7 @@ class PreviewDialog(QDialog):
         file_name = self._file_info.get("FileName", "")
 
         if not is_preview_supported(file_name):
-            QMessageBox.warning(
-                self,
+            MessageBox(
                 "不支持预览",
                 f"不支持预览此文件类型: {file_name}\n\n"
                 "支持的格式包括：\n"
@@ -181,7 +190,8 @@ class PreviewDialog(QDialog):
                 "视频 (mp4/mkv/avi/...) 、\n"
                 "音频 (mp3/wav/flac/...) 、\n"
                 "文本 (txt/py/json/md/...)",
-            )
+                self,
+            ).exec()
             self.reject()
             return
 
@@ -201,12 +211,12 @@ class PreviewDialog(QDialog):
         """下载完成回调。"""
         if error:
             self._status_label.setText(f"下载失败: {error}")
-            self._status_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+            self._status_label.setStyleSheet("color: #e74c3c;")
             return
 
         if not local_path:
             self._status_label.setText("下载失败: 文件为空")
-            self._status_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+            self._status_label.setStyleSheet("color: #e74c3c;")
             return
 
         self._tmp_file = local_path
@@ -240,10 +250,10 @@ class PreviewDialog(QDialog):
     def _show_content_error(self, message):
         """在内容区域显示错误。"""
         self._progress_widget.hide()
-        error_label = QLabel(message)
+        error_label = BodyLabel(message)
         error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         error_label.setStyleSheet(
-            "color: #e74c3c; font-size: 14px; padding: 40px;"
+            "color: #e74c3c; padding: 40px;"
         )
         self._content_layout.addWidget(error_label)
         self._content_widget.show()

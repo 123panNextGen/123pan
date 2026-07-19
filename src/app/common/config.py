@@ -1,8 +1,9 @@
 import json
 import os
-import platform
 import sys
+import tempfile
 from pathlib import Path
+from .const import CONFIG_DIR
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -12,16 +13,15 @@ def isWin11():
     return sys.platform == "win32" and sys.getwindowsversion().build >= 22000
 
 
-# 配置文件路径
-if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan"
-else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 class ConfigManager:
-    """配置管理类"""
+    """配置管理类，带内存缓存和原子写入。"""
+
+    _config_cache = None
+    _cache_dirty = False
+    _cache_file = None  # 缓存对应的文件路径，用于检测路径变化
 
     @staticmethod
     def ensure_config_dir():
@@ -30,31 +30,46 @@ class ConfigManager:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def load_config():
-        """加载配置"""
-        ConfigManager.ensure_config_dir()
-        default_config = {
+    def _get_default_config():
+        return {
             "currentAccount": "",
             "accounts": {},
             "settings": {
                 "defaultDownloadPath": str(Path.home() / "Downloads"),
                 "askDownloadLocation": True,
-                # 多线程下载开关
                 "multiThreadDownload": True,
-                # 速度限制（0 表示不限制，单位 KB/s）
                 "downloadSpeedLimit": 0,
                 "uploadSpeedLimit": 0,
-                # 代理配置
                 "proxyEnabled": False,
                 "proxyType": "http",
                 "proxyHost": "",
                 "proxyPort": 0,
                 "proxyUsername": "",
                 "proxyPassword": "",
-                # 日志等级
                 "logLevel": "DEBUG",
             },
         }
+
+    @staticmethod
+    def _invalidate_cache():
+        """标记缓存为脏，下次 load_config 时重新读取。"""
+        ConfigManager._config_cache = None
+        ConfigManager._cache_dirty = False
+        ConfigManager._cache_file = None
+
+    @staticmethod
+    def load_config():
+        """加载配置（带内存缓存，避免重复磁盘 I/O）。"""
+        # 如果配置文件路径发生变化，失效缓存
+        if ConfigManager._cache_file != str(CONFIG_FILE):
+            ConfigManager._config_cache = None
+            ConfigManager._cache_file = str(CONFIG_FILE)
+
+        if ConfigManager._config_cache is not None and not ConfigManager._cache_dirty:
+            return ConfigManager._config_cache
+
+        ConfigManager.ensure_config_dir()
+        default_config = ConfigManager._get_default_config()
 
         if CONFIG_FILE.exists():
             migrated = False
@@ -124,7 +139,9 @@ class ConfigManager:
                             logger.info("配置迁移: 补全默认设置 %s=%s", key, val)
 
                     if migrated:
-                        ConfigManager.save_config(config)
+                        ConfigManager._save_config_internal(config)
+                    ConfigManager._config_cache = config
+                    ConfigManager._cache_dirty = False
                     return config
             except Exception as e:
                 logger.error(f"加载配置失败: {e}")
@@ -134,19 +151,41 @@ class ConfigManager:
                     logger.info("配置文件已重置为默认值")
                 except Exception as e2:
                     logger.error(f"重写配置失败: {e2}")
+                ConfigManager._config_cache = default_config
+                ConfigManager._cache_dirty = False
                 return default_config
         logger.debug("配置文件不存在，使用默认配置")
+        ConfigManager._config_cache = default_config
+        ConfigManager._cache_dirty = False
         return default_config
 
     @staticmethod
     def save_config(config):
-        """保存配置"""
+        """保存配置（原子写入：先写临时文件再 rename）。"""
+        ConfigManager._config_cache = config
+        ConfigManager._cache_dirty = False
+        return ConfigManager._save_config_internal(config)
+
+    @staticmethod
+    def _save_config_internal(config):
+        """内部保存方法，执行实际的原子写入。"""
         try:
             ConfigManager.ensure_config_dir()
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            logger.debug("配置已保存到 %s", CONFIG_FILE)
-            return True
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(CONFIG_DIR), prefix=".config_", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, str(CONFIG_FILE))
+                logger.debug("配置已原子写入 %s", CONFIG_FILE)
+                return True
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
             return False

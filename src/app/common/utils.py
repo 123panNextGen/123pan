@@ -16,12 +16,23 @@ def format_file_size(size):
     Returns:
         格式化后的字符串，如 "1.5 GB"、"256 KB"
     """
-    units = ["B", "KB", "MB", "GB", "TB"]
-    for i in range(len(units)):
-        if size < 1024.0:
-            return f"{round(size, 2)} {units[i]}"
-        size /= 1024.0
-    return f"{size:.2f} {units[-1]}"
+    if size < 0:
+        return "0 B"
+    if size == 0:
+        return "0 B"
+
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    unit_index = 0
+    value = float(size)
+    while value >= 1024.0 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+
+    # B 级别显示整数，其他级别保留一位小数（兼容旧版行为）
+    rounded = round(value, 2)
+    if unit_index == 0:
+        return f"{int(rounded)} {units[unit_index]}"
+    return f"{rounded} {units[unit_index]}"
 
 
 class FileDataManager:

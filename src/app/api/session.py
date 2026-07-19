@@ -919,6 +919,55 @@ class NetSession:
     def restore_file(self, file_info: dict | FileItemModel) -> ApiReturnModel:
         return self.trash_file(file_info, operation=False)
 
+    def trash_delete(self, file_id_list: list[int]) -> ApiReturnModel:
+        """从回收站永久删除指定文件。
+
+        Args:
+            file_id_list: 要永久删除的文件 ID 列表
+
+        Returns:
+            ApiReturnModel
+        """
+        url = "https://api.123278.com/b/api/file/delete"
+        data = {
+            "fileIdList": [{"fileId": fid} for fid in file_id_list],
+            "event": "recycleDelete",
+            "operatePlace": 1,
+            "RequestSource": None,
+        }
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(url, json=data, timeout=10)
+        except requests.RequestException as e:
+            logger.error("永久删除请求失败: file_ids=%s, err=%s", file_id_list, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        msg = body.get("message", "")
+        logger.debug(
+            "永久删除 (%.2fs): file_ids=%s, code=%s, msg=%s",
+            elapsed, file_id_list, code, msg,
+        )
+        if code != 0:
+            logger.warning(
+                "永久删除: file_ids=%s, code=%s, msg=%s",
+                file_id_list, code, msg,
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg=msg,
+        )
+
     # ---- 下载链接 ----
 
     def get_file_link(

@@ -28,11 +28,12 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QGraphicsPixmapItem,
-    QPushButton,
     QLabel,
     QSlider,
     QSizePolicy,
 )
+
+from qfluentwidgets import TransparentToolButton, FluentIcon as FIF
 
 from ..common.log import get_logger
 
@@ -145,7 +146,7 @@ class ImagePreviewWidget(QWidget):
 
         toolbar.addStretch()
 
-        self._zoom_out_btn = QPushButton("−")
+        self._zoom_out_btn = TransparentToolButton(FIF.ZOOM_OUT.icon(), self)
         self._zoom_out_btn.setFixedSize(32, 32)
         self._zoom_out_btn.setToolTip("缩小 (Ctrl+滚轮)")
         toolbar.addWidget(self._zoom_out_btn)
@@ -158,13 +159,13 @@ class ImagePreviewWidget(QWidget):
         self._zoom_label.setStyleSheet("color: #888; font-size: 12px;")
         toolbar.addWidget(self._zoom_label)
 
-        self._zoom_in_btn = QPushButton("+")
+        self._zoom_in_btn = TransparentToolButton(FIF.ZOOM_IN.icon(), self)
         self._zoom_in_btn.setFixedSize(32, 32)
         self._zoom_in_btn.setToolTip("放大 (Ctrl+滚轮)")
         toolbar.addWidget(self._zoom_in_btn)
 
-        self._fit_btn = QPushButton("适应")
-        self._fit_btn.setFixedSize(48, 32)
+        self._fit_btn = TransparentToolButton(FIF.FIT_PAGE.icon(), self)
+        self._fit_btn.setFixedSize(32, 32)
         self._fit_btn.setToolTip("适应窗口")
         toolbar.addWidget(self._fit_btn)
 

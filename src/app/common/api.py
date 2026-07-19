@@ -100,19 +100,20 @@ class Pan123:
         self._auth.authorization = self.authorization
         self._auth.save_file()
 
-    def get_dir(self, save=True):
-        return self.get_dir_by_id(self.parent_file_id, save)
+    def get_dir(self, save=True, force_refresh=False):
+        return self.get_dir_by_id(self.parent_file_id, save, force_refresh=force_refresh)
 
-    def get_dir_by_id(self, file_id, save=True, all=False, limit=100):
+    def get_dir_by_id(self, file_id, save=True, all=False, limit=100,
+                      force_refresh=False):
         code, items, total, all_file, _ = self._file.get_dir_by_id(
             file_id, page=self.file_page, list_len=len(self.list),
-            all=all, limit=limit,
+            all=all, limit=limit, force_refresh=force_refresh,
         )
         if code == 2:
             logger.warning("token 过期，正在尝试重新登录")
             login_code = self.login()
             if login_code == 200:
-                return self.get_dir_by_id(file_id, save, all, limit)
+                return self.get_dir_by_id(file_id, save, all, limit, force_refresh)
             logger.error("重新登录失败")
             return code, []
         if code != 0:
@@ -141,6 +142,10 @@ class Pan123:
 
     def share(self, file_id_list, share_pwd=""):
         return self._file.share(file_id_list, share_pwd)
+
+    def permanent_delete_files(self, file_id_list):
+        """从回收站永久删除指定文件"""
+        return self._file.permanent_delete_files(file_id_list)
 
     def up_load(self, file_path):
         return self._upload.up_load(file_path, self.parent_file_id)
