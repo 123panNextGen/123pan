@@ -1,4 +1,5 @@
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QVBoxLayout,
@@ -31,8 +32,9 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("login.title", "登录123云盘"))
-        self.resize(460, 320)
-        self.setFixedSize(460, 320)
+        # 使用最小尺寸替代固定尺寸，兼容高 DPI 显示器
+        self.setMinimumSize(420, 300)
+        self.resize(480, 360)
         logger.debug("LoginDialog 初始化")
 
         layout = QVBoxLayout(self)
@@ -42,25 +44,34 @@ class LoginDialog(QDialog):
         # 标题
         title = TitleLabel()
         title.setText(tr("login.welcome", "欢迎使用123云盘"))
-        layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        layout.addSpacing(10)
 
         form = QFormLayout()
         form.setSpacing(15)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         # 账户选择下拉框
         self.cbo_accounts = QComboBox()
         self.cbo_accounts.setEditable(True)
         self.cbo_accounts.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.cbo_accounts.lineEdit().setPlaceholderText(tr("login.account_placeholder", "选择或输入账户"))
+        self.cbo_accounts.setMinimumHeight(36)
+        self.cbo_accounts.lineEdit().setPlaceholderText(
+            tr("login.account_placeholder", "选择或输入账户")
+        )
         form.addRow(tr("login.account_label", "账户"), self.cbo_accounts)
 
         # 密码输入框
         self.le_pass = LineEdit()
         self.le_pass.setPlaceholderText(tr("login.password_placeholder", "请输入密码"))
         self.le_pass.setEchoMode(LineEdit.EchoMode.Password)
+        self.le_pass.setMinimumHeight(36)
         form.addRow(tr("login.password_label", "密码"), self.le_pass)
 
         layout.addLayout(form)
+        layout.addSpacing(10)
 
         h = QHBoxLayout()
         h.addStretch()
@@ -68,12 +79,14 @@ class LoginDialog(QDialog):
         # 登录按钮
         self.btn_ok = PrimaryPushButton()
         self.btn_ok.setText(tr("login.login_btn", "登录"))
-        self.btn_ok.setMinimumWidth(100)
+        self.btn_ok.setMinimumWidth(120)
+        self.btn_ok.setMinimumHeight(36)
 
         # 取消按钮
         self.btn_cancel = PushButton()
         self.btn_cancel.setText(tr("login.cancel_btn", "取消"))
-        self.btn_cancel.setMinimumWidth(100)
+        self.btn_cancel.setMinimumWidth(120)
+        self.btn_cancel.setMinimumHeight(36)
 
         h.addWidget(self.btn_ok)
         h.addWidget(self.btn_cancel)
