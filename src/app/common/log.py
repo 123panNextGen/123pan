@@ -1,17 +1,11 @@
 import logging
 import os
-import platform
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from .config import CONFIG_DIR
 from .const import LOG_RETENTION_DAYS
-
-# 配置文件路径
-if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan"
-else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
 LOG_DIR = CONFIG_DIR / "logs"
 _LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOG_FILE = LOG_DIR / f"log_{_LOG_TIMESTAMP}.log"

@@ -276,13 +276,24 @@ class FileInterface(QWidget):
         self.refreshButton.clicked.connect(self.__refreshFileList)
 
     def __loadPanAndData(self):
+        """加载 Pan123 实例并初始化数据。
+
+        优先使用外部传入的 pan（由 MainWindow 在登录流程中设置），
+        如果未设置则尝试从配置文件加载。
+        """
+        if self.pan is None:
+            try:
+                self.pan = Pan123(readfile=True)
+            except Exception as e:
+                self.__setErrorBreadcrumb(tr("file.init_error", "初始化失败: {}").format(e))
+                self.backButton.setEnabled(False)
+                return
+
         try:
-            self.pan = Pan123(readfile=True)
             self.__initTree()
             self.__loadCurrentList()
             self.__updateBreadcrumb()
             self.__updateBackButtonState()
-            # 统计并更新云盘存储信息
             self.load_and_update_storage_info()
         except Exception as e:
             self.__setErrorBreadcrumb(tr("file.init_error", "初始化失败: {}").format(e))
@@ -406,31 +417,35 @@ class FileInterface(QWidget):
             # 文件：尝试预览
             self.__previewFile()
 
-    def __loadCurrentList(self):
+    def __loadCurrentList(self, force_refresh=False):
         if not self.pan:
             logger.warning("__loadCurrentList: pan 未设置")
             return
 
-        logger.debug("加载文件列表: dir_id=%s", self.current_dir_id)
+        logger.debug("加载文件列表: dir_id=%s, force=%s", self.current_dir_id, force_refresh)
         self.fileTable.setRowCount(0)
 
         signals = _LoadListSignals()
         signals.finished.connect(self.__onLoadListFinished)
-        task = LoadListTask(self.__fetchDirList, self.current_dir_id, signals)
+        task = LoadListTask(
+            lambda: self.__fetchDirList(self.current_dir_id, force_refresh),
+            self.current_dir_id, signals,
+        )
 
         QThreadPool.globalInstance().start(task)
 
-    def __fetchDirList(self, dir_id):
+    def __fetchDirList(self, dir_id, force_refresh=False):
         if not self.pan:
             logger.warning("__fetchDirList: pan 未设置")
             return []
 
-        logger.debug("异步获取目录列表: dir_id=%s", dir_id)
+        logger.debug("异步获取目录列表: dir_id=%s, force=%s", dir_id, force_refresh)
         cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
         self.pan.file_page = 0
         try:
             code, items = self.pan.get_dir_by_id(
-                dir_id, save=False, all=True, limit=100
+                dir_id, save=False, all=True, limit=100,
+                force_refresh=force_refresh,
             )
             return items if code == 0 else []
         except Exception:
@@ -438,7 +453,7 @@ class FileInterface(QWidget):
         finally:
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
-    def _reload_dir_data(self, dir_id):
+    def _reload_dir_data(self, dir_id, force_refresh=False):
         """在后台线程中重新加载目录数据和文件夹列表。
 
         仅供 QRunnable 的 run() 方法调用。
@@ -448,7 +463,8 @@ class FileInterface(QWidget):
         self.pan.file_page = 0
         try:
             code, items = self.pan.get_dir_by_id(
-                dir_id, save=False, all=True, limit=100
+                dir_id, save=False, all=True, limit=100,
+                force_refresh=force_refresh,
             )
             folder_items = []
             if code == 0:
@@ -704,22 +720,22 @@ class FileInterface(QWidget):
         return result
 
     def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
-        """列头排序指示器改变时的处理"""
-        # 只处理名称列（0）和大小列（2）的排序
-        if logicalIndex in [0, 2]:
-            if logicalIndex == self.sort_mode:
-                # 点击同一列，切换排序方向
-                self.sort_ascending = not self.sort_ascending
-            else:
-                # 点击不同列，切换到新列
-                self.sort_mode = logicalIndex
-                # 如果是大小列，默认使用降序；名称列默认使用升序
-                if logicalIndex == 2:
-                    self.sort_ascending = False
-                else:
-                    self.sort_ascending = True
-            # 重新加载当前列表以应用新的排序
-            self.__loadCurrentList()
+        """列头排序指示器改变时的处理（纯客户端排序，不请求服务器）。"""
+        if logicalIndex not in [0, 2]:
+            return
+
+        if logicalIndex == self.sort_mode:
+            self.sort_ascending = not self.sort_ascending
+        else:
+            self.sort_mode = logicalIndex
+            self.sort_ascending = True if logicalIndex == 0 else False
+
+        # 客户端重新排序，不重新请求服务器
+        if self._search_text:
+            self.__applySearchFilter()
+        else:
+            sorted_items = self.__sortFileList(self._current_file_items)
+            self.__updateFileListUI(sorted_items)
 
     def __updateTreeUI(self, folder_items):
         """更新树结构UI - 轻量级操作"""
@@ -915,12 +931,15 @@ class FileInterface(QWidget):
                 parent=self,
             )
 
-    def __refreshFileList(self):
-        """刷新文件列表"""
+    def __refreshFileList(self, force=False):
+        """刷新文件列表。
+
+        Args:
+            force: 是否强制从服务器获取（跳过缓存）
+        """
         self.searchBox.clear()
         self._search_text = ""
-        self.__loadCurrentList()
-        # 同时更新云盘存储信息
+        self.__loadCurrentList(force_refresh=force)
         self.load_and_update_storage_info()
 
     def __getSelectedRows(self):
