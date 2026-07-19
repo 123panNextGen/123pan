@@ -428,7 +428,7 @@ class FileInterface(QWidget):
         signals = _LoadListSignals()
         signals.finished.connect(self.__onLoadListFinished)
         task = LoadListTask(
-            lambda: self.__fetchDirList(self.current_dir_id, force_refresh),
+            lambda dir_id: self.__fetchDirList(dir_id, force_refresh),
             self.current_dir_id, signals,
         )
 
