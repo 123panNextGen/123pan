@@ -49,21 +49,6 @@ class FileItemModel:
     pin_yin: str
     starred_status: bool
 
-    def from_json(self, json: dict[str, Any]):
-        self.file_id = int(json["FileId"])
-        self.file_name = str(json["FileName"])
-        self._type = int(json["Type"])
-        self.size = int(json["Size"])
-        self.create_at = self._parse_timestamp(json["CreateAt"])
-        self.update_at = self._parse_timestamp(json["UpdateAt"])
-        self.hidden = bool(json["Hidden"])
-        self.etag = str(json["Etag"])
-        self.s3key_flag = str(json["S3KeyFlag"])
-        self.content_type = str(json["ContentType"])
-        self.parent_file_id = int(json["ParentFileId"])
-        self.pin_yin = str(json["PinYin"])
-        self.starred_status = bool(json["StarredStatus"])
-
     def to_json(self) -> dict[str, Any]:
         return {
             "FileId": self.file_id,

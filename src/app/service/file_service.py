@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 
 logger = get_logger(__name__)
@@ -15,9 +16,11 @@ class FileService:
 
     def __init__(self, session):
         self._session = session
+        self._db = FileListDB()
 
-    def get_dir_by_id(self, file_id, page=0, list_len=0, all=False, limit=100):
-        """按文件夹ID获取文件列表（支持分页）。
+    def get_dir_by_id(self, file_id, page=0, list_len=0, all=False, limit=100,
+                      force_refresh=False):
+        """按文件夹ID获取文件列表（支持分页和本地缓存）。
 
         Args:
             file_id: 文件夹ID
@@ -25,10 +28,21 @@ class FileService:
             list_len: 已加载的文件数量
             all: 是否强制获取所有文件
             limit: 每页限制数量
+            force_refresh: 是否跳过缓存强制从服务器获取
 
         Returns:
             (code, lists, total, all_file, pages_read)
         """
+        # 非强制刷新时，优先使用缓存
+        if not force_refresh and not all and page == 0:
+            cached_files, cached_total, cached_all = self._db.get_dir(file_id)
+            if cached_files is not None and not self._db.is_dirty(file_id):
+                logger.debug(
+                    "使用缓存: file_id=%s, files=%d, total=%d",
+                    file_id, len(cached_files), cached_total,
+                )
+                return 0, cached_files, cached_total, cached_all, 1
+
         get_pages = 3
         start_page = page * get_pages + 1
         lists = []
@@ -84,6 +98,10 @@ class FileService:
         if not all_file:
             logger.warning("文件夹内文件过多：%s/%s，未完全加载", lenth_now, total)
 
+        # 更新本地缓存
+        if lists:
+            self._db.save_dir(file_id, lists, total=total, all_loaded=all_file)
+
         return 0, lists, total, all_file, times
 
     def show(self, file_list_len, total, all_file):
@@ -113,6 +131,8 @@ class FileService:
             res_json = result.data
             file_id = res_json["Info"]["FileId"]
             logger.info("创建成功: %s", file_id)
+            # 标记缓存为脏，下次访问时重新加载
+            self._db.mark_dirty(parent_file_id)
             return file_id, ""
         except Exception as e:
             logger.error("创建文件夹解析失败: %s", e)
@@ -133,7 +153,8 @@ class FileService:
             logger.error("创建文件夹解析失败: %s", e)
             return None, str(e)
 
-    def delete_file(self, file_list, file, by_num=True, operation=True):
+    def delete_file(self, file_list, file, by_num=True, operation=True,
+                    parent_file_id=None):
         """删除或恢复文件。返回 (success, msg)。"""
         if by_num:
             if not str(file).isdigit():
@@ -154,9 +175,12 @@ class FileService:
             logger.error("删除文件失败: %s", result.msg)
             return False, result.msg
         logger.info("删除文件消息: %s", result.msg)
+        # 标记缓存为脏
+        if parent_file_id is not None:
+            self._db.mark_dirty(parent_file_id)
         return True, result.msg
 
-    def rename_file(self, file_id, new_name):
+    def rename_file(self, file_id, new_name, parent_file_id=None):
         """重命名文件或文件夹。
 
         Returns:
@@ -168,6 +192,9 @@ class FileService:
             logger.error("重命名失败: %s", result.msg)
             return False
         logger.info("重命名成功: %s", new_name)
+        # 标记缓存为脏
+        if parent_file_id is not None:
+            self._db.mark_dirty(parent_file_id)
         return True
 
     def delete_file_by_id(self, file_id, parent_file_id):

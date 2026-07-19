@@ -14,10 +14,11 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
     QLabel,
     QSlider,
 )
+
+from qfluentwidgets import TransparentToolButton, FluentIcon as FIF, StrongBodyLabel
 
 from ..common.log import get_logger
 
@@ -64,10 +65,7 @@ class AudioPreviewWidget(QWidget):
         info_layout.setSpacing(4)
 
         filename = Path(self._file_path).name
-        self._title_label = QLabel(filename)
-        self._title_label.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #333;"
-        )
+        self._title_label = StrongBodyLabel(filename)
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_label.setWordWrap(True)
         info_layout.addWidget(self._title_label)
@@ -98,25 +96,10 @@ class AudioPreviewWidget(QWidget):
         btn_layout.setSpacing(12)
         btn_layout.addStretch()
 
-        self._play_btn = QPushButton()
+        self._play_btn = TransparentToolButton(FIF.PLAY.icon(), self)
         self._play_btn.setFixedSize(56, 56)
         self._play_btn.setToolTip("播放/暂停")
-        self._play_btn.setStyleSheet(
-            """
-            QPushButton {
-                font-size: 24px;
-                border-radius: 28px;
-                background-color: #3498db;
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            """
-        )
         self._play_btn.clicked.connect(self._toggle_play)
-        self._update_play_button()
         btn_layout.addWidget(self._play_btn)
 
         btn_layout.addStretch()
@@ -179,9 +162,9 @@ class AudioPreviewWidget(QWidget):
 
     def _update_play_button(self):
         if self._is_playing:
-            self._play_btn.setText("⏸")
+            self._play_btn.setIcon(FIF.PAUSE.icon())
         else:
-            self._play_btn.setText("▶")
+            self._play_btn.setIcon(FIF.PLAY.icon())
 
     def _on_duration_changed(self, duration_ms):
         self._duration_ms = duration_ms

@@ -18,8 +18,9 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QPlainTextEdit,
-    QLabel,
 )
+
+from qfluentwidgets import BodyLabel
 
 from ..common.log import get_logger
 
@@ -80,12 +81,10 @@ class TextPreviewWidget(QWidget):
         # 文件信息栏
         file_size = Path(self._file_path).stat().st_size
         size_str = self._format_size(file_size)
-        info_label = QLabel(
+        info_label = BodyLabel(
             f"  {Path(self._file_path).name}  ({size_str})"
         )
-        info_label.setStyleSheet(
-            "color: #888; font-size: 12px; padding: 4px 8px;"
-        )
+        info_label.setStyleSheet("padding: 4px 8px;")
         layout.addWidget(info_label)
 
         # 文本编辑器

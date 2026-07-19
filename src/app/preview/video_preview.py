@@ -18,11 +18,12 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
     QLabel,
     QSlider,
     QStyle,
 )
+
+from qfluentwidgets import TransparentToolButton, FluentIcon as FIF
 
 from ..common.log import get_logger
 
@@ -91,11 +92,10 @@ class VideoPreviewWidget(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
 
-        self._play_btn = QPushButton()
+        self._play_btn = TransparentToolButton(FIF.PLAY.icon(), self)
         self._play_btn.setFixedSize(36, 36)
         self._play_btn.setToolTip("播放/暂停 (空格)")
         self._play_btn.clicked.connect(self._toggle_play)
-        self._update_play_button()
         btn_layout.addWidget(self._play_btn)
 
         self._time_label = QLabel("00:00 / 00:00")
@@ -153,9 +153,9 @@ class VideoPreviewWidget(QWidget):
 
     def _update_play_button(self):
         if self._is_playing:
-            self._play_btn.setText("⏸")
+            self._play_btn.setIcon(FIF.PAUSE.icon())
         else:
-            self._play_btn.setText("▶")
+            self._play_btn.setIcon(FIF.PLAY.icon())
 
     def _on_duration_changed(self, duration_ms):
         self._duration_ms = duration_ms

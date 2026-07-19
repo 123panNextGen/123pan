@@ -304,6 +304,22 @@ class SettingInterface(ScrollArea):
             self.debugGroup,
         )
 
+        self.refreshFileDbCard = PushSettingCard(
+            tr("刷新"),
+            FIF.SYNC,
+            tr("强制刷新文件列表"),
+            tr("清除本地文件列表缓存，下次浏览时从服务器重新获取"),
+            self.debugGroup,
+        )
+
+        self.deleteFileDbCard = PushSettingCard(
+            tr("删除"),
+            FIF.REMOVE,
+            tr("删除文件列表数据库"),
+            tr("完全删除本地文件列表数据库，下次启动时重建"),
+            self.debugGroup,
+        )
+
         # ---- 关于组 ----
         self.aboutGroup = SettingCardGroup(tr("关于"), self.scrollWidget)
         self.aboutCard = PrimaryPushSettingCard(
@@ -366,6 +382,8 @@ class SettingInterface(ScrollArea):
         self.debugGroup.addSettingCard(self.logLevelCard)
         self.debugGroup.addSettingCard(self.openLogFolderCard)
         self.debugGroup.addSettingCard(self.clearCacheCard)
+        self.debugGroup.addSettingCard(self.refreshFileDbCard)
+        self.debugGroup.addSettingCard(self.deleteFileDbCard)
 
         # 关于组
         self.aboutGroup.addSettingCard(self.aboutCard)
@@ -453,6 +471,38 @@ class SettingInterface(ScrollArea):
                 content=tr("settings.msg_no_cache_desc", "没有找到可清理的临时文件"),
                 parent=self,
             )
+
+    def __onRefreshFileDbClicked(self):
+        """强制刷新文件列表数据库（标记所有目录为脏）。"""
+        from ..common.file_list_db import FileListDB
+        db = FileListDB()
+        dir_count, file_count = db.get_stats()
+        db.mark_all_dirty()
+        logger.info("已标记 %d 个目录为脏，共 %d 个文件缓存", dir_count, file_count)
+        InfoBar.success(
+            title=tr("settings.msg_db_refresh", "刷新中"),
+            content=tr(
+                "settings.msg_db_refresh_desc",
+                "已标记 {} 个目录缓存为待刷新，下次浏览时将重新加载"
+            ).format(dir_count),
+            parent=self,
+        )
+
+    def __onDeleteFileDbClicked(self):
+        """删除文件列表数据库。"""
+        from ..common.file_list_db import FileListDB
+        db = FileListDB()
+        dir_count, file_count = db.get_stats()
+        db.delete_db()
+        logger.info("文件列表数据库已删除: %d 个目录, %d 个文件", dir_count, file_count)
+        InfoBar.success(
+            title=tr("settings.msg_db_deleted", "已删除"),
+            content=tr(
+                "settings.msg_db_deleted_desc",
+                "已删除本地文件列表数据库（{} 个目录, {} 个文件缓存），下次启动时将重建"
+            ).format(dir_count, file_count),
+            parent=self,
+        )
 
     # ---- 事件处理 ----
 
@@ -593,6 +643,8 @@ class SettingInterface(ScrollArea):
         )
         self.openLogFolderCard.clicked.connect(lambda: open_log_file())
         self.clearCacheCard.clicked.connect(self.__onClearCacheClicked)
+        self.refreshFileDbCard.clicked.connect(self.__onRefreshFileDbClicked)
+        self.deleteFileDbCard.clicked.connect(self.__onDeleteFileDbClicked)
 
         # 个性化
         self.languageCard.comboBox.currentTextChanged.connect(
