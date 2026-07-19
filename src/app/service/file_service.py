@@ -193,6 +193,28 @@ class FileService:
         file_list_data = result.data.data
         return [item.to_json() for item in file_list_data.info_list]
 
+    def permanent_delete_files(self, file_id_list):
+        """从回收站永久删除指定文件。
+
+        Args:
+            file_id_list: 文件 ID 列表
+
+        Returns:
+            (success, msg)
+        """
+        if not file_id_list:
+            return False, "文件列表为空"
+        result = self._session.trash_delete(file_id_list)
+        logger.debug(
+            "永久删除响应: file_ids=%s, code=%s, msg=%s",
+            file_id_list, result.code, result.msg,
+        )
+        if result.code != 0:
+            logger.error("永久删除失败: %s", result.msg)
+            return False, result.msg
+        logger.info("已永久删除 %d 个文件", len(file_id_list))
+        return True, result.msg
+
     def share(self, file_id_list, share_pwd=""):
         """创建分享链接。
 

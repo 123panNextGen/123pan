@@ -226,10 +226,10 @@ class TrashInterface(QWidget):
             return
 
         try:
-            for file_info in selected:
-                self.pan._file.delete_file(
-                    self._trash_items, file_info, by_num=False, operation=True
-                )
+            file_ids = [int(item.get("FileId", 0)) for item in selected]
+            success, msg = self.pan._file.permanent_delete_files(file_ids)
+            if not success:
+                raise RuntimeError(msg)
 
             file_names = ", ".join(
                 item.get("FileName", "") for item in selected[:3]

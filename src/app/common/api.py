@@ -142,6 +142,10 @@ class Pan123:
     def share(self, file_id_list, share_pwd=""):
         return self._file.share(file_id_list, share_pwd)
 
+    def permanent_delete_files(self, file_id_list):
+        """从回收站永久删除指定文件"""
+        return self._file.permanent_delete_files(file_id_list)
+
     def up_load(self, file_path):
         return self._upload.up_load(file_path, self.parent_file_id)
 
