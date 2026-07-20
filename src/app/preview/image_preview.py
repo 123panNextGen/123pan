@@ -28,9 +28,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QGraphicsPixmapItem,
-    QLabel,
-    QSlider,
-    QSizePolicy,
+    QLabel
 )
 
 from qfluentwidgets import TransparentToolButton, FluentIcon as FIF

@@ -23,10 +23,8 @@ from qfluentwidgets import (
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
-from ..common.api import Pan123
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.signals import _OpFinishedSignals
 
 logger = get_logger(__name__)
 

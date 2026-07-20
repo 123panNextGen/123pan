@@ -37,17 +37,21 @@ else
 fi
 
 NOFOLLOW=(
-  pytest pylint mypy unittest pdb doctest
-  setuptools wheel pip distutils ensurepip venv zipapp
-  pydoc
-  tkinter turtle idlelib
-  asyncio
-  sqlite3
-  http.server wsgiref cgi cgitb
-  numpy pandas matplotlib PIL scipy sklearn
-  IPython jupyter
-  profile cProfile
-  curses readline netrc getpass
+  pytest unittest pdb doctest test
+  tests tkinter turtle idlelib setuptools
+  wheel pip distutils ensurepip venv zipapp
+  pydoc pydoc_data http.server wsgiref cgi
+  cgitb numpy pandas scipy sklearn matplotlib
+  IPython jupyter profile cProfile curses
+  readline PyQt6.uic PyQt6.QtWebEngine
+  PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
+  PyQt6.QtWebChannel PyQt6.QtMultimedia
+  PyQt6.QtMultimediaWidgets PyQt6.QtBluetooth
+  PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
+  PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
+  PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
+  PyQt6.QtDataVisualization PyQt6.QtHelp
+  urllib3.contrib cryptography.x509 zstandard.tests
 )
 
 # UPX 不支持 ARM64 Windows PE 文件，仅在 x64 上启用

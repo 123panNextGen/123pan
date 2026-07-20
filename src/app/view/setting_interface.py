@@ -2,12 +2,9 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget,
-    QVBoxLayout,
     QLabel,
     QFileDialog,
-    QHBoxLayout,
     QSpinBox,
-    QLineEdit,
     QComboBox,
 )
 from PyQt6.QtCore import Qt, QUrl
@@ -22,7 +19,6 @@ from qfluentwidgets import (
     ScrollArea,
     PrimaryPushSettingCard,
     LineEdit,
-    BodyLabel,
     InfoBar,
 )
 from qfluentwidgets import FluentIcon as FIF

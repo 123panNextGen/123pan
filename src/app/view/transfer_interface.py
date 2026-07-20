@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtCore import Qt
-from pathlib import Path
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (

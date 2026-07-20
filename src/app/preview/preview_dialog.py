@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
-    QLabel,
 )
 
 from qfluentwidgets import (

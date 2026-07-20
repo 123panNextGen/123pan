@@ -13,14 +13,12 @@
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QSlider,
-    QStyle,
 )
 
 from qfluentwidgets import TransparentToolButton, FluentIcon as FIF

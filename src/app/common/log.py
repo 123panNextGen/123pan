@@ -2,7 +2,6 @@ import logging
 import os
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
 from .const import CONFIG_DIR, LOG_RETENTION_DAYS
 LOG_DIR = CONFIG_DIR / "logs"
