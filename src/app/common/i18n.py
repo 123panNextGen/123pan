@@ -1,7 +1,11 @@
-"""国际化（i18n）模块。
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-使用 JSON 翻译文件，支持动态切换语言。
-所有视图通过 tr() 函数获取翻译后的文本。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
 import json

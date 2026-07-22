@@ -1,13 +1,13 @@
 """
-传输任务和线程模块。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-包含：
-- TransferTask / UploadTask / DownloadTask: 数据传输任务模型
-- UploadThread: 后台上传线程（支持速度限制、暂停/恢复）
-- DownloadThread: 后台下载线程（支持多线程分片和速度限制、暂停/恢复）
-
-从 view/transfer_interface.py 提取，以分离 UI 和业务逻辑。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 import threading
 import time

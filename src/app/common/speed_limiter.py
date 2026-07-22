@@ -1,6 +1,11 @@
-"""基于令牌桶算法的速度限制器。
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-用于限制下载/上传速度，支持动态调整速率。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
 import threading

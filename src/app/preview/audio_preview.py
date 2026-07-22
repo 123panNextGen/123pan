@@ -1,11 +1,13 @@
 """
-音频预览器。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-复用 QMediaPlayer（与视频预览共享同一套 API），仅使用音频输出：
-- 不需要额外依赖
-- 播放/暂停、进度显示、音量控制
-- 不显示视频画面（纯音频模式）
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 from pathlib import Path
 

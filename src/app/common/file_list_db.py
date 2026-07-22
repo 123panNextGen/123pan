@@ -1,12 +1,11 @@
 """
-本地文件列表数据库（JSON 格式）。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-设计原则：
-- 以目录 ID 为键，存储该目录下的完整文件列表
-- 增量更新：仅标记需要刷新的目录，避免每次全量请求
-- TTL 自动过期：缓存超过指定时间后自动失效，防止多端操作导致数据过时
-- 支持强制刷新指定目录和清空整个数据库
-- 线程安全：使用简单的锁保护写操作
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
 import json
