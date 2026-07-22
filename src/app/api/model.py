@@ -151,3 +151,61 @@ class FileListResponse:
             message=str(json.get("message", json.get("Message", ""))),
             data=FileListData.from_dict(json.get("data", json.get("Data", {}))),
         )
+
+
+@dataclass
+class CloudUserInfoModel:
+    """云盘用户信息（来自 /b/api/user/info）。"""
+    uid: int
+    nickname: str
+    space_used: int       # 已用空间（字节）
+    space_total: int      # 永久空间总量（字节）
+    space_temp: int       # 临时空间（字节）
+    file_count: int
+    vip: bool
+    vip_expire: str       # VIP 到期日期
+    vip_level: int
+    head_image: str
+    direct_traffic: int   # 直链流量
+    share_traffic: int    # 分享流量
+    passport: int
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "CloudUserInfoModel":
+        data = json.get("data", json) if "data" in json else json
+        return cls(
+            uid=int(data.get("UID", data.get("uid", 0))),
+            nickname=str(data.get("Nickname", data.get("nickname", ""))),
+            space_used=int(data.get("SpaceUsed", data.get("spaceUsed", 0))),
+            space_total=int(data.get("SpacePermanent", data.get("spacePermanent", 0))),
+            space_temp=int(data.get("SpaceTemp", data.get("spaceTemp", 0))),
+            file_count=int(data.get("FileCount", data.get("fileCount", 0))),
+            vip=bool(data.get("Vip", data.get("vip", False))),
+            vip_expire=str(data.get("VipExpire", data.get("vipExpire", ""))),
+            vip_level=int(data.get("VipLevel", data.get("vipLevel", 0))),
+            head_image=str(data.get("HeadImage", data.get("headImage", ""))),
+            direct_traffic=int(data.get("DirectTraffic", data.get("directTraffic", 0))),
+            share_traffic=int(data.get("ShareTraffic", data.get("shareTraffic", 0))),
+            passport=int(data.get("Passport", data.get("passport", 0))),
+        )
+
+    def space_used_str(self):
+        """格式化已用空间（如 '525.1 GB'）。"""
+        return _format_bytes(self.space_used)
+
+    def space_total_str(self):
+        """格式化总空间（如 '28.5 TB'）。"""
+        return _format_bytes(self.space_total)
+
+    def traffic_str(self):
+        """格式化直链流量（如 '10.0 GB'）。"""
+        return _format_bytes(self.direct_traffic)
+
+
+def _format_bytes(size):
+    """字节数格式化为可读字符串。"""
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"

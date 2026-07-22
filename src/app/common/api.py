@@ -101,6 +101,14 @@ class Pan123:
             self.save_file()
         return code
 
+    def get_user_info(self):
+        """获取当前用户的云盘信息（UID、空间、VIP等）。
+
+        Returns:
+            ApiReturnModel，成功时 data 为 CloudUserInfoModel 实例
+        """
+        return self._auth.get_user_info()
+
     def save_file(self):
         self._auth.devicetype = self.devicetype
         self._auth.osversion = self.osversion

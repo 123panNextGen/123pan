@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 from .model import (
     ApiCode,
     ApiReturnModel,
+    CloudUserInfoModel,
     DeviceModel,
     FileItemModel,
     FileListResponse,
@@ -693,6 +694,47 @@ class NetSession:
                 "token": token,
                 "authorization": authorization,
             },
+        )
+
+    def get_user_info(self) -> ApiReturnModel:
+        """获取当前登录用户的云盘信息（UID、空间、VIP等）。
+
+        调用 /b/api/user/info 接口。
+        """
+        url = urljoin(BASE_URL, "/b/api/user/info")
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(url, timeout=(3, 5))
+        except requests.RequestException as e:
+            logger.error("获取用户信息失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("用户信息解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取用户信息 (%.2fs): code=%s", elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        info = CloudUserInfoModel.from_dict(body)
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data=info,
         )
 
     # ---- 文件列表 ----

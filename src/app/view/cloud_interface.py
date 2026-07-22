@@ -47,6 +47,7 @@ class CloudInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.pan = None
+        self._user_info = None
         self.setObjectName("CloudInterface")
 
         self.mainLayout = QVBoxLayout(self)
@@ -61,10 +62,10 @@ class CloudInterface(QWidget):
         title_label.setFont(title_font)
         self.mainLayout.addWidget(title_label)
 
-        # 创建设置卡片组
+        # ---- 账户信息卡片组 ----
         self.accountGroup = SettingCardGroup(tr("cloud.account_info", "账户信息"), self)
 
-        # 添加用户名显示（使用SettingCard样式）
+        # 用户名
         self.username_card = SettingCard(
             FIF.PEOPLE,
             tr("cloud.account", "账户"),
@@ -81,7 +82,37 @@ class CloudInterface(QWidget):
         self.username_card.hBoxLayout.addSpacing(16)
         self.accountGroup.addSettingCard(self.username_card)
 
-        # 添加切换账号卡片
+        # UID
+        self.uid_card = SettingCard(
+            FIF.CONTACT,
+            tr("cloud.uid", "UID"),
+            tr("cloud.uid_desc", "用户唯一标识"),
+            self.accountGroup,
+        )
+        self.uid_label = QLabel()
+        self.uid_label.setStyleSheet("color: #888; font-size: 13px;")
+        self.uid_card.hBoxLayout.addWidget(
+            self.uid_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.uid_card.hBoxLayout.addSpacing(16)
+        self.accountGroup.addSettingCard(self.uid_card)
+
+        # VIP 状态
+        self.vip_card = SettingCard(
+            FIF.CERTIFICATE,
+            tr("cloud.vip", "VIP"),
+            tr("cloud.vip_desc", "会员状态"),
+            self.accountGroup,
+        )
+        self.vip_label = QLabel()
+        self.vip_label.setStyleSheet("color: #888; font-size: 13px;")
+        self.vip_card.hBoxLayout.addWidget(
+            self.vip_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.vip_card.hBoxLayout.addSpacing(16)
+        self.accountGroup.addSettingCard(self.vip_card)
+
+        # 切换账号
         self.switch_card = PushSettingCard(
             tr("cloud.switch_account", "切换账号"),
             FIF.SYNC,
@@ -92,7 +123,7 @@ class CloudInterface(QWidget):
         self.switch_card.clicked.connect(self.switchAccountRequested.emit)
         self.accountGroup.addSettingCard(self.switch_card)
 
-        # 添加退出登录卡片
+        # 退出登录
         self.logout_card = PushSettingCard(
             tr("cloud.logout", "退出登录"),
             FIF.CLOSE,
@@ -103,15 +134,132 @@ class CloudInterface(QWidget):
         self.logout_card.clicked.connect(self.logoutRequested.emit)
         self.accountGroup.addSettingCard(self.logout_card)
 
-        # 将设置卡片组添加到主布局
         self.mainLayout.addWidget(self.accountGroup)
 
+        # ---- 存储信息卡片组 ----
+        self.storageGroup = SettingCardGroup(tr("cloud.storage_info", "存储信息"), self)
+
+        # 空间用量
+        self.space_card = SettingCard(
+            FIF.FOLDER,
+            tr("cloud.space", "空间用量"),
+            tr("cloud.space_desc", "已用空间 / 总空间"),
+            self.storageGroup,
+        )
+        self.space_label = QLabel()
+        self.space_label.setStyleSheet("color: #888; font-size: 13px;")
+        self.space_card.hBoxLayout.addWidget(
+            self.space_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.space_card.hBoxLayout.addSpacing(16)
+        self.storageGroup.addSettingCard(self.space_card)
+
+        # 文件数量
+        self.file_count_card = SettingCard(
+            FIF.DOCUMENT,
+            tr("cloud.file_count", "文件数量"),
+            tr("cloud.file_count_desc", "当前云盘中的文件总数"),
+            self.storageGroup,
+        )
+        self.file_count_label = QLabel()
+        self.file_count_label.setStyleSheet("color: #888; font-size: 13px;")
+        self.file_count_card.hBoxLayout.addWidget(
+            self.file_count_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.file_count_card.hBoxLayout.addSpacing(16)
+        self.storageGroup.addSettingCard(self.file_count_card)
+
+        # 直链流量
+        self.traffic_card = SettingCard(
+            FIF.LINK,
+            tr("cloud.traffic", "直链流量"),
+            tr("cloud.traffic_desc", "下载文件使用的直链流量配额"),
+            self.storageGroup,
+        )
+        self.traffic_label = QLabel()
+        self.traffic_label.setStyleSheet("color: #888; font-size: 13px;")
+        self.traffic_card.hBoxLayout.addWidget(
+            self.traffic_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.traffic_card.hBoxLayout.addSpacing(16)
+        self.storageGroup.addSettingCard(self.traffic_card)
+
+        self.mainLayout.addWidget(self.storageGroup)
         self.mainLayout.addStretch()
 
     def set_pan(self, pan):
         """设置Pan123实例并更新用户信息"""
         self.pan = pan
-        if self.pan and hasattr(self.pan, "user_name"):
+        if not self.pan:
+            return
+
+        # 显示用户名
+        if hasattr(self.pan, "user_name"):
             username = _mask_username(self.pan.user_name)
-            self.username_label.setText(tr("cloud.username_prefix", "用户名: {}").format(username))
-            logger.info("云盘界面已设置: %s", username)
+            self.username_label.setText(username)
+
+        # 异步获取用户云盘信息
+        self._fetch_user_info()
+
+    def _fetch_user_info(self):
+        """从 API 获取用户云盘信息（UID、空间、VIP等）。"""
+        try:
+            result = self.pan.get_user_info()
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            self._show_user_info_error()
+            return
+
+        if result.code != 0 or result.api_code_enum.value != 1:
+            logger.warning("获取用户信息返回异常: code=%s", result.code)
+            self._show_user_info_error()
+            return
+
+        self._user_info = result.data
+        self._update_display()
+
+    def _update_display(self):
+        """更新界面上的用户信息展示。"""
+        if not self._user_info:
+            return
+
+        info = self._user_info
+
+        # UID
+        self.uid_label.setText(str(info.uid))
+
+        # VIP 状态
+        if info.vip:
+            self.vip_label.setText(f"VIP{info.vip_level} · {info.vip_expire} 到期")
+            self.vip_label.setStyleSheet("color: #e6a23c; font-size: 13px; font-weight: bold;")
+        else:
+            self.vip_label.setText("非会员")
+            self.vip_label.setStyleSheet("color: #888; font-size: 13px;")
+
+        # 空间用量（含百分比）
+        used_str = info.space_used_str()
+        total_str = info.space_total_str()
+        if info.space_total > 0:
+            pct = info.space_used / info.space_total * 100
+            self.space_label.setText(f"{used_str} / {total_str} ({pct:.1f}%)")
+        else:
+            self.space_label.setText(f"{used_str} / {total_str}")
+
+        # 文件数量
+        self.file_count_label.setText(str(info.file_count))
+
+        # 直链流量
+        self.traffic_label.setText(info.traffic_str())
+
+        logger.info(
+            "用户信息已更新: uid=%s, vip=%s, space=%s/%s",
+            info.uid, info.vip, used_str, total_str,
+        )
+
+    def _show_user_info_error(self):
+        """用户信息获取失败时显示占位文本。"""
+        self.uid_label.setText("-")
+        self.vip_label.setText("-")
+        self.space_label.setText("-")
+        self.file_count_label.setText("-")
+        self.traffic_label.setText("-")
