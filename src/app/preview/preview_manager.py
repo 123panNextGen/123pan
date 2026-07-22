@@ -1,16 +1,13 @@
 """
-预览模块：根据文件类型自动选择合适的预览器。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-支持的格式：
-- 图片：png, jpg, jpeg, webp, gif, bmp, svg, ico
-- 视频：mp4, mkv, webm, avi, mov, flv, wmv
-- 音频：mp3, wav, flac, ogg, aac, wma, m4a
-- 文本：txt, log, py, json, xml, md, csv, ini, cfg, yml, yaml, toml
-
-预览器选择优先级（由 Qt Multimedia 支持决定）：
-- 优先使用 QMediaPlayer（PyQt6.QtMultimediaWidgets）
-- 不支持时优雅降级为"不支持预览"提示
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 from .image_preview import ImagePreviewWidget
 from .video_preview import VideoPreviewWidget

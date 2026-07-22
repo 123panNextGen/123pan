@@ -1,17 +1,13 @@
 """
-预览对话框。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-负责：
-1. 从云端获取文件下载链接
-2. 下载文件到临时目录
-3. 根据文件类型选择合适的预览器展示
-4. 关闭时清理临时文件
-
-设计原则：
-- 预览组件与下载逻辑完全分离
-- 使用 Fluent 主题控件
-- 不使用额外依赖（仅 PyQt6 + qfluentwidgets 内置）
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 import shutil
 import tempfile
@@ -23,7 +19,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
-    QLabel,
 )
 
 from qfluentwidgets import (

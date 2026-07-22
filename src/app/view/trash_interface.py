@@ -1,9 +1,13 @@
-"""回收站管理界面。
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-显示回收站中的文件列表，支持恢复和永久删除操作。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, QThreadPool
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -23,10 +27,8 @@ from qfluentwidgets import (
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
-from ..common.api import Pan123
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.signals import _OpFinishedSignals
 
 logger = get_logger(__name__)
 

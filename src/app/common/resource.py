@@ -3,6 +3,16 @@
 # Created by: The Resource Compiler for Qt version 6.10.2
 # WARNING! All changes made in this file will be lost!
 
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+"""
+
 from PyQt6 import QtCore
 
 qt_resource_data = b"\

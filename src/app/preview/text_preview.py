@@ -1,13 +1,11 @@
 """
-文本预览器。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-使用 QPlainTextEdit 实现纯文本/代码文件预览：
-- 大文件分块加载（避免 UI 卡顿）
-- 只读模式
-- 等宽字体
-- 支持 UTF-8 / GBK 编码自动检测
-
-依赖：仅 PyQt6，无第三方库。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
 from pathlib import Path

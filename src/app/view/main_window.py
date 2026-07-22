@@ -1,26 +1,20 @@
-from PyQt6.QtCore import Qt, pyqtSignal, QEasingCurve, QUrl, QSize, QTimer
-from PyQt6.QtGui import QIcon, QDesktopServices, QColor
-from PyQt6.QtWidgets import (
-    QApplication,
-    QHBoxLayout,
-    QFrame,
-    QWidget,
-    QDialog,
-    QMessageBox,
-    QVBoxLayout,
-    QFormLayout,
-    QLineEdit,
-    QPushButton,
-)
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+"""
+
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QDialog
+
 
 from qfluentwidgets import (
-    NavigationAvatarWidget,
     NavigationItemPosition,
-    MessageBox,
-    FluentWindow,
-    SplashScreen,
-    SystemThemeListener,
-    isDarkTheme,
+    FluentWindow
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -31,7 +25,6 @@ from .cloud_interface import CloudInterface
 from .trash_interface import TrashInterface
 from .login_window import LoginDialog
 
-from ..common import resource
 from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger

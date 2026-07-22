@@ -1,14 +1,13 @@
 """
-预览模块。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-提供多媒体文件预览能力：
-- 图片预览（ImagePreviewWidget）
-- 视频预览（VideoPreviewWidget）
-- 音频预览（AudioPreviewWidget）
-- 文本预览（TextPreviewWidget）
-
-使用 preview_manager 根据文件类型自动选择合适的预览器。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 from .preview_manager import (
     get_previewer_for_file,

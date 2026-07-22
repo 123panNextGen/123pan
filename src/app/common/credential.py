@@ -1,12 +1,14 @@
-"""凭据加密工具模块。
+"""
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-使用操作系统原生密钥环或基于机器标识的对称加密，
-保护存储在配置文件中的敏感信息（如密码）。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
 
 import base64
-import hashlib
-import json
 import os
 import platform
 import secrets

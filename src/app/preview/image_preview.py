@@ -1,14 +1,13 @@
 """
-图片预览器。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-使用 QGraphicsView + QGraphicsPixmapItem 实现：
-- 平滑缩放（Ctrl+滚轮 / 按钮）
-- 适应窗口显示
-- 避免一次性加载超大图片（QGraphicsView 自动处理视口裁剪）
-- 支持 GIF 动画（QMovie）
-
-依赖：仅 PyQt6（QtGui + QtWidgets），无第三方库。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 from pathlib import Path
 
@@ -28,9 +27,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QGraphicsPixmapItem,
-    QLabel,
-    QSlider,
-    QSizePolicy,
+    QLabel
 )
 
 from qfluentwidgets import TransparentToolButton, FluentIcon as FIF

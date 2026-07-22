@@ -1,26 +1,23 @@
 """
-视频预览器。
+Copyright (C) 2026 123panNextGen
+[https://github.com/123panNextGen/123pan]
 
-使用 PyQt6.QtMultimediaWidgets 的 QMediaPlayer + QVideoWidget：
-- 不需要额外依赖（PyQt6 内置）
-- 支持常见视频格式（依赖系统编解码器）
-- 播放/暂停、进度拖动、音量控制
-
-注意：PyQt6 的 Qt Multimedia 使用系统后端（Windows: WMF, Linux: GStreamer）。
-如果系统缺少编解码器，部分格式可能无法播放。
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 """
+
 
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QSlider,
-    QStyle,
 )
 
 from qfluentwidgets import TransparentToolButton, FluentIcon as FIF
