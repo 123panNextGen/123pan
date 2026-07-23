@@ -11,6 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QDialog
 
+import sys
 
 from qfluentwidgets import (
     NavigationItemPosition,
@@ -40,6 +41,10 @@ class MainWindow(FluentWindow):
         self.setWindowTitle("123pan")
         self.resize(900, 600)
         logger.info("MainWindow 初始化")
+
+        # Linux 下禁用 Mica 效果，避免 "This plugin does not support setting window opacity" 错误
+        if sys.platform != "win32":
+            self.setMicaEffectEnabled(False)
 
         # 初始化子页面
         self.file_interface = FileInterface(self)

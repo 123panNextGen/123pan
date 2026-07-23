@@ -21,6 +21,7 @@ from qfluentwidgets import (
 
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..common.style_sheet import StyleSheet
 
 logger = get_logger(__name__)
 
@@ -84,13 +85,12 @@ class CloudInterface(QWidget):
 
         # UID
         self.uid_card = SettingCard(
-            FIF.CONTACT,
+            FIF.PEOPLE,
             tr("cloud.uid", "UID"),
             tr("cloud.uid_desc", "用户唯一标识"),
             self.accountGroup,
         )
         self.uid_label = QLabel()
-        self.uid_label.setStyleSheet("color: #888; font-size: 13px;")
         self.uid_card.hBoxLayout.addWidget(
             self.uid_label, 0, Qt.AlignmentFlag.AlignRight
         )
@@ -105,7 +105,6 @@ class CloudInterface(QWidget):
             self.accountGroup,
         )
         self.vip_label = QLabel()
-        self.vip_label.setStyleSheet("color: #888; font-size: 13px;")
         self.vip_card.hBoxLayout.addWidget(
             self.vip_label, 0, Qt.AlignmentFlag.AlignRight
         )
@@ -147,7 +146,6 @@ class CloudInterface(QWidget):
             self.storageGroup,
         )
         self.space_label = QLabel()
-        self.space_label.setStyleSheet("color: #888; font-size: 13px;")
         self.space_card.hBoxLayout.addWidget(
             self.space_label, 0, Qt.AlignmentFlag.AlignRight
         )
@@ -162,7 +160,6 @@ class CloudInterface(QWidget):
             self.storageGroup,
         )
         self.file_count_label = QLabel()
-        self.file_count_label.setStyleSheet("color: #888; font-size: 13px;")
         self.file_count_card.hBoxLayout.addWidget(
             self.file_count_label, 0, Qt.AlignmentFlag.AlignRight
         )
@@ -177,7 +174,6 @@ class CloudInterface(QWidget):
             self.storageGroup,
         )
         self.traffic_label = QLabel()
-        self.traffic_label.setStyleSheet("color: #888; font-size: 13px;")
         self.traffic_card.hBoxLayout.addWidget(
             self.traffic_label, 0, Qt.AlignmentFlag.AlignRight
         )
@@ -186,6 +182,8 @@ class CloudInterface(QWidget):
 
         self.mainLayout.addWidget(self.storageGroup)
         self.mainLayout.addStretch()
+
+        StyleSheet.VIEW_INTERFACE.apply(self)
 
     def set_pan(self, pan):
         """设置Pan123实例并更新用户信息"""
@@ -231,10 +229,9 @@ class CloudInterface(QWidget):
         # VIP 状态
         if info.vip:
             self.vip_label.setText(f"VIP{info.vip_level} · {info.vip_expire} 到期")
-            self.vip_label.setStyleSheet("color: #e6a23c; font-size: 13px; font-weight: bold;")
+            self.vip_label.setStyleSheet("color: #e6a23c; font-weight: bold;")
         else:
             self.vip_label.setText("非会员")
-            self.vip_label.setStyleSheet("color: #888; font-size: 13px;")
 
         # 空间用量（含百分比）
         used_str = info.space_used_str()
