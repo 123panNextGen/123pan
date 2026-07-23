@@ -222,6 +222,7 @@
     "cloud.device_item": "{}. {} ({}){}",
     "cloud.device_detail": "   平台: {} | IP: {} | 登录: {} | 方式: {}",
     "cloud.device_master": "主设备",
+    "cloud.device_master_item": "{} ({})",
     "cloud.device_master_detail": "   平台: {} | IP: {} | 登录: {}",
     "login.title": "登录123云盘",
     "login.welcome": "欢迎使用123云盘",

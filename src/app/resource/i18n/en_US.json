@@ -222,6 +222,7 @@
     "cloud.device_item": "{}. {} ({}){}",
     "cloud.device_detail": "   Platform: {} | IP: {} | Login: {} | Method: {}",
     "cloud.device_master": "Master Device",
+    "cloud.device_master_item": "{} ({})",
     "cloud.device_master_detail": "   Platform: {} | IP: {} | Login: {}",
     "login.title": "Login to 123pan",
     "login.welcome": "Welcome to 123pan",

@@ -328,7 +328,7 @@ class CloudInterface(ScrollArea):
         if master:
             lines.append("── " + tr("cloud.device_master", "主设备") + " ──")
             lines.append(
-                tr("cloud.device_item", "{} ({})").format(
+                tr("cloud.device_master_item", "{} ({})").format(
                     master.device_name, master.device_type
                 )
             )
