@@ -147,7 +147,7 @@ class SettingInterface(ScrollArea):
         self.scrollWidget = QWidget()
         self.expandLayout = ExpandLayout(self.scrollWidget)
 
-        self.settingLabel = QLabel(tr("settings.title", "设置"), self)
+        self.settingLabel = QLabel(tr("settings.title", "设置"), self.scrollWidget)
 
         # ---- 下载设置组 ----
         self.downloadGroup = SettingCardGroup(tr("settings.group_download", "下载设置"), self.scrollWidget)
@@ -345,9 +345,8 @@ class SettingInterface(ScrollArea):
         self.__initWidget()
 
     def __initWidget(self):
-        self.resize(1000, 800)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setViewportMargins(0, 80, 0, 20)
+        self.setViewportMargins(0, 20, 0, 20)
         self.setWidget(self.scrollWidget)
         self.setWidgetResizable(True)
         self.setObjectName("settingInterface")
@@ -362,9 +361,10 @@ class SettingInterface(ScrollArea):
         self.__connectSignalToSlot()
 
     def __initLayout(self):
-        self.settingLabel.move(36, 30)
-
-        # 下载设置组
+        # 标题（与 CloudInterface 一致的布局方式）
+        self.expandLayout.setSpacing(28)
+        self.expandLayout.setContentsMargins(36, 10, 36, 0)
+        self.expandLayout.addWidget(self.settingLabel)
         self.downloadGroup.addSettingCard(self.downloadFolderCard)
         self.downloadGroup.addSettingCard(self.askDownloadLocationCard)
         self.downloadGroup.addSettingCard(self.multiThreadCard)
@@ -395,8 +395,6 @@ class SettingInterface(ScrollArea):
         self.aboutGroup.addSettingCard(self.checkversion)
 
         # 添加到布局
-        self.expandLayout.setSpacing(28)
-        self.expandLayout.setContentsMargins(36, 10, 36, 0)
         self.expandLayout.addWidget(self.downloadGroup)
         self.expandLayout.addWidget(self.proxyGroup)
         self.expandLayout.addWidget(self.personalGroup)
