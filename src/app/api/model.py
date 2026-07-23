@@ -202,6 +202,102 @@ class CloudUserInfoModel:
         return _format_bytes(self.direct_traffic)
 
 
+@dataclass
+class ShareItemModel:
+    """分享链接条目模型。"""
+    share_id: int
+    share_key: str
+    drive_id: int
+    file_id_list: str
+    download_count: int
+    preview_count: int
+    save_count: int
+    share_name: str
+    expiration: str
+    expired: bool
+    share_pwd: str
+    status: int
+    create_at: str
+    update_at: str
+    is_pay_share: int
+    is_reward: int
+    audit_status: int
+    amount: int
+    share_url: str
+    share_link: str
+    traffic_switch: int
+    traffic_limit_switch: int
+    traffic_limit: int
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "ShareItemModel":
+        link_list = json.get("shareLinkList", {}) or {}
+        links = link_list.get("list", [])
+        share_link = links[0] if links else ""
+        return cls(
+            share_id=int(json.get("ShareId", json.get("shareId", 0))),
+            share_key=str(json.get("ShareKey", json.get("shareKey", ""))),
+            drive_id=int(json.get("DriveId", json.get("driveId", 0))),
+            file_id_list=str(json.get("FileIdList", json.get("fileIdList", ""))),
+            download_count=int(json.get("DownloadCount", json.get("downloadCount", 0))),
+            preview_count=int(json.get("PreviewCount", json.get("previewCount", 0))),
+            save_count=int(json.get("SaveCount", json.get("saveCount", 0))),
+            share_name=str(json.get("ShareName", json.get("shareName", ""))),
+            expiration=str(json.get("Expiration", json.get("expiration", ""))),
+            expired=bool(json.get("Expired", json.get("expired", False))),
+            share_pwd=str(json.get("SharePwd", json.get("sharePwd", ""))),
+            status=int(json.get("Status", json.get("status", 0))),
+            create_at=str(json.get("CreateAt", json.get("createAt", ""))),
+            update_at=str(json.get("UpdateAt", json.get("updateAt", ""))),
+            is_pay_share=int(json.get("isPayShare", 0)),
+            is_reward=int(json.get("isReward", 0)),
+            audit_status=int(json.get("auditStatus", 0)),
+            amount=int(json.get("amount", 0)),
+            share_url=str(json.get("ShareUrl", json.get("shareUrl", ""))),
+            share_link=str(share_link),
+            traffic_switch=int(json.get("trafficSwitch", 0)),
+            traffic_limit_switch=int(json.get("trafficLimitSwitch", 0)),
+            traffic_limit=int(json.get("trafficLimit", 0)),
+        )
+
+
+@dataclass
+class ShareListData:
+    """分享列表分页数据。"""
+    next: str
+    len: int
+    total: int
+    is_first: bool
+    info_list: list[ShareItemModel] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "ShareListData":
+        info = json.get("InfoList", json.get("infoList", [])) or []
+        return cls(
+            next=str(json.get("Next", json.get("next", "-1"))),
+            len=int(json.get("Len", json.get("len", 0))),
+            total=int(json.get("Total", json.get("total", 0))),
+            is_first=bool(json.get("IsFirst", json.get("isFirst", False))),
+            info_list=[ShareItemModel.from_dict(item) for item in info],
+        )
+
+
+@dataclass
+class ShareListResponse:
+    """分享列表 API 响应。"""
+    code: int
+    message: str
+    data: ShareListData
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "ShareListResponse":
+        return cls(
+            code=int(json.get("code", json.get("Code", -1))),
+            message=str(json.get("message", json.get("Message", ""))),
+            data=ShareListData.from_dict(json.get("data", json.get("Data", {}))),
+        )
+
+
 def _format_bytes(size):
     """字节数格式化为可读字符串。"""
     for unit in ("B", "KB", "MB", "GB", "TB", "PB"):

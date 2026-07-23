@@ -18,6 +18,7 @@ from ..api.session import NetSession
 from ..service.auth_service import AuthService
 from ..service.download_service import DownloadService
 from ..service.file_service import FileService
+from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
 from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
@@ -45,6 +46,7 @@ class Pan123:
         self._file = FileService(self._session)
         self._download = DownloadService(self._session)
         self._upload = UploadService(self._session)
+        self._share = ShareService(self._session)
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -173,6 +175,16 @@ class Pan123:
         if file_id is not None:
             self.get_dir()
         return file_id
+
+    # ---- 分享链接管理（门面方法） ----
+
+    def get_free_share_list(self):
+        """获取免费分享列表。"""
+        return self._share.get_free_share_list()
+
+    def get_pay_share_list(self):
+        """获取付费分享列表。"""
+        return self._share.get_pay_share_list()
 
     # ---- Session 配置（门面方法） ----
 
