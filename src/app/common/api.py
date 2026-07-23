@@ -10,7 +10,6 @@ the Free Software Foundation, either version 3 of the License, or
 
 import random
 import uuid
-from pathlib import Path
 
 import requests
 
@@ -18,6 +17,7 @@ from ..api.session import NetSession
 from ..service.auth_service import AuthService
 from ..service.download_service import DownloadService
 from ..service.file_service import FileService
+from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
 from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
@@ -45,6 +45,7 @@ class Pan123:
         self._file = FileService(self._session)
         self._download = DownloadService(self._session)
         self._upload = UploadService(self._session)
+        self._share = ShareService(self._session)
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -100,6 +101,14 @@ class Pan123:
             self.authorization = self._auth.authorization
             self.save_file()
         return code
+
+    def get_user_info(self):
+        """获取当前用户的云盘信息（UID、空间、VIP等）。
+
+        Returns:
+            ApiReturnModel，成功时 data 为 CloudUserInfoModel 实例
+        """
+        return self._auth.get_user_info()
 
     def save_file(self):
         self._auth.devicetype = self.devicetype
@@ -166,6 +175,16 @@ class Pan123:
             self.get_dir()
         return file_id
 
+    # ---- 分享链接管理（门面方法） ----
+
+    def get_free_share_list(self):
+        """获取免费分享列表。"""
+        return self._share.get_free_share_list()
+
+    def get_pay_share_list(self):
+        """获取付费分享列表。"""
+        return self._share.get_pay_share_list()
+
     # ---- Session 配置（门面方法） ----
 
     def set_download_multi_thread(self, enabled):
@@ -185,48 +204,6 @@ class Pan123:
 
     def download_file(self, url, file_path, file_size, progress_callback=None):
         return self._download.download_file(url, file_path, file_size, progress_callback)
-
-
-# ==================== 工具函数和任务管理模块 ====================
-
-
-def format_file_size(size):
-    """格式化文件大小"""
-    units = ["B", "KB", "MB", "GB", "TB"]
-    for i in range(len(units)):
-        if size < 1024.0:
-            return f"{round(size, 2)} {units[i]}"
-        size /= 1024.0
-    return f"{size:.2f} {units[-1]}"
-
-
-class FileDataManager:
-    """文件数据处理器 - 处理与文件相关的业务逻辑，不涉及UI"""
-
-    @staticmethod
-    def get_file_type_name(file_type):
-        """根据文件类型返回类型名称"""
-        return "文件夹" if file_type == 1 else "文件"
-
-    @staticmethod
-    def format_file_size_value(size):
-        """格式化文件大小（工具函数别名）"""
-        return format_file_size(size)
-
-    @staticmethod
-    def get_file_extension(filename):
-        """获取文件扩展名"""
-        return Path(filename).suffix.lower()
-
-    @staticmethod
-    def validate_file_exists(file_path):
-        """验证文件是否存在"""
-        return Path(file_path).is_file()
-
-    @staticmethod
-    def is_duplicate_filename(pan_instance, filename):
-        """检查是否存在同名文件"""
-        return any(item.get("FileName") == filename for item in pan_instance.list)
 
 
 def check_version():

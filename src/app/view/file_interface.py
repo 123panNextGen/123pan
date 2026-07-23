@@ -47,7 +47,6 @@ from qfluentwidgets import (
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
-from ..common.const import MAX_STORAGE_CAPACITY
 from ..common.api import Pan123
 from ..common.log import get_logger
 from ..common.i18n import tr
@@ -57,9 +56,8 @@ from ..tasks.file_tasks import (
     BatchDeleteTask,
     LoadListTask,
     RenameFileTask,
-    StorageTask,
 )
-from ..tasks.signals import _LoadListSignals, _OpFinishedSignals, _StorageSignals
+from ..tasks.signals import _LoadListSignals, _OpFinishedSignals
 from .dialogs import InputDialog
 
 logger = get_logger(__name__)
@@ -723,11 +721,15 @@ class FileInterface(QWidget):
         if logicalIndex not in [0, 2]:
             return
 
-        if logicalIndex == self.sort_mode:
+        clicked_same_column = logicalIndex == self.sort_mode
+        self.sort_mode = logicalIndex
+
+        if clicked_same_column:
+            # 点击同一列：切换方向
             self.sort_ascending = not self.sort_ascending
         else:
-            self.sort_mode = logicalIndex
-            self.sort_ascending = True if logicalIndex == 0 else False
+            # 切换到新列：名称默认升序，大小默认降序
+            self.sort_ascending = logicalIndex == 0
 
         # 客户端重新排序，不重新请求服务器
         if self._search_text:
@@ -773,42 +775,6 @@ class FileInterface(QWidget):
 
                 # 添加占位符
                 self.__addPlaceholder(child)
-
-    # noinspection PyTypeChecker
-    def __getExpandedItems(self):
-        """获取树的展开状态"""
-        expanded_items = []
-
-        def collect_expanded_items(item):
-            if item.isExpanded():
-                item_id = item.data(0, Qt.ItemDataRole.UserRole)
-                if item_id:
-                    expanded_items.append(item_id)
-
-            for i in range(item.childCount()):
-                collect_expanded_items(item.child(i))
-
-        root = self.folderTree.invisibleRootItem()
-        for i in range(root.childCount()):
-            collect_expanded_items(root.child(i))
-
-        return expanded_items
-
-    # noinspection PyTypeChecker
-    def __restoreExpandedItems(self, expanded_items):
-        """恢复树的展开状态"""
-
-        def expand_items(item):
-            item_id = item.data(0, Qt.ItemDataRole.UserRole)
-            if item_id and item_id in expanded_items:
-                item.setExpanded(True)
-
-            for i in range(item.childCount()):
-                expand_items(item.child(i))
-
-        root = self.folderTree.invisibleRootItem()
-        for i in range(root.childCount()):
-            expand_items(root.child(i))
 
     def __uploadFile(self):
         """上传文件"""
@@ -1350,91 +1316,40 @@ class FileInterface(QWidget):
         dialog = PreviewDialog(self.pan, file_detail, self)
         dialog.exec()
 
-    def update_storage_info(self, used_text="0 B"):
-        """更新云盘存储信息"""
-        if used_text is None:
-            used_text = "0 B"
-        max_capacity = MAX_STORAGE_CAPACITY
-        total_text = format_file_size(max_capacity)
-
-        # 解析 used_text 来获取字节数，用于计算百分比
-        # 格式示例: "1.5 GB", "512 MB", "2 KB", "1024 B"
-        try:
-            parts = used_text.split()
-            if len(parts) == 2:
-                value = float(parts[0])
-                unit = parts[1].upper()
-
-                # 转换为字节
-                if unit == "GB":
-                    used_bytes = int(value * 1024 * 1024 * 1024)
-                elif unit == "MB":
-                    used_bytes = int(value * 1024 * 1024)
-                elif unit == "KB":
-                    used_bytes = int(value * 1024)
-                else:  # B
-                    used_bytes = int(value)
-
-                # 计算使用百分比
-                usage_percent = (
-                    (used_bytes / max_capacity * 100) if max_capacity > 0 else 0
-                )
-            else:
-                usage_percent = 0
-        except Exception as e:
-            logger.error(f"解析存储信息时发生错误: {e}")
-            usage_percent = 0
-
-        # 更新进度条
-        self.storageProgressBar.setValue(int(usage_percent))
-
-        # 更新文本显示
-        self.storageValueLabel.setText(f"{used_text} / {total_text}")
-
-    def calculate_total_storage(self, dir_id=0):
-        """
-        统计指定目录下的总存储使用量
+    def update_storage_info(self, space_used=0, space_total=0):
+        """更新云盘存储信息（使用 API 返回的用户空间数据）。
 
         Args:
-            dir_id: 目录ID，默认为0（根目录）
-
-        Returns:
-            格式化后的总存储使用量字符串（如 "1.5 GB"）
+            space_used: 已用空间（字节）
+            space_total: 永久空间总量（字节）
         """
-        total_size_mb = 0.0
+        used_text = format_file_size(space_used)
+        total_text = format_file_size(space_total) if space_total > 0 else format_file_size(2 * 1024 ** 4)
 
-        try:
-            # 获取当前目录的文件列表，使用 all=True 确保获取所有文件
-            code, items = self.pan.get_dir_by_id(
-                dir_id, save=False, all=True, limit=1000
-            )
+        if space_total > 0:
+            usage_percent = space_used / space_total * 100
+        else:
+            usage_percent = 0
 
-            if code != 0 or not items:
-                return "0 B"
-
-            # 遍历文件列表
-            for item in items:
-                file_size = int(item.get("Size", 0) or 0)
-                # 先转换为MB，再累计
-                file_size_mb = file_size / (1024 * 1024)
-                total_size_mb += file_size_mb
-
-        except Exception as e:
-            # 如果某个目录访问失败，返回0
-            logger.error(f"统计目录 {dir_id} 时发生错误: {e}")
-            return "0 B"
-
-        # 将MB转换回字节，然后格式化
-        total_size_bytes = int(total_size_mb * 1024 * 1024)
-        return format_file_size(total_size_bytes)
+        self.storageProgressBar.setValue(int(usage_percent))
+        self.storageValueLabel.setText(f"{used_text} / {total_text}")
 
     def load_and_update_storage_info(self):
-        """统计并更新云盘存储信息"""
+        """从 API 获取用户云盘空间信息并更新显示。"""
         if not self.pan:
             return
 
-        # 在主线程创建信号
-        signals = _StorageSignals()
-        signals.finished.connect(self.update_storage_info)
-        task = StorageTask(self, signals)
-        QThreadPool.globalInstance().start(task)
+        try:
+            result = self.pan.get_user_info()
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            return
+
+        if result.code != 0 or not hasattr(result, 'data') or result.data is None:
+            logger.warning("获取用户信息返回异常: code=%s", result.code)
+            return
+
+        user_info = result.data
+        space_used = getattr(user_info, 'space_used', 0)
+        space_total = getattr(user_info, 'space_total', 0)
+        self.update_storage_info(space_used, space_total)

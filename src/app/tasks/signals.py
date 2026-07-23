@@ -17,7 +17,3 @@ class _LoadListSignals(QObject):
 
 class _OpFinishedSignals(QObject):
     finished = pyqtSignal(bool, str, str, str, list, list)
-
-
-class _StorageSignals(QObject):
-    finished = pyqtSignal(str)

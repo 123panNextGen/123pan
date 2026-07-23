@@ -184,7 +184,8 @@ class PreviewDialog(QDialog):
                 "图片 (png/jpg/gif/webp/...) 、\n"
                 "视频 (mp4/mkv/avi/...) 、\n"
                 "音频 (mp3/wav/flac/...) 、\n"
-                "文本 (txt/py/json/md/...)",
+                "文本 (txt/py/json/md/...) 、\n"
+                "PDF (pdf)",
                 self,
             ).exec()
             self.reject()

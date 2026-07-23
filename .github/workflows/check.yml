@@ -29,4 +29,4 @@ jobs:
 
       - name: Check
         run: |
-          bash ./script/mypy.sh
+          bash ./script/test.sh

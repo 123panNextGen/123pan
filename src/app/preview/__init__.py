@@ -19,6 +19,7 @@ from .image_preview import ImagePreviewWidget
 from .video_preview import VideoPreviewWidget
 from .audio_preview import AudioPreviewWidget
 from .text_preview import TextPreviewWidget
+from .pdf_preview import PdfPreviewWidget
 
 __all__ = [
     "get_previewer_for_file",
@@ -29,4 +30,5 @@ __all__ = [
     "VideoPreviewWidget",
     "AudioPreviewWidget",
     "TextPreviewWidget",
+    "PdfPreviewWidget",
 ]

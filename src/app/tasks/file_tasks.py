@@ -187,18 +187,3 @@ class BatchDeleteTask(QRunnable):
         except Exception as e:
             logger.error("批量删除异常: %s", e)
             self.signals.finished.emit(False, "", "", str(e), [], [])
-
-
-class StorageTask(QRunnable):
-    def __init__(self, file_interface, signals):
-        super().__init__()
-        self.file_interface = file_interface
-        self.signals = signals
-
-    def run(self):
-        try:
-            total_size = self.file_interface.calculate_total_storage(0)
-            self.signals.finished.emit(total_size)
-        except Exception as e:
-            logger.error("统计存储信息时发生错误: %s", e)
-            self.signals.finished.emit("0 B")

@@ -13,6 +13,9 @@ from .image_preview import ImagePreviewWidget
 from .video_preview import VideoPreviewWidget
 from .audio_preview import AudioPreviewWidget
 from .text_preview import TextPreviewWidget
+from .pdf_preview import PdfPreviewWidget
+
+from pathlib import Path
 
 
 # 文件扩展名 → 预览器映射
@@ -47,6 +50,10 @@ def _build_previewer_map():
         "rb", "php", "lua", "r", "swift", "scala", "conf", "env",
     ):
         _PREVIEWER_MAP[ext] = TextPreviewWidget
+
+    # PDF 格式
+    for ext in ("pdf",):
+        _PREVIEWER_MAP[ext] = PdfPreviewWidget
 
     return _PREVIEWER_MAP
 
@@ -94,8 +101,6 @@ def create_preview_widget(file_path, mime_type=""):
         成功时 error_message 为空字符串。
         不支持时返回 (None, "不支持的文件格式")。
     """
-    import os
-    from pathlib import Path
 
     path = Path(file_path)
     if not path.exists():

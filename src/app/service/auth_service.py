@@ -125,3 +125,7 @@ class AuthService:
         self.user_name = user_name
         self.password = password
         self.authorization = authorization
+
+    def get_user_info(self):
+        """获取当前用户的云盘信息（UID、空间、VIP等）。"""
+        return self._session.get_user_info()
