@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from enum import Enum
 
-from qfluentwidgets import StyleSheetBase, Theme, isDarkTheme, qconfig
+from qfluentwidgets import StyleSheetBase, Theme, qconfig
 
 
 class StyleSheet(StyleSheetBase, Enum):

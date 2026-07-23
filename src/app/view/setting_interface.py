@@ -10,6 +10,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
@@ -17,9 +19,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QComboBox,
 )
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices
-
 from qfluentwidgets import (
     ExpandLayout,
     SettingCardGroup,
@@ -33,12 +32,12 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF
 
+from ..common.api import check_version
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
-from ..common.style_sheet import StyleSheet
-from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
-from ..common.api import check_version
 from ..common.i18n import tr
+from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
+from ..common.style_sheet import StyleSheet
 
 logger = get_logger(__name__)
 
@@ -417,7 +416,6 @@ class SettingInterface(ScrollArea):
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
-        import shutil
         from pathlib import Path
 
         temp_dir = Path.home() / ".cache" / "123pan" / "temp"
