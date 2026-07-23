@@ -110,6 +110,14 @@ class Pan123:
         """
         return self._auth.get_user_info()
 
+    def get_device_list(self):
+        """获取当前账户的登录设备列表。
+
+        Returns:
+            ApiReturnModel，成功时 data 为 DeviceListResponse 实例
+        """
+        return self._auth.get_device_list()
+
     def save_file(self):
         self._auth.devicetype = self.devicetype
         self._auth.osversion = self.osversion
