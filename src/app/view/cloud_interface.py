@@ -17,6 +17,7 @@ from qfluentwidgets import (
     SettingCardGroup,
     PushSettingCard,
     SettingCard,
+    ScrollArea,
 )
 
 from ..common.log import get_logger
@@ -38,7 +39,7 @@ def _mask_username(username):
     return username
 
 
-class CloudInterface(QWidget):
+class CloudInterface(ScrollArea):
     """云盘页面"""
 
     # 定义退出登录信号
@@ -51,7 +52,11 @@ class CloudInterface(QWidget):
         self._user_info = None
         self.setObjectName("CloudInterface")
 
-        self.mainLayout = QVBoxLayout(self)
+        # 滚动区域内部容器
+        self.scrollWidget = QWidget()
+        self.scrollWidget.setObjectName("scrollWidget")
+
+        self.mainLayout = QVBoxLayout(self.scrollWidget)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
         self.mainLayout.setSpacing(12)
 
@@ -64,7 +69,7 @@ class CloudInterface(QWidget):
         self.mainLayout.addWidget(title_label)
 
         # ---- 账户信息卡片组 ----
-        self.accountGroup = SettingCardGroup(tr("cloud.account_info", "账户信息"), self)
+        self.accountGroup = SettingCardGroup(tr("cloud.account_info", "账户信息"), self.scrollWidget)
 
         # 用户名
         self.username_card = SettingCard(
@@ -136,7 +141,7 @@ class CloudInterface(QWidget):
         self.mainLayout.addWidget(self.accountGroup)
 
         # ---- 存储信息卡片组 ----
-        self.storageGroup = SettingCardGroup(tr("cloud.storage_info", "存储信息"), self)
+        self.storageGroup = SettingCardGroup(tr("cloud.storage_info", "存储信息"), self.scrollWidget)
 
         # 空间用量
         self.space_card = SettingCard(
@@ -182,6 +187,11 @@ class CloudInterface(QWidget):
 
         self.mainLayout.addWidget(self.storageGroup)
         self.mainLayout.addStretch()
+
+        # 配置滚动区域
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWidget(self.scrollWidget)
+        self.setWidgetResizable(True)
 
         StyleSheet.VIEW_INTERFACE.apply(self)
 

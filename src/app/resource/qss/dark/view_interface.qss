@@ -1,3 +1,7 @@
+CloudInterface, TrashInterface, ShareInterface, #scrollWidget {
+    background-color: transparent;
+}
+
 #frame {
     border: 1px solid rgba(255, 255, 255, 13);
     border-radius: 5px;
