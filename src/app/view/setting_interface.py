@@ -29,7 +29,6 @@ from qfluentwidgets import (
     PrimaryPushSettingCard,
     LineEdit,
     InfoBar,
-    MessageBox,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -280,18 +279,6 @@ class SettingInterface(ScrollArea):
             parent=self.personalGroup,
         )
 
-        # ---- 设备管理组 ----
-        self.deviceGroup = SettingCardGroup(
-            tr("settings.group_device", "设备管理"), self.scrollWidget
-        )
-        self.deviceListCard = PushSettingCard(
-            tr("settings.device_load", "加载列表"),
-            FIF.IOT,
-            tr("settings.device_title", "登录设备"),
-            tr("settings.device_desc", "查看当前账户的登录设备列表"),
-            self.deviceGroup,
-        )
-
         # ---- 调试组 ----
         self.debugGroup = SettingCardGroup(tr("调试"), self.scrollWidget)
 
@@ -398,9 +385,6 @@ class SettingInterface(ScrollArea):
         self.personalGroup.addSettingCard(self.micaCard)
         self.personalGroup.addSettingCard(self.languageCard)
 
-        # 设备管理组
-        self.deviceGroup.addSettingCard(self.deviceListCard)
-
         # 调试组
         self.debugGroup.addSettingCard(self.logLevelCard)
         self.debugGroup.addSettingCard(self.openLogFolderCard)
@@ -416,7 +400,6 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.downloadGroup)
         self.expandLayout.addWidget(self.proxyGroup)
         self.expandLayout.addWidget(self.personalGroup)
-        self.expandLayout.addWidget(self.deviceGroup)
         self.expandLayout.addWidget(self.debugGroup)
         self.expandLayout.addWidget(self.aboutGroup)
 
@@ -430,90 +413,6 @@ class SettingInterface(ScrollArea):
             content=tr("settings.msg_lang_restart_desc", "语言设置将在重启应用后生效"),
             parent=self,
         )
-
-    def __onDeviceListClicked(self):
-        """加载并显示登录设备列表"""
-        pan = None
-        if self.parent() and hasattr(self.parent(), "pan"):
-            pan = self.parent().pan
-        if not pan:
-            InfoBar.warning(
-                title=tr("settings.device_title", "登录设备"),
-                content=tr("settings.msg_not_logged_in", "请先登录"),
-                parent=self,
-            )
-            return
-
-        try:
-            result = pan.get_device_list()
-        except Exception as e:
-            logger.error("获取设备列表失败: %s", e)
-            InfoBar.error(
-                title=tr("settings.device_title", "登录设备"),
-                content=tr("settings.msg_device_load_error", "获取设备列表失败: {}").format(e),
-                parent=self,
-            )
-            return
-
-        if result.code != 0:
-            InfoBar.error(
-                title=tr("settings.device_title", "登录设备"),
-                content=tr("settings.msg_device_load_error", "获取设备列表失败: {}").format(result.msg),
-                parent=self,
-            )
-            return
-
-        device_data = result.data
-        devices = device_data.device_list
-
-        if not devices:
-            InfoBar.info(
-                title=tr("settings.device_title", "登录设备"),
-                content=tr("settings.msg_device_empty", "没有找到设备信息"),
-                parent=self,
-            )
-            return
-
-        # 构建设备列表文本
-        lines = []
-        for i, dev in enumerate(devices):
-            current_mark = " ★" if dev.cur_device else ""
-            lines.append(
-                tr("settings.device_item", "{}. {} ({}){}").format(
-                    i + 1, dev.device_name, dev.device_type, current_mark
-                )
-            )
-            lines.append(
-                tr("settings.device_detail", "   平台: {} | IP: {} | 登录: {} | 方式: {}").format(
-                    dev.plat_form, dev.ip, dev.last_login_time, dev.login_type
-                )
-            )
-            lines.append("")
-
-        # 主设备
-        master = device_data.master_device
-        if master:
-            lines.append("── " + tr("settings.device_master", "主设备") + " ──")
-            lines.append(
-                tr("settings.device_item", "{} ({})").format(
-                    master.device_name, master.device_type
-                )
-            )
-            lines.append(
-                tr("settings.device_master_detail", "   平台: {} | IP: {} | 登录: {}").format(
-                    master.plat_form, master.ip, master.last_login_time
-                )
-            )
-
-        device_text = "\n".join(lines)
-        box = MessageBox(
-            tr("settings.device_title", "登录设备"),
-            device_text,
-            self,
-        )
-        box.exec()
-
-        logger.info("设备列表已显示: %d 个设备", len(devices))
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
@@ -750,9 +649,6 @@ class SettingInterface(ScrollArea):
         self.languageCard.comboBox.currentTextChanged.connect(
             self.__onLanguageChanged
         )
-
-        # 设备管理
-        self.deviceListCard.clicked.connect(self.__onDeviceListClicked)
 
         # 关于
         self.aboutCard.clicked.connect(

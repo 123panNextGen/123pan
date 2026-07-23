@@ -18,6 +18,7 @@ from qfluentwidgets import (
     PushSettingCard,
     SettingCard,
     ScrollArea,
+    MessageBox,
 )
 
 from ..common.log import get_logger
@@ -127,6 +128,17 @@ class CloudInterface(ScrollArea):
         )
         self.switch_card.clicked.connect(self.switchAccountRequested.emit)
         self.accountGroup.addSettingCard(self.switch_card)
+
+        # 登录设备
+        self.device_card = PushSettingCard(
+            tr("cloud.device_load", "加载列表"),
+            FIF.IOT,
+            tr("cloud.device_title", "登录设备"),
+            tr("cloud.device_desc", "查看当前账户的登录设备列表"),
+            self.accountGroup,
+        )
+        self.device_card.clicked.connect(self.__onDeviceListClicked)
+        self.accountGroup.addSettingCard(self.device_card)
 
         # 退出登录
         self.logout_card = PushSettingCard(
@@ -271,3 +283,67 @@ class CloudInterface(ScrollArea):
         self.space_label.setText("-")
         self.file_count_label.setText("-")
         self.traffic_label.setText("-")
+
+    def __onDeviceListClicked(self):
+        """加载并显示登录设备列表"""
+        if not self.pan:
+            logger.warning("设备列表: pan 未设置")
+            return
+
+        try:
+            result = self.pan.get_device_list()
+        except Exception as e:
+            logger.error("获取设备列表失败: %s", e)
+            return
+
+        if result.code != 0:
+            logger.warning("获取设备列表失败: code=%s, msg=%s", result.code, result.msg)
+            return
+
+        device_data = result.data
+        devices = device_data.device_list
+
+        if not devices:
+            logger.info("设备列表为空")
+            return
+
+        # 构建设备列表文本
+        lines = []
+        for i, dev in enumerate(devices):
+            current_mark = " ★" if dev.cur_device else ""
+            lines.append(
+                tr("cloud.device_item", "{}. {} ({}){}").format(
+                    i + 1, dev.device_name, dev.device_type, current_mark
+                )
+            )
+            lines.append(
+                tr("cloud.device_detail", "   平台: {} | IP: {} | 登录: {} | 方式: {}").format(
+                    dev.plat_form, dev.ip, dev.last_login_time, dev.login_type
+                )
+            )
+            lines.append("")
+
+        # 主设备
+        master = device_data.master_device
+        if master:
+            lines.append("── " + tr("cloud.device_master", "主设备") + " ──")
+            lines.append(
+                tr("cloud.device_item", "{} ({})").format(
+                    master.device_name, master.device_type
+                )
+            )
+            lines.append(
+                tr("cloud.device_master_detail", "   平台: {} | IP: {} | 登录: {}").format(
+                    master.plat_form, master.ip, master.last_login_time
+                )
+            )
+
+        device_text = "\n".join(lines)
+        box = MessageBox(
+            tr("cloud.device_title", "登录设备"),
+            device_text,
+            self,
+        )
+        box.exec()
+
+        logger.info("设备列表已显示: %d 个设备", len(devices))
