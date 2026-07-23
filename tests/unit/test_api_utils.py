@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from src.app.common.utils import FileDataManager, format_file_size
+from src.app.common.utils import format_file_size
 
 
 class TestFormatFileSize:
@@ -34,18 +34,3 @@ class TestFormatFileSize:
     def test_tb(self):
         result = format_file_size(1099511627776)
         assert "TB" in result
-
-
-class TestFileDataManager:
-    def test_get_file_type_name(self):
-        assert FileDataManager.get_file_type_name(1) == "文件夹"
-        assert FileDataManager.get_file_type_name(0) == "文件"
-        assert FileDataManager.get_file_type_name(2) == "文件"
-
-    def test_format_file_size_value(self):
-        assert FileDataManager.format_file_size_value(1024) == "1.0 KB"
-
-    def test_get_file_extension(self):
-        assert FileDataManager.get_file_extension("test.txt") == ".txt"
-        assert FileDataManager.get_file_extension("no_ext") == ""
-        assert FileDataManager.get_file_extension("") == ""

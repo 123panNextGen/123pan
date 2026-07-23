@@ -35,9 +35,11 @@ from qfluentwidgets import FluentIcon as FIF
 from ..common.api import check_version
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
+from ..common.file_list_db import FileListDB
 from ..common.i18n import tr
 from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
 from ..common.style_sheet import StyleSheet
+from ..common.utils import format_file_size
 
 logger = get_logger(__name__)
 
@@ -414,8 +416,6 @@ class SettingInterface(ScrollArea):
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
-        from pathlib import Path
-
         temp_dir = Path.home() / ".cache" / "123pan" / "temp"
         download_dir = Path(
             ConfigManager.get_setting(
@@ -454,7 +454,6 @@ class SettingInterface(ScrollArea):
                     pass
 
         if cleaned_count > 0:
-            from ..common.utils import format_file_size
             InfoBar.success(
                 title=tr("settings.msg_cache_cleaned", "清理完成"),
                 content=tr("settings.msg_cache_cleaned_desc", "已清理 {} 个临时文件，释放 {}").format(
@@ -476,7 +475,6 @@ class SettingInterface(ScrollArea):
 
     def __onRefreshFileDbClicked(self):
         """强制刷新文件列表数据库（标记所有目录为脏）。"""
-        from ..common.file_list_db import FileListDB
         db = FileListDB()
         dir_count, file_count = db.get_stats()
         db.mark_all_dirty()
@@ -492,7 +490,6 @@ class SettingInterface(ScrollArea):
 
     def __onDeleteFileDbClicked(self):
         """删除文件列表数据库。"""
-        from ..common.file_list_db import FileListDB
         db = FileListDB()
         dir_count, file_count = db.get_stats()
         db.delete_db()

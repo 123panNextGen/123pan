@@ -23,6 +23,7 @@ from qfluentwidgets import (
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..common.style_sheet import StyleSheet
+from ..api.model import ApiCode
 
 logger = get_logger(__name__)
 
@@ -218,7 +219,7 @@ class CloudInterface(ScrollArea):
             self._show_user_info_error()
             return
 
-        if result.code != 0 or result.api_code_enum.value != 1:
+        if result.code != 0 or result.api_code_enum != ApiCode.success:
             logger.warning("获取用户信息返回异常: code=%s", result.code)
             self._show_user_info_error()
             return

@@ -721,11 +721,15 @@ class FileInterface(QWidget):
         if logicalIndex not in [0, 2]:
             return
 
-        if logicalIndex == self.sort_mode:
+        clicked_same_column = logicalIndex == self.sort_mode
+        self.sort_mode = logicalIndex
+
+        if clicked_same_column:
+            # 点击同一列：切换方向
             self.sort_ascending = not self.sort_ascending
         else:
-            self.sort_mode = logicalIndex
-            self.sort_ascending = True if logicalIndex == 0 else False
+            # 切换到新列：名称默认升序，大小默认降序
+            self.sort_ascending = logicalIndex == 0
 
         # 客户端重新排序，不重新请求服务器
         if self._search_text:
