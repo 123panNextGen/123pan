@@ -215,7 +215,7 @@
     "cloud.file_count": "文件数量",
     "cloud.file_count_desc": "当前云盘中的文件总数",
     "cloud.traffic": "直链流量",
-    "cloud.traffic_desc": "下载文件使用的直链流量配额",
+    "cloud.traffic_desc": "分享文件的直链流量配额",
     "login.title": "登录123云盘",
     "login.welcome": "欢迎使用123云盘",
     "login.account_placeholder": "选择或输入账户",

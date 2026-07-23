@@ -215,7 +215,7 @@
     "cloud.file_count": "File Count",
     "cloud.file_count_desc": "Total files in cloud drive",
     "cloud.traffic": "Direct Traffic",
-    "cloud.traffic_desc": "Direct link traffic quota for downloads",
+    "cloud.traffic_desc": "Direct link traffic quota for share",
     "login.title": "Login to 123pan",
     "login.welcome": "Welcome to 123pan",
     "login.account_placeholder": "Select or enter account",
