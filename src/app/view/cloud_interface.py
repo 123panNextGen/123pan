@@ -18,7 +18,6 @@ from qfluentwidgets import (
     PushSettingCard,
     SettingCard,
     ScrollArea,
-    MessageBox,
 )
 
 from ..common.log import get_logger
@@ -130,15 +129,10 @@ class CloudInterface(ScrollArea):
         self.accountGroup.addSettingCard(self.switch_card)
 
         # 登录设备
-        self.device_card = PushSettingCard(
-            tr("cloud.device_load", "加载列表"),
-            FIF.IOT,
-            tr("cloud.device_title", "登录设备"),
-            tr("cloud.device_desc", "查看当前账户的登录设备列表"),
-            self.accountGroup,
+        self.deviceGroup = SettingCardGroup(
+            tr("cloud.device_title", "登录设备"), self.scrollWidget
         )
-        self.device_card.clicked.connect(self.__onDeviceListClicked)
-        self.accountGroup.addSettingCard(self.device_card)
+        self._device_cards = []  # 动态创建的设备卡片列表
 
         # 退出登录
         self.logout_card = PushSettingCard(
@@ -199,6 +193,7 @@ class CloudInterface(ScrollArea):
         self.storageGroup.addSettingCard(self.traffic_card)
 
         self.mainLayout.addWidget(self.storageGroup)
+        self.mainLayout.addWidget(self.deviceGroup)
         self.mainLayout.addStretch()
 
         # 配置滚动区域
@@ -221,6 +216,9 @@ class CloudInterface(ScrollArea):
 
         # 异步获取用户云盘信息
         self._fetch_user_info()
+
+        # 获取登录设备列表
+        self._fetch_device_list()
 
     def _fetch_user_info(self):
         """从 API 获取用户云盘信息（UID、空间、VIP等）。"""
@@ -284,66 +282,55 @@ class CloudInterface(ScrollArea):
         self.file_count_label.setText("-")
         self.traffic_label.setText("-")
 
-    def __onDeviceListClicked(self):
-        """加载并显示登录设备列表"""
+    def _fetch_device_list(self):
+        """从 API 获取登录设备列表并更新界面。"""
         if not self.pan:
-            logger.warning("设备列表: pan 未设置")
             return
-
         try:
             result = self.pan.get_device_list()
         except Exception as e:
             logger.error("获取设备列表失败: %s", e)
             return
-
         if result.code != 0:
             logger.warning("获取设备列表失败: code=%s, msg=%s", result.code, result.msg)
             return
+        self._update_device_display(result.data)
 
-        device_data = result.data
+    def _update_device_display(self, device_data):
+        """更新设备列表界面。"""
+        # 清除旧卡片
+        for card in self._device_cards:
+            self.deviceGroup.removeSettingCard(card)
+            card.deleteLater()
+        self._device_cards.clear()
+
         devices = device_data.device_list
+        master = device_data.master_device
 
         if not devices:
-            logger.info("设备列表为空")
             return
 
-        # 构建设备列表文本
-        lines = []
-        for i, dev in enumerate(devices):
-            current_mark = " ★" if dev.cur_device else ""
-            lines.append(
-                tr("cloud.device_item", "{}. {} ({}){}").format(
-                    i + 1, dev.device_name, dev.device_type, current_mark
-                )
+        for dev in devices:
+            cur = tr("cloud.device_current", "当前") if dev.cur_device else ""
+            title = tr("cloud.device_item", "{}. {} ({}) {}").format(
+                devices.index(dev) + 1, dev.device_name, dev.device_type, cur
             )
-            lines.append(
-                tr("cloud.device_detail", "   平台: {} | IP: {} | 登录: {} | 方式: {}").format(
-                    dev.plat_form, dev.ip, dev.last_login_time, dev.login_type
-                )
+            content = tr("cloud.device_detail", "平台: {} | IP: {} | 登录: {} | 方式: {}").format(
+                dev.plat_form, dev.ip, dev.last_login_time, dev.login_type
             )
-            lines.append("")
+            card = SettingCard(FIF.IOT, title, content, self.deviceGroup)
+            self.deviceGroup.addSettingCard(card)
+            self._device_cards.append(card)
 
-        # 主设备
-        master = device_data.master_device
         if master:
-            lines.append("── " + tr("cloud.device_master", "主设备") + " ──")
-            lines.append(
-                tr("cloud.device_master_item", "{} ({})").format(
-                    master.device_name, master.device_type
-                )
+            title = tr("cloud.device_master_item", "{} ({}) — 主设备").format(
+                master.device_name, master.device_type
             )
-            lines.append(
-                tr("cloud.device_master_detail", "   平台: {} | IP: {} | 登录: {}").format(
-                    master.plat_form, master.ip, master.last_login_time
-                )
+            content = tr("cloud.device_master_detail", "平台: {} | IP: {} | 登录: {}").format(
+                master.plat_form, master.ip, master.last_login_time
             )
+            card = SettingCard(FIF.HOME, title, content, self.deviceGroup)
+            self.deviceGroup.addSettingCard(card)
+            self._device_cards.append(card)
 
-        device_text = "\n".join(lines)
-        box = MessageBox(
-            tr("cloud.device_title", "登录设备"),
-            device_text,
-            self,
-        )
-        box.exec()
-
-        logger.info("设备列表已显示: %d 个设备", len(devices))
+        logger.info("设备列表已更新: %d 个设备", len(devices))
