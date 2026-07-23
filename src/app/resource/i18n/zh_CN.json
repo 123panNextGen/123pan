@@ -309,5 +309,13 @@
     "share.msg_link_copied": "已复制 {} 个分享链接到剪贴板",
     "share.msg_copy_pwd": "复制密码",
     "share.msg_no_pwd_selected": "所选分享没有设置密码",
-    "share.msg_pwd_copied": "已复制 {} 个分享密码到剪贴板"
+    "share.msg_pwd_copied": "已复制 {} 个分享密码到剪贴板",
+    "share.delete": "删除分享",
+    "share.msg_delete_share": "删除分享",
+    "share.msg_select_delete": "请选择要删除的分享",
+    "share.msg_confirm_delete": "确定删除选中的 {} 个分享链接吗？此操作不可撤销。",
+    "share.msg_delete_success": "删除成功",
+    "share.msg_delete_count": "成功删除 {} 个分享链接",
+    "share.msg_delete_partial": "部分删除失败",
+    "share.msg_delete_result": "成功 {} 个，失败 {} 个: {}"
 }

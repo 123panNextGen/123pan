@@ -185,6 +185,10 @@ class Pan123:
         """获取付费分享列表。"""
         return self._share.get_pay_share_list()
 
+    def delete_share(self, share_id, drive_id=0):
+        """删除分享链接。"""
+        return self._share.delete_share(share_id, drive_id)
+
     # ---- Session 配置（门面方法） ----
 
     def set_download_multi_thread(self, enabled):
