@@ -772,42 +772,6 @@ class FileInterface(QWidget):
                 # 添加占位符
                 self.__addPlaceholder(child)
 
-    # noinspection PyTypeChecker
-    def __getExpandedItems(self):
-        """获取树的展开状态"""
-        expanded_items = []
-
-        def collect_expanded_items(item):
-            if item.isExpanded():
-                item_id = item.data(0, Qt.ItemDataRole.UserRole)
-                if item_id:
-                    expanded_items.append(item_id)
-
-            for i in range(item.childCount()):
-                collect_expanded_items(item.child(i))
-
-        root = self.folderTree.invisibleRootItem()
-        for i in range(root.childCount()):
-            collect_expanded_items(root.child(i))
-
-        return expanded_items
-
-    # noinspection PyTypeChecker
-    def __restoreExpandedItems(self, expanded_items):
-        """恢复树的展开状态"""
-
-        def expand_items(item):
-            item_id = item.data(0, Qt.ItemDataRole.UserRole)
-            if item_id and item_id in expanded_items:
-                item.setExpanded(True)
-
-            for i in range(item.childCount()):
-                expand_items(item.child(i))
-
-        root = self.folderTree.invisibleRootItem()
-        for i in range(root.childCount()):
-            expand_items(root.child(i))
-
     def __uploadFile(self):
         """上传文件"""
         file_paths, _ = QFileDialog.getOpenFileNames(self, tr("file.upload_title", "选择要上传的文件"))

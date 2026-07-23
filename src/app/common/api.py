@@ -10,7 +10,6 @@ the Free Software Foundation, either version 3 of the License, or
 
 import random
 import uuid
-from pathlib import Path
 
 import requests
 
@@ -205,48 +204,6 @@ class Pan123:
 
     def download_file(self, url, file_path, file_size, progress_callback=None):
         return self._download.download_file(url, file_path, file_size, progress_callback)
-
-
-# ==================== 工具函数和任务管理模块 ====================
-
-
-def format_file_size(size):
-    """格式化文件大小"""
-    units = ["B", "KB", "MB", "GB", "TB"]
-    for i in range(len(units)):
-        if size < 1024.0:
-            return f"{round(size, 2)} {units[i]}"
-        size /= 1024.0
-    return f"{size:.2f} {units[-1]}"
-
-
-class FileDataManager:
-    """文件数据处理器 - 处理与文件相关的业务逻辑，不涉及UI"""
-
-    @staticmethod
-    def get_file_type_name(file_type):
-        """根据文件类型返回类型名称"""
-        return "文件夹" if file_type == 1 else "文件"
-
-    @staticmethod
-    def format_file_size_value(size):
-        """格式化文件大小（工具函数别名）"""
-        return format_file_size(size)
-
-    @staticmethod
-    def get_file_extension(filename):
-        """获取文件扩展名"""
-        return Path(filename).suffix.lower()
-
-    @staticmethod
-    def validate_file_exists(file_path):
-        """验证文件是否存在"""
-        return Path(file_path).is_file()
-
-    @staticmethod
-    def is_duplicate_filename(pan_instance, filename):
-        """检查是否存在同名文件"""
-        return any(item.get("FileName") == filename for item in pan_instance.list)
 
 
 def check_version():
