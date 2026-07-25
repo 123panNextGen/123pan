@@ -26,6 +26,7 @@ from qfluentwidgets import (
     TableWidget,
     PushButton,
     InfoBar,
+    MessageBox,
 )
 
 from ..common.style_sheet import StyleSheet
@@ -74,10 +75,14 @@ class ShareInterface(QWidget):
         self.copyPwdButton = PushButton(
             FIF.FONT.icon(), tr("share.copy_pwd", "复制密码"), self.topBarFrame
         )
+        self.deleteShareButton = PushButton(
+            FIF.DELETE.icon(), tr("share.delete", "删除分享"), self.topBarFrame
+        )
 
         self.topBarLayout.addWidget(self.refreshButton, 0)
         self.topBarLayout.addWidget(self.copyLinkButton, 0)
         self.topBarLayout.addWidget(self.copyPwdButton, 0)
+        self.topBarLayout.addWidget(self.deleteShareButton, 0)
         self.topBarLayout.addStretch(1)
 
         self.mainLayout.addWidget(self.topBarFrame, 0)
@@ -157,6 +162,7 @@ class ShareInterface(QWidget):
         self.refreshButton.clicked.connect(self.__refreshAll)
         self.copyLinkButton.clicked.connect(self.__copySelectedLink)
         self.copyPwdButton.clicked.connect(self.__copySelectedPwd)
+        self.deleteShareButton.clicked.connect(self.__deleteSelectedShare)
 
     def __getCurrentTabIndex(self):
         return self.tabWidget.currentIndex()
@@ -379,3 +385,67 @@ class ShareInterface(QWidget):
             content=tr("share.msg_pwd_copied", "已复制 {} 个分享密码到剪贴板").format(len(pwds)),
             parent=self,
         )
+
+    def __deleteSelectedShare(self):
+        """删除选中的分享链接"""
+        if not self.pan:
+            logger.warning("删除分享: pan 未设置")
+            return
+
+        selected = self.__getSelectedShares()
+        if not selected:
+            InfoBar.warning(
+                title=tr("share.msg_delete_share", "删除分享"),
+                content=tr("share.msg_select_delete", "请选择要删除的分享"),
+                parent=self,
+            )
+            return
+
+        # 确认对话框
+        count = len(selected)
+        title = tr("share.msg_delete_share", "删除分享")
+        content = tr("share.msg_confirm_delete", "确定删除选中的 {} 个分享链接吗？此操作不可撤销。").format(count)
+        box = MessageBox(title, content, self)
+        if not box.exec():
+            return
+
+        success_count = 0
+        fail_count = 0
+        last_error = ""
+
+        for item in selected:
+            share_id = item.share_id
+            share_name = item.share_name
+            logger.info("正在删除分享: name=%s, shareId=%s", share_name, share_id)
+            try:
+                result = self.pan.delete_share(share_id)
+                if result.code == 0:
+                    success_count += 1
+                    logger.info("分享删除成功: %s (shareId=%s)", share_name, share_id)
+                else:
+                    fail_count += 1
+                    last_error = result.msg
+                    logger.warning("分享删除失败: %s (shareId=%s), msg=%s", share_name, share_id, result.msg)
+            except Exception as e:
+                fail_count += 1
+                last_error = str(e)
+                logger.error("分享删除异常: %s (shareId=%s): %s", share_name, share_id, e)
+
+        # 显示结果
+        if fail_count == 0:
+            InfoBar.success(
+                title=tr("share.msg_delete_success", "删除成功"),
+                content=tr("share.msg_delete_count", "成功删除 {} 个分享链接").format(success_count),
+                parent=self,
+            )
+        else:
+            InfoBar.warning(
+                title=tr("share.msg_delete_partial", "部分删除失败"),
+                content=tr("share.msg_delete_result", "成功 {} 个，失败 {} 个: {}").format(
+                    success_count, fail_count, last_error
+                ),
+                parent=self,
+            )
+
+        # 刷新列表
+        self.__refreshAll()

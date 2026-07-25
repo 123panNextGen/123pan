@@ -26,6 +26,8 @@ from .model import (
     ApiCode,
     ApiReturnModel,
     CloudUserInfoModel,
+    DeviceItemModel,
+    DeviceListResponse,
     DeviceModel,
     FileItemModel,
     FileListResponse,
@@ -735,6 +737,52 @@ class NetSession:
             api_code_enum=ApiCode.success,
             msg="",
             data=info,
+        )
+
+    def get_device_list(self) -> ApiReturnModel:
+        """获取当前账户的登录设备列表。
+
+        调用 /b/api/user/device_list 接口。
+        """
+        url = urljoin(BASE_URL, "/b/api/user/device_list")
+        params = {
+            "operateType": 2,
+            "event": "deviceManagement",
+        }
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(url, params=params, timeout=(3, 5))
+        except requests.RequestException as e:
+            logger.error("获取设备列表失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("设备列表解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取设备列表 (%.2fs): code=%s, 设备数=%s",
+                    elapsed, code, len(body.get("data", {}).get("DeviceS", [])))
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        device_data = DeviceListResponse.from_dict(body)
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data=device_data,
         )
 
     # ---- 文件列表 ----

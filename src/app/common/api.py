@@ -110,6 +110,14 @@ class Pan123:
         """
         return self._auth.get_user_info()
 
+    def get_device_list(self):
+        """获取当前账户的登录设备列表。
+
+        Returns:
+            ApiReturnModel，成功时 data 为 DeviceListResponse 实例
+        """
+        return self._auth.get_device_list()
+
     def save_file(self):
         self._auth.devicetype = self.devicetype
         self._auth.osversion = self.osversion
@@ -184,6 +192,10 @@ class Pan123:
     def get_pay_share_list(self):
         """获取付费分享列表。"""
         return self._share.get_pay_share_list()
+
+    def delete_share(self, share_id, drive_id=0):
+        """删除分享链接。"""
+        return self._share.delete_share(share_id, drive_id)
 
     # ---- Session 配置（门面方法） ----
 

@@ -129,3 +129,7 @@ class AuthService:
     def get_user_info(self):
         """获取当前用户的云盘信息（UID、空间、VIP等）。"""
         return self._session.get_user_info()
+
+    def get_device_list(self):
+        """获取当前账户的登录设备列表。"""
+        return self._session.get_device_list()

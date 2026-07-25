@@ -41,7 +41,6 @@ else
     --windows-console-mode=disable
     --msvc=latest
     --static-libpython=no
-    --onefile-no-compression
   )
 fi
 
@@ -63,13 +62,6 @@ NOFOLLOW=(
   urllib3.contrib cryptography.x509 zstandard.tests
 )
 
-# UPX 不支持 ARM64 Windows PE 文件，仅在 x64 上启用
-if [ "$ARCH" = "x64" ]; then
-  UPX_ARGS=(--plugin-enable=upx)
-else
-  UPX_ARGS=()
-fi
-
 (
   cd "$project"
 
@@ -78,7 +70,6 @@ fi
     --onefile \
     --standalone \
     --enable-plugin=pyqt6 \
-    "${UPX_ARGS[@]}" \
     --jobs="$JOBS" \
     --nofollow-import-to="$(IFS=,; echo "${NOFOLLOW[*]}")" \
     --assume-yes-for-downloads \

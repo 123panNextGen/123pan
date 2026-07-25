@@ -216,6 +216,13 @@
     "cloud.file_count_desc": "Total files in cloud drive",
     "cloud.traffic": "Direct Traffic",
     "cloud.traffic_desc": "Direct link traffic quota for share",
+    "cloud.device_title": "Login Devices",
+    "cloud.device_current": "Current",
+    "cloud.device_item": "{}. {} ({}) {}",
+    "cloud.device_detail": "Platform: {} | IP: {} | Login: {} | Method: {}",
+    "cloud.device_master": "Master Device",
+    "cloud.device_master_item": "{} ({}) — Master Device",
+    "cloud.device_master_detail": "Platform: {} | IP: {} | Login: {}",
     "login.title": "Login to 123pan",
     "login.welcome": "Welcome to 123pan",
     "login.account_placeholder": "Select or enter account",
@@ -309,5 +316,13 @@
     "share.msg_link_copied": "Copied {} share link(s) to clipboard",
     "share.msg_copy_pwd": "Copy Password",
     "share.msg_no_pwd_selected": "Selected share has no password",
-    "share.msg_pwd_copied": "Copied {} share password(s) to clipboard"
+    "share.msg_pwd_copied": "Copied {} share password(s) to clipboard",
+    "share.delete": "Delete Share",
+    "share.msg_delete_share": "Delete Share",
+    "share.msg_select_delete": "Please select a share to delete",
+    "share.msg_confirm_delete": "Are you sure you want to delete {} share link(s)? This cannot be undone.",
+    "share.msg_delete_success": "Deleted",
+    "share.msg_delete_count": "Successfully deleted {} share link(s)",
+    "share.msg_delete_partial": "Partial Deletion Failed",
+    "share.msg_delete_result": "{} succeeded, {} failed: {}"
 }

@@ -216,6 +216,13 @@
     "cloud.file_count_desc": "当前云盘中的文件总数",
     "cloud.traffic": "直链流量",
     "cloud.traffic_desc": "分享文件的直链流量配额",
+    "cloud.device_title": "登录设备",
+    "cloud.device_current": "当前",
+    "cloud.device_item": "{}. {} ({}) {}",
+    "cloud.device_detail": "平台: {} | IP: {} | 登录: {} | 方式: {}",
+    "cloud.device_master": "主设备",
+    "cloud.device_master_item": "{} ({}) — 主设备",
+    "cloud.device_master_detail": "平台: {} | IP: {} | 登录: {}",
     "login.title": "登录123云盘",
     "login.welcome": "欢迎使用123云盘",
     "login.account_placeholder": "选择或输入账户",
@@ -309,5 +316,13 @@
     "share.msg_link_copied": "已复制 {} 个分享链接到剪贴板",
     "share.msg_copy_pwd": "复制密码",
     "share.msg_no_pwd_selected": "所选分享没有设置密码",
-    "share.msg_pwd_copied": "已复制 {} 个分享密码到剪贴板"
+    "share.msg_pwd_copied": "已复制 {} 个分享密码到剪贴板",
+    "share.delete": "删除分享",
+    "share.msg_delete_share": "删除分享",
+    "share.msg_select_delete": "请选择要删除的分享",
+    "share.msg_confirm_delete": "确定删除选中的 {} 个分享链接吗？此操作不可撤销。",
+    "share.msg_delete_success": "删除成功",
+    "share.msg_delete_count": "成功删除 {} 个分享链接",
+    "share.msg_delete_partial": "部分删除失败",
+    "share.msg_delete_result": "成功 {} 个，失败 {} 个: {}"
 }

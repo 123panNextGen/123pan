@@ -305,3 +305,52 @@ def _format_bytes(size):
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} PB"
+
+
+@dataclass
+class DeviceItemModel:
+    """登录设备条目模型。"""
+    device_name: str
+    plat_form: str
+    ip: str
+    last_login_time: str
+    device_type: str
+    key: str
+    cur_device: bool
+    login_type: str
+    img: str
+    login_uuid: str
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "DeviceItemModel":
+        return cls(
+            device_name=str(json.get("device_name", "")),
+            plat_form=str(json.get("plat_form", "")),
+            ip=str(json.get("ip", "")),
+            last_login_time=str(json.get("last_login_time", "")),
+            device_type=str(json.get("device_type", "")),
+            key=str(json.get("key", "")),
+            cur_device=bool(json.get("cur_device", False)),
+            login_type=str(json.get("login_type", "")),
+            img=str(json.get("img", "")),
+            login_uuid=str(json.get("LoginUuid", json.get("loginUuid", ""))),
+        )
+
+
+@dataclass
+class DeviceListResponse:
+    """设备列表 API 响应。"""
+    device_list: list[DeviceItemModel] = field(default_factory=list)
+    del_device_power: bool = False
+    master_device: DeviceItemModel | None = None
+
+    @classmethod
+    def from_dict(cls, json: dict[str, Any]) -> "DeviceListResponse":
+        data = json.get("data", json) if "data" in json else json
+        devices = data.get("DeviceS", []) or []
+        master = data.get("masterDevice")
+        return cls(
+            device_list=[DeviceItemModel.from_dict(d) for d in devices],
+            del_device_power=bool(data.get("del_device_power", False)),
+            master_device=DeviceItemModel.from_dict(master) if master else None,
+        )

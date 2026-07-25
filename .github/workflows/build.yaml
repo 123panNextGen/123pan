@@ -62,15 +62,8 @@ jobs:
             libxcb-xfixes0 \
             libxcb-xinerama0 \
             zip \
-            upx \
             clang \
             ccache
-
-      - name: Install Windows Dependencies
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install upx -y
 
       - name: Install dependencies
         run: |

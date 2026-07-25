@@ -116,3 +116,45 @@ class ShareService:
             code=0, api_code=0, api_code_enum=ApiCode.success, msg="",
             data=share_data,
         )
+
+    def delete_share(self, share_id, drive_id=0):
+        """删除分享链接。
+
+        Args:
+            share_id: 要删除的分享ID
+            drive_id: 云盘ID
+
+        Returns:
+            ApiReturnModel
+        """
+        url = SHARE_API_BASE + "/b/api/share/delete"
+        data = {
+            "driveId": drive_id,
+            "shareInfoList": [{"shareId": share_id}],
+            "isPayShare": 0,
+            "event": "shareCancel",
+            "operatePlace": 2,
+        }
+        t0 = time.monotonic()
+        try:
+            resp = self._session.http.post(url, json=data, timeout=10)
+        except requests.RequestException as e:
+            logger.error("删除分享链接失败 shareId=%s (%.2fs): %s", share_id, time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1, api_code=-1, api_code_enum=ApiCode.fail, msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._session._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        logger.info("删除分享链接 shareId=%s (%.2fs): code=%s", share_id, elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code, api_code=code, api_code_enum=ApiCode.fail, msg=msg,
+            )
+        return ApiReturnModel(
+            code=0, api_code=0, api_code_enum=ApiCode.success, msg="",
+            data=body.get("data"),
+        )
