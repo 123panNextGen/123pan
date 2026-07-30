@@ -88,6 +88,15 @@ class TransferInterface(QWidget):
         self._apply_proxy_settings()
         self._apply_speed_settings()
 
+    def update_concurrent_limits(self, max_uploads=None, max_downloads=None):
+        """动态更新并发传输上限（由设置页面触发）。"""
+        if max_uploads is not None:
+            self._max_concurrent_uploads = max_uploads
+        if max_downloads is not None:
+            self._max_concurrent_downloads = max_downloads
+        # 更新限制后尝试处理待处理队列
+        self._process_pending_queues()
+
     def _apply_proxy_settings(self):
         """从配置读取并应用代理设置。"""
         if not self.pan:
@@ -549,6 +558,11 @@ class TransferInterface(QWidget):
             return
 
         file_name, file_size, local_path, target_dir_id = self._pending_upload_queue.pop(0)
+
+    def _process_pending_queues(self):
+        """处理两个待处理队列（当并发限制变更时调用）。"""
+        self.__start_next_pending_upload()
+        self.__start_next_pending_download()
         # 在 upload_tasks 中找到对应的任务对象
         for task in self.upload_tasks:
             if (

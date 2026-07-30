@@ -638,10 +638,16 @@ class SettingInterface(ScrollArea):
 
     def __onMaxConcurrentUploadsChanged(self, val):
         ConfigManager.set_setting("maxConcurrentUploads", val)
+        mw = self.window()
+        if mw and hasattr(mw, "transfer_interface"):
+            mw.transfer_interface.update_concurrent_limits(max_uploads=val)
         logger.info("最大并发上传: %d", val)
 
     def __onMaxConcurrentDownloadsChanged(self, val):
         ConfigManager.set_setting("maxConcurrentDownloads", val)
+        mw = self.window()
+        if mw and hasattr(mw, "transfer_interface"):
+            mw.transfer_interface.update_concurrent_limits(max_downloads=val)
         logger.info("最大并发下载: %d", val)
 
     def _apply_proxy_to_service(self):
