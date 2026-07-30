@@ -59,6 +59,7 @@ class ConfigManager:
                 "proxyUsername": "",
                 "proxyPassword": "",
                 "logLevel": "DEBUG",
+                "windowOpacity": 100,
             },
         }
 

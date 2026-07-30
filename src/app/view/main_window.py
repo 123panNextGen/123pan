@@ -46,6 +46,10 @@ class MainWindow(FluentWindow):
         if sys.platform != "win32":
             self.setMicaEffectEnabled(False)
 
+        # 应用窗口透明度设置
+        opacity = ConfigManager.get_setting("windowOpacity", 100)
+        self.set_window_opacity(opacity)
+
         # 初始化子页面
         self.file_interface = FileInterface(self)
         self.transfer_interface = TransferInterface(self)
@@ -133,6 +137,16 @@ class MainWindow(FluentWindow):
         """清除当前登录状态，但保留已保存账户"""
         ConfigManager.set_current_account("")
         logger.info("登录配置已清除")
+
+    def set_window_opacity(self, opacity_pct):
+        """设置窗口透明度。
+
+        Args:
+            opacity_pct: 透明度百分比 (30-100)，100 为完全不透明。
+        """
+        opacity_pct = max(30, min(100, opacity_pct))
+        self.setWindowOpacity(opacity_pct / 100.0)
+        logger.debug("窗口透明度设置为: %d%%", opacity_pct)
 
     def handle_logout(self):
         """处理退出登录请求"""

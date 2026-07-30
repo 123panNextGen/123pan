@@ -98,6 +98,34 @@ class _SpeedLimitCard(_SpinBoxCard):
         )
 
 
+class _OpacityCard(SettingCard):
+    """窗口透明度设置卡片（滑块）"""
+
+    def __init__(self, icon, title, content, value=100, parent=None):
+        super().__init__(icon, title, content, parent)
+        from PyQt6.QtWidgets import QSlider
+
+        self.slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider.setRange(30, 100)
+        self.slider.setSingleStep(5)
+        self.slider.setValue(value)
+        self.slider.setMinimumWidth(180)
+        self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.slider.setTickInterval(10)
+        self.slider.valueChanged.connect(self._onValueChanged)
+        self.hBoxLayout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def _onValueChanged(self, val):
+        pass
+
+    def setValue(self, val):
+        self.slider.setValue(val)
+
+    def value(self):
+        return self.slider.value()
+
+
 class _ProxyHostCard(SettingCard):
     """自定义代理主机设置卡片"""
 
@@ -290,6 +318,14 @@ class SettingInterface(ScrollArea):
         )
         self.micaCard.setChecked(isWin11())
 
+        self.opacityCard = _OpacityCard(
+            FIF.TRANSPARENT,
+            tr("settings.opacity", "窗口透明度"),
+            tr("settings.opacity_desc", "调整主窗口透明度（30%-100%）"),
+            ConfigManager.get_setting("windowOpacity", 100),
+            self.personalGroup,
+        )
+
         self.languageCard = _ComboCard(
             FIF.LANGUAGE,
             tr("界面语言"),
@@ -407,6 +443,7 @@ class SettingInterface(ScrollArea):
 
         # 个性化组
         self.personalGroup.addSettingCard(self.micaCard)
+        self.personalGroup.addSettingCard(self.opacityCard)
         self.personalGroup.addSettingCard(self.languageCard)
 
         # 调试组
@@ -437,6 +474,15 @@ class SettingInterface(ScrollArea):
             content=tr("settings.msg_lang_restart_desc", "语言设置将在重启应用后生效"),
             parent=self,
         )
+
+    def __onOpacityChanged(self, val):
+        """窗口透明度变更"""
+        ConfigManager.set_setting("windowOpacity", val)
+        # 通过 parent 链找到 MainWindow 并应用透明度
+        w = self.window()
+        if w and hasattr(w, "set_window_opacity"):
+            w.set_window_opacity(val)
+        logger.info("窗口透明度: %d%%", val)
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
@@ -687,6 +733,7 @@ class SettingInterface(ScrollArea):
         self.languageCard.comboBox.currentTextChanged.connect(
             self.__onLanguageChanged
         )
+        self.opacityCard.slider.valueChanged.connect(self.__onOpacityChanged)
 
         # 关于
         self.aboutCard.clicked.connect(
