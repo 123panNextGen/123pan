@@ -605,20 +605,23 @@ class SettingInterface(ScrollArea):
 
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_download_multi_thread(checked)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_multi_thread(checked)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_download_speed_limit(val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_speed_limit(val)
         logger.info("下载限速: %d KB/s", val)
 
     def __onUploadSpeedChanged(self, val):
         ConfigManager.set_setting("uploadSpeedLimit", val)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_upload_speed_limit(val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_upload_speed_limit(val)
         logger.info("上传限速: %d KB/s", val)
 
     def __onMaxConcurrentUploadsChanged(self, val):
@@ -631,7 +634,8 @@ class SettingInterface(ScrollArea):
 
     def _apply_proxy_to_service(self):
         """将当前代理配置推送到 Service。"""
-        if not (self.parent() and hasattr(self.parent(), "pan")):
+        mw = self.window()
+        if not (mw and hasattr(mw, "pan")):
             return
         enabled = ConfigManager.get_setting("proxyEnabled", False)
         if enabled:
@@ -641,11 +645,11 @@ class SettingInterface(ScrollArea):
             username = ConfigManager.get_setting("proxyUsername", "")
             password = ConfigManager.get_setting("proxyPassword", "")
             if host and port > 0:
-                self.parent().pan.set_download_proxy(
+                mw.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
                 return
-        self.parent().pan.clear_download_proxy()
+        mw.pan.clear_download_proxy()
 
     def __onProxyEnabledChanged(self, checked):
         ConfigManager.set_setting("proxyEnabled", checked)
