@@ -64,13 +64,16 @@ class _SpinBoxCard(SettingCard):
         self.spinBox = QSpinBox(self)
         self.spinBox.setRange(min_val, max_val)
         self.spinBox.setSingleStep(step)
-        self.spinBox.setValue(value)
         self.spinBox.setSuffix(suffix)
         self.spinBox.setSpecialValueText(special_text)
         self.spinBox.setMinimumWidth(140)
         self.spinBox.valueChanged.connect(self._onValueChanged)
         self.hBoxLayout.addWidget(self.spinBox, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 valueChanged
+        self.spinBox.blockSignals(True)
+        self.spinBox.setValue(value)
+        self.spinBox.blockSignals(False)
 
     def _onValueChanged(self, val):
         """子类重写此方法以保存值。"""
@@ -108,13 +111,16 @@ class _OpacityCard(SettingCard):
         self.slider = QSlider(Qt.Orientation.Horizontal, self)
         self.slider.setRange(30, 100)
         self.slider.setSingleStep(5)
-        self.slider.setValue(value)
         self.slider.setMinimumWidth(180)
         self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.slider.setTickInterval(10)
         self.slider.valueChanged.connect(self._onValueChanged)
         self.hBoxLayout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 valueChanged
+        self.slider.blockSignals(True)
+        self.slider.setValue(value)
+        self.slider.blockSignals(False)
 
     def _onValueChanged(self, val):
         pass
@@ -132,12 +138,15 @@ class _ProxyHostCard(SettingCard):
     def __init__(self, icon, title, content, text="", parent=None):
         super().__init__(icon, title, content, parent)
         self.lineEdit = LineEdit(self)
-        self.lineEdit.setText(text)
         self.lineEdit.setPlaceholderText(tr("settings.proxy_host_placeholder", "例如: 127.0.0.1"))
         self.lineEdit.setMinimumWidth(180)
         self.lineEdit.textChanged.connect(self._onTextChanged)
         self.hBoxLayout.addWidget(self.lineEdit, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 textChanged
+        self.lineEdit.blockSignals(True)
+        self.lineEdit.setText(text)
+        self.lineEdit.blockSignals(False)
 
     def _onTextChanged(self, text):
         pass
@@ -155,12 +164,15 @@ class _ComboCard(SettingCard):
     def __init__(self, icon, title, content, texts=None, current_index=0, parent=None):
         super().__init__(icon, title, content, parent)
         self.comboBox = QComboBox(self)
-        if texts:
-            self.comboBox.addItems(texts)
-        self.comboBox.setCurrentIndex(current_index)
         self.comboBox.setMinimumWidth(140)
         self.hBoxLayout.addWidget(self.comboBox, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免 addItems/setCurrentIndex 触发 currentTextChanged
+        self.comboBox.blockSignals(True)
+        if texts:
+            self.comboBox.addItems(texts)
+        self.comboBox.setCurrentIndex(current_index)
+        self.comboBox.blockSignals(False)
 
     def currentText(self):
         return self.comboBox.currentText()
