@@ -44,6 +44,9 @@ from ..tasks.transfer_tasks import (
 
 logger = get_logger(__name__)
 
+# 默认最大并发传输数
+_DEFAULT_MAX_CONCURRENT = 3
+
 
 class TransferInterface(QWidget):
     """传输页面"""
@@ -61,6 +64,18 @@ class TransferInterface(QWidget):
         self.upload_threads = []
         self.download_threads = []
         self.pan = None  # Pan123实例
+
+        # 并发控制
+        self._pending_upload_queue = []  # 待处理上传队列: [(file_name, file_size, local_path, target_dir_id), ...]
+        self._pending_download_queue = []  # 待处理下载队列: [(file_name, file_size, file_id, save_path, current_dir_id), ...]
+        self._active_upload_count = 0
+        self._active_download_count = 0
+        self._max_concurrent_uploads = ConfigManager.get_setting(
+            "maxConcurrentUploads", _DEFAULT_MAX_CONCURRENT
+        )
+        self._max_concurrent_downloads = ConfigManager.get_setting(
+            "maxConcurrentDownloads", _DEFAULT_MAX_CONCURRENT
+        )
 
         self.__createTopBar()
         self.__createContent()
@@ -210,36 +225,69 @@ class TransferInterface(QWidget):
             self.downloadFrame.show()
 
     def add_upload_task(self, file_name, file_size, local_path, target_dir_id):
-        """添加上传任务"""
+        """添加上传任务。
+
+        若当前活跃上传数已达上限，任务进入等待队列；
+        否则立即启动上传线程。
+        """
         task = UploadTask(file_name, file_size, local_path, target_dir_id)
         self.upload_tasks.append(task)
         logger.info("添加上传任务: %s (%.2f MB)", file_name, file_size / 1024 / 1024)
         self.__update_upload_table()
 
-        if self.pan:
-            thread = UploadThread(task, self.pan)
-            thread.progress_updated.connect(
-                lambda progress, t=task: self.__update_task_progress(t, progress)
-            )
-            thread.status_updated.connect(
-                lambda status, t=task: self.__update_task_status(t, status)
-            )
-            thread.finished.connect(
-                lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
-            )
-            thread.error.connect(
-                lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
-            )
-            self.upload_threads.append(thread)
-            thread.start()
-            logger.debug("上传线程已启动: %s", file_name)
+        if not self.pan:
+            return task
 
+        if self._active_upload_count >= self._max_concurrent_uploads:
+            self._pending_upload_queue.append(
+                (file_name, file_size, local_path, target_dir_id)
+            )
+            task.status = tr("transfer.status_queued", "排队中")
+            self.__update_upload_table()
+            logger.debug(
+                "上传任务排队: %s (活跃: %d/%d)",
+                file_name,
+                self._active_upload_count,
+                self._max_concurrent_uploads,
+            )
+            return task
+
+        self.__start_upload_thread(task)
         return task
+
+    def __start_upload_thread(self, task):
+        """启动单个上传线程。"""
+        thread = UploadThread(task, self.pan)
+        thread.progress_updated.connect(
+            lambda progress, t=task: self.__update_task_progress(t, progress)
+        )
+        thread.status_updated.connect(
+            lambda status, t=task: self.__update_task_status(t, status)
+        )
+        thread.finished.connect(
+            lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
+        )
+        thread.error.connect(
+            lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
+        )
+        self.upload_threads.append(thread)
+        self._active_upload_count += 1
+        thread.start()
+        logger.debug(
+            "上传线程已启动: %s (活跃: %d/%d)",
+            task.file_name,
+            self._active_upload_count,
+            self._max_concurrent_uploads,
+        )
 
     def add_download_task(
         self, file_name, file_size, file_id, save_path, current_dir_id=0
     ):
-        """添加下载任务"""
+        """添加下载任务。
+
+        若当前活跃下载数已达上限，任务进入等待队列；
+        否则立即启动下载线程。
+        """
         task = DownloadTask(file_name, file_size, file_id, save_path, current_dir_id)
         self.download_tasks.append(task)
         logger.info(
@@ -250,25 +298,50 @@ class TransferInterface(QWidget):
         )
         self.__update_download_table()
 
-        if self.pan:
-            thread = DownloadThread(task, self.pan)
-            thread.progress_updated.connect(
-                lambda progress, t=task: self.__update_task_progress(t, progress)
-            )
-            thread.status_updated.connect(
-                lambda status, t=task: self.__update_task_status(t, status)
-            )
-            thread.finished.connect(
-                lambda t=task, th=thread: self.__on_thread_finished(t, th, "download")
-            )
-            thread.error.connect(
-                lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
-            )
-            self.download_threads.append(thread)
-            thread.start()
-            logger.debug("下载线程已启动: %s", file_name)
+        if not self.pan:
+            return task
 
+        if self._active_download_count >= self._max_concurrent_downloads:
+            self._pending_download_queue.append(
+                (file_name, file_size, file_id, save_path, current_dir_id)
+            )
+            task.status = tr("transfer.status_queued", "排队中")
+            self.__update_download_table()
+            logger.debug(
+                "下载任务排队: %s (活跃: %d/%d)",
+                file_name,
+                self._active_download_count,
+                self._max_concurrent_downloads,
+            )
+            return task
+
+        self.__start_download_thread(task)
         return task
+
+    def __start_download_thread(self, task):
+        """启动单个下载线程。"""
+        thread = DownloadThread(task, self.pan)
+        thread.progress_updated.connect(
+            lambda progress, t=task: self.__update_task_progress(t, progress)
+        )
+        thread.status_updated.connect(
+            lambda status, t=task: self.__update_task_status(t, status)
+        )
+        thread.finished.connect(
+            lambda t=task, th=thread: self.__on_thread_finished(t, th, "download")
+        )
+        thread.error.connect(
+            lambda err, t=task, th=thread: self.__on_thread_error(t, th, err)
+        )
+        self.download_threads.append(thread)
+        self._active_download_count += 1
+        thread.start()
+        logger.debug(
+            "下载线程已启动: %s (活跃: %d/%d)",
+            task.file_name,
+            self._active_download_count,
+            self._max_concurrent_downloads,
+        )
 
     def __update_task_progress(self, task, progress):
         """更新任务进度"""
@@ -287,32 +360,41 @@ class TransferInterface(QWidget):
             self.__update_download_table()
 
     def __on_thread_finished(self, task, thread, task_type):
-        """线程完成回调：更新 UI 并清理线程资源。"""
+        """线程完成回调：更新 UI、清理线程资源、启动下一个等待任务。"""
         logger.info("任务完成: type=%s, name=%s", task_type, task.file_name)
         self.__cleanup_thread(thread, task_type)
         if task_type == "upload":
+            self._active_upload_count -= 1
             self.__update_upload_table()
+            self.__start_next_pending_upload()
             InfoBar.success(
                 title=tr("transfer.msg_upload_complete", "上传完成"),
                 content=tr("transfer.msg_file_uploaded", "文件 '{}' 上传成功").format(task.file_name),
                 parent=self,
             )
         else:
+            self._active_download_count -= 1
             self.__update_download_table()
+            self.__start_next_pending_download()
 
     def __on_thread_error(self, task, thread, error):
-        """线程错误回调：更新 UI 并清理线程资源。"""
+        """线程错误回调：更新 UI、清理线程资源、启动下一个等待任务。"""
         logger.error(
             "任务失败: type=%s, name=%s, error=%s",
             type(task).__name__,
             task.file_name,
             error,
         )
-        self.__cleanup_thread(thread, "upload" if isinstance(task, UploadTask) else "download")
-        if isinstance(task, UploadTask):
+        task_type = "upload" if isinstance(task, UploadTask) else "download"
+        self.__cleanup_thread(thread, task_type)
+        if task_type == "upload":
+            self._active_upload_count -= 1
             self.__update_upload_table()
-        elif isinstance(task, DownloadTask):
+            self.__start_next_pending_upload()
+        else:
+            self._active_download_count -= 1
             self.__update_download_table()
+            self.__start_next_pending_download()
 
     def __cleanup_thread(self, thread, task_type):
         """断开线程所有信号并从列表中移除，释放资源。"""
@@ -352,7 +434,7 @@ class TransferInterface(QWidget):
         removed = 0
         for task in list(tasks):
             if task.status in (tr("transfer.status_completed", "已完成"), tr("transfer.status_cancelled", "已取消"), tr("transfer.status_failed", "失败")):
-                # 清理关联线程
+                # 清理关联线程（已完成任务的线程计数已由回调处理，此处仅清理线程资源）
                 for t in list(threads):
                     if t.task is task:
                         self.__cleanup_thread(t, route)
@@ -363,8 +445,10 @@ class TransferInterface(QWidget):
         if removed > 0:
             if route == "upload":
                 self.__update_upload_table()
+                self.__start_next_pending_upload()
             else:
                 self.__update_download_table()
+                self.__start_next_pending_download()
             InfoBar.success(
                 title=tr("transfer.msg_cleanup_done", "清理完成"),
                 content=tr("transfer.msg_cleaned_tasks", "已清除 {} 个已完成任务").format(removed),
@@ -406,25 +490,120 @@ class TransferInterface(QWidget):
                 return
 
     def __remove_task(self, task, task_type):
-        """删除任务及其关联线程。"""
+        """删除任务及其关联线程。同时从等待队列中移除（若在队列中）。"""
         if task_type == "upload":
             if task in self.upload_tasks:
                 self.upload_tasks.remove(task)
                 # 查找并清理关联线程
+                thread_found = False
                 for t in list(self.upload_threads):
                     if t.task is task:
                         self.__cleanup_thread(t, "upload")
+                        self._active_upload_count -= 1
+                        thread_found = True
                         break
+                # 若线程未找到，任务可能在等待队列中——需要从队列移除
+                if not thread_found:
+                    self._remove_from_pending_queue(task, "upload")
                 self.__update_upload_table()
+                if thread_found:
+                    self.__start_next_pending_upload()
         else:
             if task in self.download_tasks:
                 self.download_tasks.remove(task)
                 # 查找并清理关联线程
+                thread_found = False
                 for t in list(self.download_threads):
                     if t.task is task:
                         self.__cleanup_thread(t, "download")
+                        self._active_download_count -= 1
+                        thread_found = True
                         break
+                # 若线程未找到，任务可能在等待队列中——需要从队列移除
+                if not thread_found:
+                    self._remove_from_pending_queue(task, "download")
                 self.__update_download_table()
+                if thread_found:
+                    self.__start_next_pending_download()
+
+    def _remove_from_pending_queue(self, task, task_type):
+        """从等待队列中移除任务（按文件名匹配）。"""
+        if task_type == "upload":
+            self._pending_upload_queue = [
+                item
+                for item in self._pending_upload_queue
+                if item[0] != task.file_name
+            ]
+        else:
+            self._pending_download_queue = [
+                item
+                for item in self._pending_download_queue
+                if item[0] != task.file_name
+            ]
+
+    def __start_next_pending_upload(self):
+        """从待处理上传队列中启动下一个任务。"""
+        if not self._pending_upload_queue:
+            return
+        if self._active_upload_count >= self._max_concurrent_uploads:
+            return
+
+        file_name, file_size, local_path, target_dir_id = self._pending_upload_queue.pop(0)
+        # 在 upload_tasks 中找到对应的任务对象
+        for task in self.upload_tasks:
+            if (
+                isinstance(task, UploadTask)
+                and task.file_name == file_name
+                and task.status == tr("transfer.status_queued", "排队中")
+            ):
+                task.status = tr("transfer.status_waiting", "等待中")
+                self.__start_upload_thread(task)
+                self.__update_upload_table()
+                return
+
+        # 按索引回退：若未按名称匹配到，取最后一个排队任务
+        logger.warning("按名称未匹配到排队上传任务，尝试回退匹配")
+        for task in self.upload_tasks:
+            if (
+                isinstance(task, UploadTask)
+                and task.status == tr("transfer.status_queued", "排队中")
+            ):
+                task.status = tr("transfer.status_waiting", "等待中")
+                self.__start_upload_thread(task)
+                self.__update_upload_table()
+                return
+
+    def __start_next_pending_download(self):
+        """从待处理下载队列中启动下一个任务。"""
+        if not self._pending_download_queue:
+            return
+        if self._active_download_count >= self._max_concurrent_downloads:
+            return
+
+        file_name, file_size, file_id, save_path, current_dir_id = self._pending_download_queue.pop(0)
+        # 在 download_tasks 中找到对应的任务对象
+        for task in self.download_tasks:
+            if (
+                isinstance(task, DownloadTask)
+                and task.file_name == file_name
+                and task.status == tr("transfer.status_queued", "排队中")
+            ):
+                task.status = tr("transfer.status_waiting", "等待中")
+                self.__start_download_thread(task)
+                self.__update_download_table()
+                return
+
+        # 按索引回退
+        logger.warning("按名称未匹配到排队下载任务，尝试回退匹配")
+        for task in self.download_tasks:
+            if (
+                isinstance(task, DownloadTask)
+                and task.status == tr("transfer.status_queued", "排队中")
+            ):
+                task.status = tr("transfer.status_waiting", "等待中")
+                self.__start_download_thread(task)
+                self.__update_download_table()
+                return
 
     def __update_table(self, table, tasks, task_type):
         """更新传输表格（上传/下载共用）。

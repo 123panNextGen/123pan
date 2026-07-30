@@ -199,6 +199,28 @@ class SettingInterface(ScrollArea):
             self.downloadGroup,
         )
 
+        self.maxConcurrentUploadCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("最大并发上传"),
+            tr("同时上传的文件数上限"),
+            ConfigManager.get_setting("maxConcurrentUploads", 3),
+            self.downloadGroup,
+            min_val=1,
+            max_val=32,
+            step=1,
+        )
+
+        self.maxConcurrentDownloadCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("最大并发下载"),
+            tr("同时下载的文件数上限"),
+            ConfigManager.get_setting("maxConcurrentDownloads", 3),
+            self.downloadGroup,
+            min_val=1,
+            max_val=32,
+            step=1,
+        )
+
         # ---- 代理设置组 ----
         self.proxyGroup = SettingCardGroup(tr("网络代理"), self.scrollWidget)
 
@@ -372,6 +394,8 @@ class SettingInterface(ScrollArea):
         self.downloadGroup.addSettingCard(self.multiThreadCard)
         self.downloadGroup.addSettingCard(self.downloadSpeedCard)
         self.downloadGroup.addSettingCard(self.uploadSpeedCard)
+        self.downloadGroup.addSettingCard(self.maxConcurrentUploadCard)
+        self.downloadGroup.addSettingCard(self.maxConcurrentDownloadCard)
 
         # 代理设置组
         self.proxyGroup.addSettingCard(self.proxyEnabledCard)
@@ -551,6 +575,14 @@ class SettingInterface(ScrollArea):
             self.parent().pan.set_upload_speed_limit(val)
         logger.info("上传限速: %d KB/s", val)
 
+    def __onMaxConcurrentUploadsChanged(self, val):
+        ConfigManager.set_setting("maxConcurrentUploads", val)
+        logger.info("最大并发上传: %d", val)
+
+    def __onMaxConcurrentDownloadsChanged(self, val):
+        ConfigManager.set_setting("maxConcurrentDownloads", val)
+        logger.info("最大并发下载: %d", val)
+
     def _apply_proxy_to_service(self):
         """将当前代理配置推送到 Service。"""
         if not (self.parent() and hasattr(self.parent(), "pan")):
@@ -616,6 +648,12 @@ class SettingInterface(ScrollArea):
             self.__onDownloadSpeedChanged
         )
         self.uploadSpeedCard.spinBox.valueChanged.connect(self.__onUploadSpeedChanged)
+        self.maxConcurrentUploadCard.spinBox.valueChanged.connect(
+            self.__onMaxConcurrentUploadsChanged
+        )
+        self.maxConcurrentDownloadCard.spinBox.valueChanged.connect(
+            self.__onMaxConcurrentDownloadsChanged
+        )
 
         # 代理设置
         self.proxyEnabledCard.checkedChanged.connect(self.__onProxyEnabledChanged)
