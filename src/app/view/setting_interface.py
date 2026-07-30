@@ -64,13 +64,16 @@ class _SpinBoxCard(SettingCard):
         self.spinBox = QSpinBox(self)
         self.spinBox.setRange(min_val, max_val)
         self.spinBox.setSingleStep(step)
-        self.spinBox.setValue(value)
         self.spinBox.setSuffix(suffix)
         self.spinBox.setSpecialValueText(special_text)
         self.spinBox.setMinimumWidth(140)
         self.spinBox.valueChanged.connect(self._onValueChanged)
         self.hBoxLayout.addWidget(self.spinBox, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 valueChanged
+        self.spinBox.blockSignals(True)
+        self.spinBox.setValue(value)
+        self.spinBox.blockSignals(False)
 
     def _onValueChanged(self, val):
         """子类重写此方法以保存值。"""
@@ -98,18 +101,52 @@ class _SpeedLimitCard(_SpinBoxCard):
         )
 
 
+class _OpacityCard(SettingCard):
+    """窗口透明度设置卡片（滑块）"""
+
+    def __init__(self, icon, title, content, value=100, parent=None):
+        super().__init__(icon, title, content, parent)
+        from PyQt6.QtWidgets import QSlider
+
+        self.slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider.setRange(30, 100)
+        self.slider.setSingleStep(5)
+        self.slider.setMinimumWidth(180)
+        self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.slider.setTickInterval(10)
+        self.slider.valueChanged.connect(self._onValueChanged)
+        self.hBoxLayout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 valueChanged
+        self.slider.blockSignals(True)
+        self.slider.setValue(value)
+        self.slider.blockSignals(False)
+
+    def _onValueChanged(self, val):
+        pass
+
+    def setValue(self, val):
+        self.slider.setValue(val)
+
+    def value(self):
+        return self.slider.value()
+
+
 class _ProxyHostCard(SettingCard):
     """自定义代理主机设置卡片"""
 
     def __init__(self, icon, title, content, text="", parent=None):
         super().__init__(icon, title, content, parent)
         self.lineEdit = LineEdit(self)
-        self.lineEdit.setText(text)
         self.lineEdit.setPlaceholderText(tr("settings.proxy_host_placeholder", "例如: 127.0.0.1"))
         self.lineEdit.setMinimumWidth(180)
         self.lineEdit.textChanged.connect(self._onTextChanged)
         self.hBoxLayout.addWidget(self.lineEdit, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免初始化时触发 textChanged
+        self.lineEdit.blockSignals(True)
+        self.lineEdit.setText(text)
+        self.lineEdit.blockSignals(False)
 
     def _onTextChanged(self, text):
         pass
@@ -127,12 +164,15 @@ class _ComboCard(SettingCard):
     def __init__(self, icon, title, content, texts=None, current_index=0, parent=None):
         super().__init__(icon, title, content, parent)
         self.comboBox = QComboBox(self)
-        if texts:
-            self.comboBox.addItems(texts)
-        self.comboBox.setCurrentIndex(current_index)
         self.comboBox.setMinimumWidth(140)
         self.hBoxLayout.addWidget(self.comboBox, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
+        # 阻止信号以避免 addItems/setCurrentIndex 触发 currentTextChanged
+        self.comboBox.blockSignals(True)
+        if texts:
+            self.comboBox.addItems(texts)
+        self.comboBox.setCurrentIndex(current_index)
+        self.comboBox.blockSignals(False)
 
     def currentText(self):
         return self.comboBox.currentText()
@@ -197,6 +237,28 @@ class SettingInterface(ScrollArea):
             tr("限制上传速度，0 表示不限制"),
             ConfigManager.get_setting("uploadSpeedLimit", 0),
             self.downloadGroup,
+        )
+
+        self.maxConcurrentUploadCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("最大并发上传"),
+            tr("同时上传的文件数上限"),
+            ConfigManager.get_setting("maxConcurrentUploads", 3),
+            self.downloadGroup,
+            min_val=1,
+            max_val=32,
+            step=1,
+        )
+
+        self.maxConcurrentDownloadCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("最大并发下载"),
+            tr("同时下载的文件数上限"),
+            ConfigManager.get_setting("maxConcurrentDownloads", 3),
+            self.downloadGroup,
+            min_val=1,
+            max_val=32,
+            step=1,
         )
 
         # ---- 代理设置组 ----
@@ -267,6 +329,14 @@ class SettingInterface(ScrollArea):
             parent=self.personalGroup,
         )
         self.micaCard.setChecked(isWin11())
+
+        self.opacityCard = _OpacityCard(
+            FIF.TRANSPARENT,
+            tr("settings.opacity", "窗口透明度"),
+            tr("settings.opacity_desc", "调整主窗口透明度（30%-100%）"),
+            ConfigManager.get_setting("windowOpacity", 100),
+            self.personalGroup,
+        )
 
         self.languageCard = _ComboCard(
             FIF.LANGUAGE,
@@ -372,6 +442,8 @@ class SettingInterface(ScrollArea):
         self.downloadGroup.addSettingCard(self.multiThreadCard)
         self.downloadGroup.addSettingCard(self.downloadSpeedCard)
         self.downloadGroup.addSettingCard(self.uploadSpeedCard)
+        self.downloadGroup.addSettingCard(self.maxConcurrentUploadCard)
+        self.downloadGroup.addSettingCard(self.maxConcurrentDownloadCard)
 
         # 代理设置组
         self.proxyGroup.addSettingCard(self.proxyEnabledCard)
@@ -383,6 +455,7 @@ class SettingInterface(ScrollArea):
 
         # 个性化组
         self.personalGroup.addSettingCard(self.micaCard)
+        self.personalGroup.addSettingCard(self.opacityCard)
         self.personalGroup.addSettingCard(self.languageCard)
 
         # 调试组
@@ -413,6 +486,15 @@ class SettingInterface(ScrollArea):
             content=tr("settings.msg_lang_restart_desc", "语言设置将在重启应用后生效"),
             parent=self,
         )
+
+    def __onOpacityChanged(self, val):
+        """窗口透明度变更"""
+        ConfigManager.set_setting("windowOpacity", val)
+        # 通过 parent 链找到 MainWindow 并应用透明度
+        w = self.window()
+        if w and hasattr(w, "set_window_opacity"):
+            w.set_window_opacity(val)
+        logger.info("窗口透明度: %d%%", val)
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
@@ -535,25 +617,43 @@ class SettingInterface(ScrollArea):
 
     def __onMultiThreadChanged(self, checked):
         ConfigManager.set_setting("multiThreadDownload", checked)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_download_multi_thread(checked)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_multi_thread(checked)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_download_speed_limit(val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_speed_limit(val)
         logger.info("下载限速: %d KB/s", val)
 
     def __onUploadSpeedChanged(self, val):
         ConfigManager.set_setting("uploadSpeedLimit", val)
-        if self.parent() and hasattr(self.parent(), "pan"):
-            self.parent().pan.set_upload_speed_limit(val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_upload_speed_limit(val)
         logger.info("上传限速: %d KB/s", val)
+
+    def __onMaxConcurrentUploadsChanged(self, val):
+        ConfigManager.set_setting("maxConcurrentUploads", val)
+        mw = self.window()
+        if mw and hasattr(mw, "transfer_interface"):
+            mw.transfer_interface.update_concurrent_limits(max_uploads=val)
+        logger.info("最大并发上传: %d", val)
+
+    def __onMaxConcurrentDownloadsChanged(self, val):
+        ConfigManager.set_setting("maxConcurrentDownloads", val)
+        mw = self.window()
+        if mw and hasattr(mw, "transfer_interface"):
+            mw.transfer_interface.update_concurrent_limits(max_downloads=val)
+        logger.info("最大并发下载: %d", val)
 
     def _apply_proxy_to_service(self):
         """将当前代理配置推送到 Service。"""
-        if not (self.parent() and hasattr(self.parent(), "pan")):
+        mw = self.window()
+        if not (mw and hasattr(mw, "pan")):
             return
         enabled = ConfigManager.get_setting("proxyEnabled", False)
         if enabled:
@@ -563,11 +663,11 @@ class SettingInterface(ScrollArea):
             username = ConfigManager.get_setting("proxyUsername", "")
             password = ConfigManager.get_setting("proxyPassword", "")
             if host and port > 0:
-                self.parent().pan.set_download_proxy(
+                mw.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
                 return
-        self.parent().pan.clear_download_proxy()
+        mw.pan.clear_download_proxy()
 
     def __onProxyEnabledChanged(self, checked):
         ConfigManager.set_setting("proxyEnabled", checked)
@@ -616,6 +716,12 @@ class SettingInterface(ScrollArea):
             self.__onDownloadSpeedChanged
         )
         self.uploadSpeedCard.spinBox.valueChanged.connect(self.__onUploadSpeedChanged)
+        self.maxConcurrentUploadCard.spinBox.valueChanged.connect(
+            self.__onMaxConcurrentUploadsChanged
+        )
+        self.maxConcurrentDownloadCard.spinBox.valueChanged.connect(
+            self.__onMaxConcurrentDownloadsChanged
+        )
 
         # 代理设置
         self.proxyEnabledCard.checkedChanged.connect(self.__onProxyEnabledChanged)
@@ -649,6 +755,7 @@ class SettingInterface(ScrollArea):
         self.languageCard.comboBox.currentTextChanged.connect(
             self.__onLanguageChanged
         )
+        self.opacityCard.slider.valueChanged.connect(self.__onOpacityChanged)
 
         # 关于
         self.aboutCard.clicked.connect(

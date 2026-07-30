@@ -50,6 +50,8 @@ class ConfigManager:
                 "multiThreadDownload": True,
                 "downloadSpeedLimit": 0,
                 "uploadSpeedLimit": 0,
+                "maxConcurrentUploads": 3,
+                "maxConcurrentDownloads": 3,
                 "proxyEnabled": False,
                 "proxyType": "http",
                 "proxyHost": "",
@@ -57,6 +59,7 @@ class ConfigManager:
                 "proxyUsername": "",
                 "proxyPassword": "",
                 "logLevel": "DEBUG",
+                "windowOpacity": 100,
             },
         }
 

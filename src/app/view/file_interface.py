@@ -282,6 +282,10 @@ class FileInterface(QWidget):
         self.deleteButton.clicked.connect(self.__deleteFile)
         self.refreshButton.clicked.connect(self.__refreshFileList)
 
+    def load_pan_and_data(self):
+        """公开接口：加载 Pan123 实例并初始化数据（供 MainWindow 调用）。"""
+        self.__loadPanAndData()
+
     def __loadPanAndData(self):
         """加载 Pan123 实例并初始化数据。
 

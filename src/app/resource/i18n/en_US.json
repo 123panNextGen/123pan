@@ -103,6 +103,7 @@
     "transfer.status_completed": "Completed",
     "transfer.status_cancelled": "Cancelled",
     "transfer.status_failed": "Failed",
+    "transfer.status_queued": "Queued",
     "transfer.btn_pause": "Pause",
     "transfer.btn_resume": "Resume",
     "transfer.btn_delete": "Delete",

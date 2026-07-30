@@ -103,6 +103,7 @@
     "transfer.status_completed": "已完成",
     "transfer.status_cancelled": "已取消",
     "transfer.status_failed": "失败",
+    "transfer.status_queued": "排队中",
     "transfer.btn_pause": "暂停",
     "transfer.btn_resume": "继续",
     "transfer.btn_delete": "删除",
