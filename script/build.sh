@@ -60,12 +60,11 @@ NOFOLLOW=(
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
   PyQt6.QtDataVisualization PyQt6.QtHelp
   urllib3.contrib cryptography.x509 zstandard.tests
-  sqlite3 argparse asyncio csv configparser 
+  sqlite3 argparse asyncio configparser
   zipfile webbrowser decimal fractions statistics
   pickle shelve pprint difflib
-  linecache inspect trace bdb cmd code opcode
   netrc nntplib poplib smtplib imaplib ftplib
-  telnetlib socks sslproxy getpass tarfile
+  telnetlib socks getpass tarfile
 )
 
 (
