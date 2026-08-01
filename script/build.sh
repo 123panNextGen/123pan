@@ -60,14 +60,12 @@ NOFOLLOW=(
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
   PyQt6.QtDataVisualization PyQt6.QtHelp
   urllib3.contrib cryptography.x509 zstandard.tests
-  sqlite3
-  email xml html argparse asyncio
-  calendar csv configparser getpass gzip tarfile
+  sqlite3 argparse asyncio csv configparser 
   zipfile webbrowser decimal fractions statistics
-  pickle shelve pprint textwrap difflib fnmatch
+  pickle shelve pprint difflib
   linecache inspect trace bdb cmd code opcode
   netrc nntplib poplib smtplib imaplib ftplib
-  telnetlib socks sslproxy
+  telnetlib socks sslproxy getpass tarfile
 )
 
 (
@@ -85,7 +83,12 @@ NOFOLLOW=(
     --python-flag=no_asserts \
     --python-flag=no_site \
     --python-flag=no_warnings \
-    --noinclude-default-mode=nofollow \
+    --noinclude-pytest-mode=nofollow \
+    --noinclude-unittest-mode=nofollow \
+    --noinclude-pydoc-mode=nofollow \
+    --noinclude-IPython-mode=nofollow \
+    --noinclude-dask-mode=nofollow \
+    --noinclude-numba-mode=nofollow \
     --noinclude-setuptools-mode=nofollow \
     --remove-output \
     "${EXTRA_ARGS[@]}" \
