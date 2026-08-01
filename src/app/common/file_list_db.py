@@ -21,6 +21,9 @@ logger = get_logger(__name__)
 
 FILE_DB_PATH = CONFIG_DIR / "file_list_db.json"
 
+# 当前缓存格式版本（升级时递增，旧版本缓存自动失效重新拉取）
+CURRENT_CACHE_VERSION = 2
+
 # 缓存默认有效期（秒），超过此时间未更新的缓存视为过期
 DEFAULT_CACHE_TTL_SECONDS = 30 * 60  # 30 分钟
 
@@ -30,7 +33,7 @@ class FileListDB:
 
     数据结构：
     {
-        "version": 1,
+        "version": 2,
         "dirs": {
             "<dir_id>": {
                 "files": [ { ...file_info... }, ... ],
@@ -71,26 +74,34 @@ class FileListDB:
         self._load()
 
     def _load(self):
-        """从磁盘加载数据库。"""
+        """从磁盘加载数据库，自动迁移旧版本缓存。"""
         if not FILE_DB_PATH.exists():
-            self._data = {"version": 1, "dirs": {}}
+            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
             logger.debug("文件列表数据库不存在，创建空数据库")
             return
 
         try:
             with open(FILE_DB_PATH, "r", encoding="utf-8") as f:
                 self._data = json.load(f)
-            if "version" not in self._data:
-                self._data["version"] = 1
+            loaded_version = self._data.get("version", 0)
+            if loaded_version < CURRENT_CACHE_VERSION:
+                logger.info(
+                    "缓存版本过期 (v%d → v%d)，清除旧缓存重新拉取",
+                    loaded_version, CURRENT_CACHE_VERSION,
+                )
+                self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
+                self._save()
+                return
             if "dirs" not in self._data:
                 self._data["dirs"] = {}
             logger.debug(
-                "文件列表数据库已加载: %d 个目录",
+                "文件列表数据库已加载: %d 个目录 (v%d)",
                 len(self._data.get("dirs", {})),
+                self._data.get("version", 0),
             )
         except Exception as e:
             logger.error("加载文件列表数据库失败: %s", e)
-            self._data = {"version": 1, "dirs": {}}
+            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
 
     def _save(self):
         """原子写入数据库到磁盘。"""
@@ -272,7 +283,7 @@ class FileListDB:
     def delete_db(self):
         """删除整个数据库文件。"""
         with self._lock:
-            self._data = {"version": 1, "dirs": {}}
+            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
             self._dirty_dirs.clear()
             try:
                 if FILE_DB_PATH.exists():
