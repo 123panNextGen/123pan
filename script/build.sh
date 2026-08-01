@@ -80,7 +80,6 @@ NOFOLLOW=(
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
-    --python-flag=no_site \
     --python-flag=no_warnings \
     --noinclude-pytest-mode=nofollow \
     --noinclude-unittest-mode=nofollow \
@@ -88,7 +87,6 @@ NOFOLLOW=(
     --noinclude-IPython-mode=nofollow \
     --noinclude-dask-mode=nofollow \
     --noinclude-numba-mode=nofollow \
-    --noinclude-setuptools-mode=nofollow \
     --remove-output \
     "${EXTRA_ARGS[@]}" \
     --output-filename="$OUT_NAME" \
