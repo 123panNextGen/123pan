@@ -409,6 +409,7 @@ class NetSession:
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.Timeout,
             ) as e:
                 elapsed = time.monotonic() - t0
                 if conn_attempt < max_conn_retries - 1:
@@ -477,6 +478,7 @@ class NetSession:
             headers = {"Range": f"bytes={start}-{end}"}
             max_retries = 3
             for attempt in range(max_retries):
+                chunk_downloaded = 0  # 本次尝试下载的字节数，失败时需回退
                 try:
                     if part_path.exists():
                         part_path.unlink()
@@ -495,6 +497,7 @@ class NetSession:
                                         wait = self._download_limiter.consume(len(data))
                                         if wait > 0:
                                             time.sleep(wait)
+                                    chunk_downloaded += len(data)
                                     with progress_lock:
                                         downloaded_bytes[0] += len(data)
                                         now = time.monotonic()
@@ -508,16 +511,16 @@ class NetSession:
                             part_path.unlink()
                         except OSError:
                             pass
+                    # 回退本次尝试已计入的进度，避免重试时进度累加超100%
+                    if chunk_downloaded > 0:
+                        with progress_lock:
+                            downloaded_bytes[0] -= chunk_downloaded
                     if attempt < max_retries - 1:
                         wait = (attempt + 1) * 1.0
-                        with progress_lock:
-                            saved = downloaded_bytes[0]
                         logger.warning(
                             f"分片 {index} 第 {attempt + 1} 次失败，{wait:.0f}s 后重试: {e}"
                         )
                         time.sleep(wait)
-                        with progress_lock:
-                            downloaded_bytes[0] = saved
                         continue
                     with errors_lock:
                         errors.append((index, e))
