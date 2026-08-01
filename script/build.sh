@@ -61,7 +61,7 @@ NOFOLLOW=(
   PyQt6.QtDataVisualization PyQt6.QtHelp
   urllib3.contrib cryptography.x509 zstandard.tests
   sqlite3
-  email xml html argparse multiprocessing asyncio
+  email xml html argparse asyncio
   calendar csv configparser getpass gzip tarfile
   zipfile webbrowser decimal fractions statistics
   pickle shelve pprint textwrap difflib fnmatch
