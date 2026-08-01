@@ -60,6 +60,14 @@ NOFOLLOW=(
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
   PyQt6.QtDataVisualization PyQt6.QtHelp
   urllib3.contrib cryptography.x509 zstandard.tests
+  sqlite3
+  email xml html argparse multiprocessing asyncio
+  calendar csv configparser getpass gzip tarfile
+  zipfile webbrowser decimal fractions statistics
+  pickle shelve pprint textwrap difflib fnmatch
+  linecache inspect trace bdb cmd code opcode
+  netrc nntplib poplib smtplib imaplib ftplib
+  telnetlib socks sslproxy
 )
 
 (
@@ -76,6 +84,8 @@ NOFOLLOW=(
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
     --python-flag=no_site \
+    --python-flag=no_warnings \
+    --noinclude-default-mode=nofollow \
     --noinclude-setuptools-mode=nofollow \
     --remove-output \
     "${EXTRA_ARGS[@]}" \
