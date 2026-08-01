@@ -17,6 +17,7 @@
     "file.col_name": "Name",
     "file.col_type": "Type",
     "file.col_size": "Size",
+    "file.col_date": "Date",
     "file.type_folder": "Folder",
     "file.type_file": "File",
     "file.init_error": "Initialization failed: {}",

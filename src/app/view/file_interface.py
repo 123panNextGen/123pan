@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 from pathlib import Path
+from datetime import datetime
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QThreadPool
@@ -80,7 +81,7 @@ class FileInterface(QWidget):
         # 当前目录的文件列表（用于下载/预览/分享等操作的文件查找）
         self._current_file_items = []
 
-        # 排序模式: 0=按名称, 2=按大小
+        # 排序模式: 0=按名称, 2=按大小, 3=按日期
         self.sort_mode = 0
         # 排序方向: True=升序, False=降序
         self.sort_ascending = True
@@ -201,8 +202,8 @@ class FileInterface(QWidget):
 
         self.fileTable = TableWidget(self.listFrame)
         self.fileTable.setAlternatingRowColors(True)
-        self.fileTable.setColumnCount(3)  # 恢复为3列，移除操作列
-        self.fileTable.setHorizontalHeaderLabels([tr("file.col_name", "名称"), tr("file.col_type", "类型"), tr("file.col_size", "大小")])
+        self.fileTable.setColumnCount(4)
+        self.fileTable.setHorizontalHeaderLabels([tr("file.col_name", "名称"), tr("file.col_type", "类型"), tr("file.col_size", "大小"), tr("file.col_date", "日期")])
         self.fileTable.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
@@ -218,6 +219,7 @@ class FileInterface(QWidget):
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
             # 启用列头点击排序
             header.setSectionsClickable(True)
             header.setSortIndicatorShown(True)
@@ -651,6 +653,22 @@ class FileInterface(QWidget):
                     size_item = QTableWidgetItem()
                     self.fileTable.setItem(row, 2, size_item)
                 size_item.setText(size_text)
+
+                # 日期列：优先使用 UpdateAt，回退到 CreateAt
+                update_at = file_item.get("UpdateAt", file_item.get("updateAt", 0))
+                create_at = file_item.get("CreateAt", file_item.get("createAt", 0))
+                ts = update_at or create_at or 0
+                date_text = ""
+                if ts:
+                    try:
+                        date_text = datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
+                    except (ValueError, OSError):
+                        date_text = ""
+                date_item = self.fileTable.item(row, 3)
+                if date_item is None:
+                    date_item = QTableWidgetItem()
+                    self.fileTable.setItem(row, 3, date_item)
+                date_item.setText(date_text)
         finally:
             self.fileTable.blockSignals(False)
             self.fileTable.setUpdatesEnabled(True)
@@ -717,12 +735,19 @@ class FileInterface(QWidget):
             reverse = not self.sort_ascending
             folders.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
             files.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
+        elif self.sort_mode == 3:  # 按日期排序
+            reverse = not self.sort_ascending
+            def _date_key(item):
+                ts = item.get("UpdateAt", item.get("updateAt", 0)) or item.get("CreateAt", item.get("createAt", 0)) or 0
+                return int(ts)
+            folders.sort(key=_date_key, reverse=reverse)
+            files.sort(key=_date_key, reverse=reverse)
 
         return folders + files
 
     def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
         """列头排序指示器改变时的处理（纯客户端排序，不请求服务器）。"""
-        if logicalIndex not in [0, 2]:
+        if logicalIndex not in [0, 2, 3]:
             return
 
         clicked_same_column = logicalIndex == self.sort_mode
@@ -732,7 +757,7 @@ class FileInterface(QWidget):
             # 点击同一列：切换方向
             self.sort_ascending = not self.sort_ascending
         else:
-            # 切换到新列：名称默认升序，大小默认降序
+            # 切换到新列：名称默认升序，大小/日期默认降序
             self.sort_ascending = logicalIndex == 0
 
         # 客户端重新排序，不重新请求服务器
