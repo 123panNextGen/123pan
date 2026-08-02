@@ -17,6 +17,7 @@
     "file.col_name": "名称",
     "file.col_type": "类型",
     "file.col_size": "大小",
+    "file.col_date": "日期",
     "file.type_folder": "文件夹",
     "file.type_file": "文件",
     "file.init_error": "初始化失败: {}",
