@@ -11,6 +11,7 @@ dependencies = [
     "zstandard>=0.25.0",
     "cryptography>=49.0.0",
     "pyqt6-sip>=13.11.1",
+    "qrcode[pil]>=8.0",
 ]
 
 [tool.pytest.ini_options]

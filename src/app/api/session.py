@@ -35,6 +35,8 @@ from .model import (
 )
 
 BASE_URL = "https://www.123pan.cn"
+# 二维码登录专用域名（web 端登录接口）
+LOGIN_BASE_URL = "https://login.123pan.com"
 
 
 class NetSession:
@@ -787,6 +789,186 @@ class NetSession:
             msg="",
             data=device_data,
         )
+
+    # ---- 二维码登录 ----
+
+    @staticmethod
+    def _qr_headers(loginuuid: str) -> dict[str, str]:
+        """二维码登录接口专用请求头（web 平台）。"""
+        return {
+            "loginuuid": loginuuid,
+            "app-version": "3",
+            "platform": "web",
+            "content-type": "application/json;charset=UTF-8",
+        }
+
+    def qr_generate(self, loginuuid: str = "") -> ApiReturnModel:
+        """获取二维码登录会话（uniID + url）。
+
+        调用 login.123pan.com/api/user/qr-code/generate 接口。
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/generate")
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(
+                url, headers=self._qr_headers(loginuuid), timeout=(3, 10)
+            )
+        except requests.RequestException as e:
+            logger.error("获取二维码失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("二维码响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取二维码 (%.2fs): code=%s", elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        data = body.get("data", {})
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={
+                "uniID": data.get("uniID", ""),
+                "url": data.get("url", ""),
+            },
+        )
+
+    def qr_poll(self, uni_id: str, loginuuid: str = "") -> ApiReturnModel:
+        """轮询二维码扫码状态。
+
+        调用 login.123pan.com/api/user/qr-code/result 接口。
+
+        返回 data:
+        - loginStatus: 0=等待扫码, 1=已扫码待确认, 2=拒绝, 3=确认登录, 4=过期
+        - scanPlatform: 4=微信, 7=123云盘App（仅确认登录时从 login_type 取）
+        - token: JWT token（仅 App 扫码确认时直接返回）
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/result")
+        params = {"uniID": uni_id}
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(
+                url,
+                params=params,
+                headers=self._qr_headers(loginuuid),
+                timeout=(3, 10),
+            )
+        except requests.RequestException as e:
+            logger.error("轮询扫码状态失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("扫码状态解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        data = body.get("data", {})
+        logger.info("轮询扫码状态 (%.2fs): code=%s", elapsed, code)
+        # code=200 表示用户已确认登录（映射为 loginStatus=3）
+        if code == 200:
+            return ApiReturnModel(
+                code=0,
+                api_code=0,
+                api_code_enum=ApiCode.success,
+                msg="",
+                data={
+                    "loginStatus": 3,
+                    "scanPlatform": data.get("login_type", 0),
+                    "token": data.get("token", ""),
+                },
+            )
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={
+                "loginStatus": data.get("loginStatus", -1),
+                "scanPlatform": data.get("scanPlatform", 0),
+            },
+        )
+
+    def qr_wx_code(self, uni_id: str, loginuuid: str = "") -> ApiReturnModel:
+        """获取微信扫码登录凭证（wxCode）。
+
+        调用 login.123pan.com/api/user/qr-code/wx_code 接口。
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/wx_code")
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(
+                url,
+                headers=self._qr_headers(loginuuid),
+                json={"uniID": uni_id},
+                timeout=(3, 10),
+            )
+        except requests.RequestException as e:
+            logger.error("获取 wxCode 失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("wxCode 响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取 wxCode (%.2fs): code=%s", elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        data = body.get("data", {})
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={"wxCode": data.get("wxCode", "")},
+        )
+
+    def close(self):
+        """关闭内部 requests.Session，释放连接池资源。"""
+        for session in (self._http, self._transfer):
+            try:
+                session.close()
+            except Exception:
+                pass
 
     # ---- 文件列表 ----
 

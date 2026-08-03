@@ -35,6 +35,8 @@ class AuthService:
         self.user_name = ""
         self.password = ""
         self.authorization = ""
+        # 保持登录：为 True 时持久化凭证（密码/token），下次启动自动登录
+        self.stay_logged_in = True
 
     def sync_to_session(self):
         """将当前设备/用户信息同步到内部 NetSession。"""
@@ -62,18 +64,23 @@ class AuthService:
         return 200
 
     def save_file(self):
-        """将账户信息保存到配置文件。"""
+        """将账户信息保存到配置文件。
+
+        未勾选「保持登录」时不持久化密码与 token，下次启动需重新登录。
+        """
         try:
             account_info = {
                 "userName": self.user_name,
-                "passWord": self.password,
-                "authorization": self.authorization,
+                "passWord": self.password if self.stay_logged_in else "",
+                "authorization": self.authorization if self.stay_logged_in else "",
                 "deviceType": self.devicetype,
                 "osVersion": self.osversion,
                 "loginuuid": self.loginuuid,
             }
             ConfigManager.save_account(self.user_name, account_info)
-            logger.info("账号已保存")
+            logger.info(
+                "账号已保存 (stay_logged_in=%s)", self.stay_logged_in
+            )
         except Exception as e:
             logger.error("保存账号失败: %s", e)
 
@@ -133,3 +140,50 @@ class AuthService:
     def get_device_list(self):
         """获取当前账户的登录设备列表。"""
         return self._session.get_device_list()
+
+    # ---- 二维码登录 ----
+
+    def qr_generate(self):
+        """获取二维码登录会话（uniID + url）。"""
+        logger.info("AuthService.qr_generate")
+        result = self._session.qr_generate(self.loginuuid)
+        if result.code != 0:
+            logger.error("获取二维码失败: code=%s, msg=%s", result.code, result.msg)
+            raise RuntimeError(f"获取二维码失败: {result.msg or result.code}")
+        return result.data
+
+    def qr_poll(self, uni_id):
+        """轮询二维码扫码状态。
+
+        Returns:
+            dict: {loginStatus, scanPlatform, token?}
+        """
+        result = self._session.qr_poll(uni_id, self.loginuuid)
+        if result.code != 0:
+            logger.error("轮询扫码状态失败: code=%s, msg=%s", result.code, result.msg)
+            raise RuntimeError(f"轮询扫码状态失败: {result.msg or result.code}")
+        return result.data
+
+    def qr_wx_code(self, uni_id):
+        """获取微信扫码登录凭证（wxCode）。"""
+        result = self._session.qr_wx_code(uni_id, self.loginuuid)
+        if result.code != 0:
+            logger.error("获取 wxCode 失败: code=%s, msg=%s", result.code, result.msg)
+            raise RuntimeError(f"获取 wxCode 失败: {result.msg or result.code}")
+        return result.data.get("wxCode", "")
+
+    def load_saved_device(self):
+        """从已保存账户配置恢复设备指纹（扫码登录验证用）。"""
+        try:
+            account = ConfigManager.get_account(None)
+            if not account:
+                return
+            if account.get("deviceType"):
+                self.devicetype = account["deviceType"]
+            if account.get("osVersion"):
+                self.osversion = account["osVersion"]
+            if account.get("loginuuid"):
+                self.loginuuid = account["loginuuid"]
+            logger.debug("已恢复设备指纹: os=%s, type=%s", self.osversion, self.devicetype)
+        except Exception as e:
+            logger.error("恢复设备指纹失败: %s", e)
