@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QDialog,
     QComboBox,
+    QStackedWidget,
+    QWidget,
 )
 
 from qfluentwidgets import (
@@ -24,12 +26,15 @@ from qfluentwidgets import (
     PushButton,
     MessageBox,
     TitleLabel,
+    SegmentedWidget,
+    CheckBox,
 )
 
 from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
 from ..common.i18n import tr
+from .qr_login_page import QRLoginPage
 
 logger = get_logger(__name__)
 
@@ -48,7 +53,7 @@ class LoginDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 30, 40, 30)
-        layout.setSpacing(20)
+        layout.setSpacing(16)
 
         # 标题
         title = TitleLabel()
@@ -56,7 +61,28 @@ class LoginDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        layout.addSpacing(10)
+        # 登录方式切换
+        self.segmented_widget = SegmentedWidget()
+        self.segmented_widget.addItem(
+            routeKey="password", text=tr("login.tab_password", "密码登录")
+        )
+        self.segmented_widget.addItem(
+            routeKey="qrcode", text=tr("login.tab_qr", "扫码登录")
+        )
+        self.segmented_widget.setCurrentItem("password")
+        layout.addWidget(
+            self.segmented_widget, alignment=Qt.AlignmentFlag.AlignCenter
+        )
+
+        # 页面容器
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget)
+
+        # -- 密码登录页面 (page 0) --
+        password_page = QWidget()
+        p_layout = QVBoxLayout(password_page)
+        p_layout.setContentsMargins(0, 8, 0, 0)
+        p_layout.setSpacing(14)
 
         form = QFormLayout()
         form.setSpacing(15)
@@ -79,9 +105,17 @@ class LoginDialog(QDialog):
         self.le_pass.setMinimumHeight(36)
         form.addRow(tr("login.password_label", "密码"), self.le_pass)
 
-        layout.addLayout(form)
-        layout.addSpacing(10)
+        p_layout.addLayout(form)
 
+        # 保持登录
+        self.cb_stay_logged_in = CheckBox(tr("login.stay_logged_in", "保持登录"))
+        cb_row = QHBoxLayout()
+        cb_row.addStretch()
+        cb_row.addWidget(self.cb_stay_logged_in)
+        cb_row.addStretch()
+        p_layout.addLayout(cb_row)
+
+        # 登录 / 取消按钮
         h = QHBoxLayout()
         h.addStretch()
 
@@ -99,10 +133,30 @@ class LoginDialog(QDialog):
 
         h.addWidget(self.btn_ok)
         h.addWidget(self.btn_cancel)
-        layout.addLayout(h)
+        p_layout.addLayout(h)
 
+        self.stacked_widget.addWidget(password_page)
+
+        # -- 扫码登录页面 (page 1) --
+        self.qr_page = QRLoginPage(parent=self)
+        self.qr_page.loginSuccess.connect(self._on_qr_login_success)
+        self.stacked_widget.addWidget(self.qr_page)
+
+        # 同步两页面的"保持登录"状态
+        stay_logged_in = bool(ConfigManager.get_setting("stayLoggedIn", True))
+        self.cb_stay_logged_in.setChecked(stay_logged_in)
+        self.qr_page.cb_stay_logged_in.setChecked(stay_logged_in)
+        self.cb_stay_logged_in.stateChanged.connect(
+            lambda state: self.qr_page.cb_stay_logged_in.setChecked(bool(state))
+        )
+        self.qr_page.cb_stay_logged_in.stateChanged.connect(
+            lambda state: self.cb_stay_logged_in.setChecked(bool(state))
+        )
+
+        # 信号连接
+        self.segmented_widget.currentItemChanged.connect(self._on_tab_changed)
         self.btn_ok.clicked.connect(self.on_ok)
-        self.btn_cancel.clicked.connect(self.close)
+        self.btn_cancel.clicked.connect(self.reject)
 
         self.pan = None
         self.login_error = None
@@ -183,6 +237,10 @@ class LoginDialog(QDialog):
             QApplication.restoreOverrideCursor()
 
         try:
+            self.pan.stay_logged_in = self.cb_stay_logged_in.isChecked()
+            ConfigManager.set_setting(
+                "stayLoggedIn", self.cb_stay_logged_in.isChecked()
+            )
             if hasattr(self.pan, "save_file"):
                 self.pan.save_file()
         except (IOError, OSError) as e:
@@ -191,6 +249,42 @@ class LoginDialog(QDialog):
             logger.error(f"保存配置时发生未知错误: {e}")
         logger.info("登录成功，对话框关闭: %s", user)
         self.accept()
+
+    def _on_tab_changed(self, route_key):
+        """登录方式切换。"""
+        if route_key == "password":
+            self.stacked_widget.setCurrentIndex(0)
+            self.qr_page.stop_polling()
+        else:
+            self.stacked_widget.setCurrentIndex(1)
+            self.qr_page.start_qr_flow()
+
+    def _on_qr_login_success(self, pan):
+        """扫码登录成功回调。"""
+        self.pan = pan
+        try:
+            pan.stay_logged_in = self.cb_stay_logged_in.isChecked()
+            ConfigManager.set_setting(
+                "stayLoggedIn", self.cb_stay_logged_in.isChecked()
+            )
+            if hasattr(pan, "save_file"):
+                pan.save_file()
+        except Exception as e:
+            logger.warning("保存配置失败: %s", e)
+        logger.info("扫码登录成功，对话框关闭: %s", pan.user_name)
+        self.accept()
+
+    def reject(self):
+        """取消登录：停止扫码轮询并关闭对话框。"""
+        QApplication.restoreOverrideCursor()
+        self.qr_page.stop_polling()
+        super().reject()
+
+    def closeEvent(self, event):
+        """关闭时停止扫码轮询。"""
+        QApplication.restoreOverrideCursor()
+        self.qr_page.stop_polling()
+        super().closeEvent(event)
 
     def get_pan(self):
         """获取登录成功的Pan对象"""

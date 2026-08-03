@@ -14,7 +14,8 @@ import qrcode
 from PyQt6 import sip
 from PyQt6.QtCore import Qt, QThreadPool, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from qfluentwidgets import CheckBox
 
 from ..common.i18n import tr
 from ..common.log import get_logger
@@ -82,6 +83,16 @@ class QRLoginPage(QWidget):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet("QLabel { font-size: 14px; }")
         layout.addWidget(self.status_label)
+
+        layout.addSpacing(12)
+
+        # "保持登录" checkbox（与密码页面通过信号同步）
+        self.cb_stay_logged_in = CheckBox(tr("login.stay_logged_in", "保持登录"))
+        cb_wrapper = QHBoxLayout()
+        cb_wrapper.addStretch()
+        cb_wrapper.addWidget(self.cb_stay_logged_in)
+        cb_wrapper.addStretch()
+        layout.addLayout(cb_wrapper)
 
         layout.addStretch(1)
 
