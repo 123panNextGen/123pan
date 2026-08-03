@@ -15,5 +15,5 @@ project=$(realpath $(dirname $0)/..)
 (
   cd $project
 
-  uv run pytest
+  uv run --group test pytest
   )
