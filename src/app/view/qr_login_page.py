@@ -49,6 +49,7 @@ class QRLoginPage(QWidget):
         self._consecutive_errors = 0
         self._qr_flow_id = 0
         self._poll_in_flight = False
+        self._qr_refresh_count = 0
         self._pending_task = None
 
         layout = QVBoxLayout(self)
@@ -243,7 +244,7 @@ class QRLoginPage(QWidget):
         if status == 0:
             # 等待扫码
             return
-        elif status == 1:
+        if status == 1:
             # 已扫码，待确认
             self.status_label.setText(
                 tr("qr_login.status_scanned", "扫码成功，请在手机上确认")
@@ -266,7 +267,7 @@ class QRLoginPage(QWidget):
         elif status == 4:
             # 二维码过期
             self.stop_polling()
-            self._qr_refresh_count = getattr(self, "_qr_refresh_count", 0) + 1
+            self._qr_refresh_count += 1
             if self._qr_refresh_count > _MAX_QR_REFRESH:
                 self.status_label.setText(
                     tr("qr_login.status_expired_close", "二维码已过期，请关闭后重试")
@@ -316,7 +317,7 @@ class QRLoginPage(QWidget):
     def _on_expired(self):
         """二维码过期，自动刷新（受 _qr_refresh_count 限制）。"""
         self.poll_timer.stop()
-        self._qr_refresh_count = getattr(self, "_qr_refresh_count", 0) + 1
+        self._qr_refresh_count += 1
         if self._qr_refresh_count > _MAX_QR_REFRESH:
             self.status_label.setText(
                 tr("qr_login.status_expired_manual", "二维码已过期，请手动刷新")
