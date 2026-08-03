@@ -8,6 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+from PyQt6 import sip
 from PyQt6.QtCore import QRunnable
 
 from ..common.api import Pan123
@@ -16,6 +17,19 @@ from ..common.log import get_logger
 from .signals import _QRGenerateSignals, _QRPollSignals, _QRVerifySignals
 
 logger = get_logger(__name__)
+
+
+def _emit_safe(signals, signal_name, *args):
+    """安全发射信号。
+
+    页面销毁（如用户关闭登录框）时信号对象可能已失效，
+    避免在工作线程中抛出 "wrapped C/C++ object ... deleted"。
+    """
+    try:
+        if not sip.isdeleted(signals):
+            getattr(signals, signal_name).emit(*args)
+    except RuntimeError:
+        pass
 
 
 class QRGenerateTask(QRunnable):
@@ -32,12 +46,12 @@ class QRGenerateTask(QRunnable):
             pan_temp = Pan123(anonymous=True)
             data = pan_temp.qr_generate()
             data["_pan_temp"] = pan_temp
-            self.signals.finished.emit(data)
+            _emit_safe(self.signals, "finished", data)
         except Exception as e:
             if pan_temp is not None:
                 pan_temp.close()
             logger.error("获取二维码失败: %s", e)
-            self.signals.error.emit(str(e))
+            _emit_safe(self.signals, "error", str(e))
 
 
 class QRPollTask(QRunnable):
@@ -53,10 +67,10 @@ class QRPollTask(QRunnable):
     def run(self):
         try:
             result = self._pan_temp.qr_poll(self._uni_id)
-            self.signals.result.emit(result)
+            _emit_safe(self.signals, "result", result)
         except Exception as e:
             logger.error("轮询扫码状态失败: %s", e)
-            self.signals.error.emit()
+            _emit_safe(self.signals, "error")
 
 
 class QRLoginVerifyTask(QRunnable):
@@ -79,16 +93,20 @@ class QRLoginVerifyTask(QRunnable):
                     self._pan_temp.qr_wx_code(self._uni_id)
                     logger.info("微信扫码登录获取 wxCode 成功")
                 except Exception as e:
-                    self.signals.error.emit(str(e))
+                    _emit_safe(self.signals, "error", str(e))
                     return
-                self.signals.error.emit(
-                    tr("qr_login.wechat_unsupported", "微信登录暂不支持，请使用 123云盘 App 扫码")
+                _emit_safe(
+                    self.signals,
+                    "error",
+                    tr("qr_login.wechat_unsupported", "微信登录暂不支持，请使用 123云盘 App 扫码"),
                 )
                 return
 
             if not self._token:
-                self.signals.error.emit(
-                    tr("qr_login.no_credential", "登录失败：未获取到凭证")
+                _emit_safe(
+                    self.signals,
+                    "error",
+                    tr("qr_login.no_credential", "登录失败：未获取到凭证"),
                 )
                 return
 
@@ -101,16 +119,18 @@ class QRLoginVerifyTask(QRunnable):
             pan.apply_saved_device()
             result = pan.get_user_info()
             if result.code != 0 or result.data is None:
-                self.signals.error.emit(
-                    tr("qr_login.verify_failed", "登录验证失败，请重试")
+                _emit_safe(
+                    self.signals,
+                    "error",
+                    tr("qr_login.verify_failed", "登录验证失败，请重试"),
                 )
                 return
             pan.user_name = result.data.nickname or str(result.data.uid)
             logger.info("扫码登录验证成功: user=%s", pan.user_name)
-            self.signals.success.emit(pan)
+            _emit_safe(self.signals, "success", pan)
         except Exception as e:
             logger.error("扫码登录验证异常: %s", e)
-            self.signals.error.emit(str(e))
+            _emit_safe(self.signals, "error", str(e))
         finally:
             if self._pan_temp is not None:
                 self._pan_temp.close()
