@@ -46,8 +46,31 @@ class UploadService:
                 md5.update(data)
         return md5.hexdigest()
 
-    def up_load(self, file_path, parent_file_id, dup_choice=0, signals=None, task=None):
-        """上传文件。
+    def _validate_resume_info(self, resume_info, file_path_obj, fsize):
+        """校验续传信息是否可用于当前文件。
+
+        Returns:
+            有效时返回 resume_info dict，否则返回 None。
+        """
+        if not resume_info or not isinstance(resume_info, dict):
+            return None
+        required = ("bucket", "storage_node", "upload_key", "upload_id", "up_file_id")
+        if not all(resume_info.get(k) for k in required):
+            return None
+        if resume_info.get("file_size") != fsize:
+            return None
+        # 文件修改时间变化则放弃续传
+        stored_mtime = resume_info.get("file_mtime")
+        current_mtime = file_path_obj.stat().st_mtime
+        if stored_mtime and abs(stored_mtime - current_mtime) > 1:
+            return None
+        return resume_info
+
+    def up_load(
+        self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
+        resume_info=None, session_callback=None,
+    ):
+        """上传文件（支持断点续传）。
 
         Args:
             file_path: 本地文件路径
@@ -55,6 +78,8 @@ class UploadService:
             dup_choice: 重复文件处理策略（0=提示/1=覆盖/2=跳过）
             signals: 可选信号对象（需有 progress 信号）
             task: 可选的任务控制对象（需有 is_cancelled 属性）
+            resume_info: 断点续传信息（S3 会话），文件未变化时复用
+            session_callback: 获得 S3 会话后回调，供调用方持久化续传信息
 
         Returns:
             int: 上传后的文件ID（成功）
@@ -71,31 +96,35 @@ class UploadService:
         logger.info("上传开始: %s (%.2f MB)", file_name, fsize / 1024 / 1024)
 
         t0 = time.monotonic()
-        readable_hash = self.compute_file_md5(file_path)
-        logger.debug("文件 MD5 计算完成: %s", readable_hash)
+        block_size = 5242880
 
         if task and task.is_cancelled:
             return "已取消"
 
-        list_up_request = {
-            "driveId": 0,
-            "etag": readable_hash,
-            "fileName": file_name,
-            "parentFileId": parent_file_id,
-            "size": fsize,
-            "type": 0,
-            "duplicate": 0,
-        }
+        # 校验续传信息：文件未变化时复用既有 S3 会话
+        resume = self._validate_resume_info(resume_info, file_path_obj, fsize)
 
-        up_res = self._session.http.post(
-            "https://www.123pan.cn/b/api/file/upload_request",
-            json=list_up_request,
-            timeout=30,
-        )
-        up_res_json = up_res.json()
-        res_code_up = up_res_json.get("code", -1)
-        if res_code_up == 5060:
-            list_up_request["duplicate"] = dup_choice
+        if resume:
+            bucket = resume["bucket"]
+            storage_node = resume["storage_node"]
+            upload_key = resume["upload_key"]
+            upload_id = resume["upload_id"]
+            up_file_id = resume["up_file_id"]
+            logger.info("上传断点续传: %s (upload_id=%s)", file_name, upload_id)
+        else:
+            readable_hash = self.compute_file_md5(file_path)
+            logger.debug("文件 MD5 计算完成: %s", readable_hash)
+
+            list_up_request = {
+                "driveId": 0,
+                "etag": readable_hash,
+                "fileName": file_name,
+                "parentFileId": parent_file_id,
+                "size": fsize,
+                "type": 0,
+                "duplicate": 0,
+            }
+
             up_res = self._session.http.post(
                 "https://www.123pan.cn/b/api/file/upload_request",
                 json=list_up_request,
@@ -103,24 +132,52 @@ class UploadService:
             )
             up_res_json = up_res.json()
             res_code_up = up_res_json.get("code", -1)
-        if res_code_up != 0:
-            raise RuntimeError(f"上传请求失败: {up_res_json}")
+            if res_code_up == 5060:
+                list_up_request["duplicate"] = dup_choice
+                up_res = self._session.http.post(
+                    "https://www.123pan.cn/b/api/file/upload_request",
+                    json=list_up_request,
+                    timeout=30,
+                )
+                up_res_json = up_res.json()
+                res_code_up = up_res_json.get("code", -1)
+            if res_code_up != 0:
+                raise RuntimeError(f"上传请求失败: {up_res_json}")
 
-        if up_res_json["data"].get("Reuse", False):
+            if up_res_json["data"].get("Reuse", False):
+                up_file_id = up_res_json["data"]["FileId"]
+                elapsed = time.monotonic() - t0
+                speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
+                logger.info(
+                    "上传完成(复用): %s (%.2f MB / %.1fs / %.1f MB/s)",
+                    file_name, fsize / 1024 / 1024, elapsed, speed,
+                )
+                return up_file_id
+
+            bucket = up_res_json["data"]["Bucket"]
+            storage_node = up_res_json["data"]["StorageNode"]
+            upload_key = up_res_json["data"]["Key"]
+            upload_id = up_res_json["data"]["UploadId"]
             up_file_id = up_res_json["data"]["FileId"]
-            elapsed = time.monotonic() - t0
-            speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
-            logger.info(
-                "上传完成(复用): %s (%.2f MB / %.1fs / %.1f MB/s)",
-                file_name, fsize / 1024 / 1024, elapsed, speed,
-            )
-            return up_file_id
 
-        bucket = up_res_json["data"]["Bucket"]
-        storage_node = up_res_json["data"]["StorageNode"]
-        upload_key = up_res_json["data"]["Key"]
-        upload_id = up_res_json["data"]["UploadId"]
-        up_file_id = up_res_json["data"]["FileId"]
+            # 回调持久化 S3 会话，供中断后断点续传
+            if session_callback:
+                try:
+                    session_callback(
+                        {
+                            "bucket": bucket,
+                            "storage_node": storage_node,
+                            "upload_key": upload_key,
+                            "upload_id": upload_id,
+                            "up_file_id": up_file_id,
+                            "etag": readable_hash,
+                            "file_mtime": file_path_obj.stat().st_mtime,
+                            "file_size": fsize,
+                            "block_size": block_size,
+                        }
+                    )
+                except Exception as e:
+                    logger.error("持久化上传会话失败: %s", e)
 
         start_data = {
             "bucket": bucket,
@@ -138,10 +195,24 @@ class UploadService:
         if res_code_up != 0:
             raise RuntimeError(f"获取传输列表失败: {start_res_json}")
 
-        block_size = 5242880
-        total_sent = 0
+        # 已上传分片（续传时跳过）
+        uploaded_parts = set()
+        for part in (start_res_json.get("data") or {}).get("parts") or []:
+            try:
+                uploaded_parts.add(int(part.get("PartNumber", 0)))
+            except (TypeError, ValueError):
+                pass
+
         part_number = 1
+        while part_number in uploaded_parts:
+            part_number += 1
+        total_sent = min((part_number - 1) * block_size, fsize)
+        if part_number > 1:
+            logger.info("上传续传跳过 %d 个已完成分片", part_number - 1)
+
         with open(file_path, "rb") as f:
+            if part_number > 1:
+                f.seek((part_number - 1) * block_size)
             while True:
                 if task and task.is_cancelled:
                     return "已取消"

@@ -226,8 +226,11 @@ class Pan123:
         """从回收站永久删除指定文件"""
         return self._file.permanent_delete_files(file_id_list)
 
-    def up_load(self, file_path):
-        return self._upload.up_load(file_path, self.parent_file_id)
+    def up_load(self, file_path, resume_info=None, session_callback=None):
+        return self._upload.up_load(
+            file_path, self.parent_file_id,
+            resume_info=resume_info, session_callback=session_callback,
+        )
 
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
@@ -266,8 +269,11 @@ class Pan123:
     def clear_download_proxy(self):
         self._download.clear_proxy()
 
-    def download_file(self, url, file_path, file_size, progress_callback=None):
-        return self._download.download_file(url, file_path, file_size, progress_callback)
+    def download_file(self, url, file_path, file_size, progress_callback=None,
+                      resume_offset=0):
+        return self._download.download_file(
+            url, file_path, file_size, progress_callback, resume_offset
+        )
 
 
 def check_version():
