@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QFrame,
     QHBoxLayout,
+    QComboBox,
 )
 
 from PyQt6.QtCore import Qt
@@ -31,6 +32,12 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.config import ConfigManager
+from ..common.transfer_store import (
+    TransferStore,
+    STATUS_QUEUED,
+    STATUS_RUNNING,
+    STATUS_FAILED,
+)
 
 from ..common.log import get_logger
 from ..common.i18n import tr
@@ -64,6 +71,9 @@ class TransferInterface(QWidget):
         self.upload_threads = []
         self.download_threads = []
         self.pan = None  # Pan123实例
+
+        # 传输任务持久化（历史记录 / 断点续传）
+        self._store = TransferStore()
 
         # 并发控制
         self._pending_upload_queue = []  # 待处理上传队列: [(file_name, file_size, local_path, target_dir_id), ...]
@@ -143,6 +153,9 @@ class TransferInterface(QWidget):
         self.segmentedWidget.addItem(
             routeKey="download", icon=FIF.DOWNLOAD.icon(), text=tr("transfer.download_tab", "下载")
         )
+        self.segmentedWidget.addItem(
+            routeKey="history", icon=FIF.HISTORY.icon(), text=tr("transfer.history_tab", "历史记录")
+        )
         self.segmentedWidget.setCurrentItem("upload")
 
         self.clearCompletedButton = PushButton(
@@ -165,9 +178,9 @@ class TransferInterface(QWidget):
 
         self.uploadTable = TableWidget(self.uploadFrame)
         self.uploadTable.setAlternatingRowColors(True)
-        self.uploadTable.setColumnCount(6)
+        self.uploadTable.setColumnCount(7)
         self.uploadTable.setHorizontalHeaderLabels(
-            [tr("transfer.col_name", "文件名"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
@@ -181,6 +194,7 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
 
         self.uploadLayout.addWidget(self.uploadTable)
 
@@ -192,9 +206,9 @@ class TransferInterface(QWidget):
 
         self.downloadTable = TableWidget(self.downloadFrame)
         self.downloadTable.setAlternatingRowColors(True)
-        self.downloadTable.setColumnCount(6)
+        self.downloadTable.setColumnCount(7)
         self.downloadTable.setHorizontalHeaderLabels(
-            [tr("transfer.col_name", "文件名"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
@@ -208,14 +222,56 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
 
         self.downloadLayout.addWidget(self.downloadTable)
 
+        # 历史记录表格
+        self.historyFrame = QFrame(self)
+        self.historyFrame.setObjectName("frame")
+        self.historyLayout = QVBoxLayout(self.historyFrame)
+        self.historyLayout.setContentsMargins(0, 8, 0, 0)
+
+        history_header = QHBoxLayout()
+        self.clearHistoryButton = PushButton(
+            FIF.DELETE.icon(), tr("transfer.clear_history", "清空历史"), self.historyFrame
+        )
+        self.clearHistoryButton.clicked.connect(self.__clear_history)
+        history_header.addStretch()
+        history_header.addWidget(self.clearHistoryButton)
+        self.historyLayout.addLayout(history_header)
+
+        self.historyTable = TableWidget(self.historyFrame)
+        self.historyTable.setAlternatingRowColors(True)
+        self.historyTable.setColumnCount(5)
+        self.historyTable.setHorizontalHeaderLabels(
+            [
+                tr("transfer.col_type", "类型"),
+                tr("transfer.col_name", "文件名"),
+                tr("transfer.col_size", "大小"),
+                tr("transfer.col_status", "状态"),
+                tr("transfer.col_time", "时间"),
+            ]
+        )
+        self.historyTable.setBorderRadius(8)
+        self.historyTable.setBorderVisible(True)
+
+        header = self.historyTable.horizontalHeader()
+        if header:
+            header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, header.ResizeMode.Stretch)
+            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+        self.historyLayout.addWidget(self.historyTable)
+
         # 默认显示上传表格
         self.downloadFrame.hide()
+        self.historyFrame.hide()
 
         self.mainLayout.addWidget(self.uploadFrame)
         self.mainLayout.addWidget(self.downloadFrame)
+        self.mainLayout.addWidget(self.historyFrame)
 
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
@@ -224,14 +280,22 @@ class TransferInterface(QWidget):
     def __connectSignalToSlot(self):
         self.segmentedWidget.currentItemChanged.connect(self.__onSegmentChanged)
         self.clearCompletedButton.clicked.connect(self.__clearCompletedTasks)
+        self.clearHistoryButton.clicked.connect(self.__clear_history)
 
     def __onSegmentChanged(self, routeKey):
         if routeKey == "upload":
             self.uploadFrame.show()
             self.downloadFrame.hide()
-        else:
+            self.historyFrame.hide()
+        elif routeKey == "download":
             self.uploadFrame.hide()
             self.downloadFrame.show()
+            self.historyFrame.hide()
+        else:
+            self.uploadFrame.hide()
+            self.downloadFrame.hide()
+            self.historyFrame.show()
+            self.__refresh_history()
 
     def add_upload_task(self, file_name, file_size, local_path, target_dir_id):
         """添加上传任务。
@@ -242,15 +306,22 @@ class TransferInterface(QWidget):
         task = UploadTask(file_name, file_size, local_path, target_dir_id)
         self.upload_tasks.append(task)
         logger.info("添加上传任务: %s (%.2f MB)", file_name, file_size / 1024 / 1024)
+        task.task_id = self._store.add_task(
+            "upload",
+            task.file_name,
+            task.file_size,
+            priority=task.priority,
+            status=STATUS_QUEUED,
+            local_path=task.local_path,
+            target_dir_id=task.target_dir_id,
+        )
         self.__update_upload_table()
 
         if not self.pan:
             return task
 
         if self._active_upload_count >= self._max_concurrent_uploads:
-            self._pending_upload_queue.append(
-                (file_name, file_size, local_path, target_dir_id)
-            )
+            self._pending_upload_queue.append(task)
             task.status = tr("transfer.status_queued", "排队中")
             self.__update_upload_table()
             logger.debug(
@@ -281,6 +352,8 @@ class TransferInterface(QWidget):
         )
         self.upload_threads.append(thread)
         self._active_upload_count += 1
+        if task.task_id is not None:
+            self._store.update_task(task.task_id, status=STATUS_RUNNING)
         thread.start()
         logger.debug(
             "上传线程已启动: %s (活跃: %d/%d)",
@@ -305,15 +378,23 @@ class TransferInterface(QWidget):
             file_size / 1024 / 1024,
             file_id,
         )
+        task.task_id = self._store.add_task(
+            "download",
+            task.file_name,
+            task.file_size,
+            priority=task.priority,
+            status=STATUS_QUEUED,
+            local_path=task.save_path,
+            file_id=task.file_id,
+            current_dir_id=task.current_dir_id,
+        )
         self.__update_download_table()
 
         if not self.pan:
             return task
 
         if self._active_download_count >= self._max_concurrent_downloads:
-            self._pending_download_queue.append(
-                (file_name, file_size, file_id, save_path, current_dir_id)
-            )
+            self._pending_download_queue.append(task)
             task.status = tr("transfer.status_queued", "排队中")
             self.__update_download_table()
             logger.debug(
@@ -344,6 +425,8 @@ class TransferInterface(QWidget):
         )
         self.download_threads.append(thread)
         self._active_download_count += 1
+        if task.task_id is not None:
+            self._store.update_task(task.task_id, status=STATUS_RUNNING)
         thread.start()
         logger.debug(
             "下载线程已启动: %s (活跃: %d/%d)",
@@ -385,6 +468,7 @@ class TransferInterface(QWidget):
             self._active_download_count -= 1
             self.__update_download_table()
             self.__start_next_pending_download()
+        self.__record_history(task, task_type)
 
     def __on_thread_error(self, task, thread, error):
         """线程错误回调：更新 UI、清理线程资源、启动下一个等待任务。"""
@@ -404,6 +488,8 @@ class TransferInterface(QWidget):
             self._active_download_count -= 1
             self.__update_download_table()
             self.__start_next_pending_download()
+        # 上传失败保留活动任务记录（含 S3 会话），支持重试续传
+        self.__record_history(task, task_type, keep_active=(task_type == "upload"))
 
     def __cleanup_thread(self, thread, task_type):
         """断开线程所有信号并从列表中移除，释放资源。"""
@@ -500,6 +586,12 @@ class TransferInterface(QWidget):
 
     def __remove_task(self, task, task_type):
         """删除任务及其关联线程。同时从等待队列中移除（若在队列中）。"""
+        # 移除活动任务时记录历史（已完成/失败任务此前已记录，这里防重复）
+        self.__record_history(task, task_type)
+        # 显式清理活动任务记录（含续传会话），用户删除后不再保留
+        if getattr(task, "task_id", None) is not None:
+            self._store.remove_task(task.task_id)
+            task.task_id = None
         if task_type == "upload":
             if task in self.upload_tasks:
                 self.upload_tasks.remove(task)
@@ -536,88 +628,117 @@ class TransferInterface(QWidget):
                     self.__start_next_pending_download()
 
     def _remove_from_pending_queue(self, task, task_type):
-        """从等待队列中移除任务（按文件名匹配）。"""
+        """从等待队列中移除任务。"""
         if task_type == "upload":
-            self._pending_upload_queue = [
-                item
-                for item in self._pending_upload_queue
-                if item[0] != task.file_name
-            ]
+            if task in self._pending_upload_queue:
+                self._pending_upload_queue.remove(task)
         else:
-            self._pending_download_queue = [
-                item
-                for item in self._pending_download_queue
-                if item[0] != task.file_name
-            ]
+            if task in self._pending_download_queue:
+                self._pending_download_queue.remove(task)
+
+    @staticmethod
+    def _pick_next_pending(queue):
+        """选择优先级最高的排队任务（同优先级保持先入先出）。
+
+        队列中存储的是任务对象，直接按 priority 取最大；
+        max 对同键值返回最先出现的元素，天然满足 FIFO。
+        """
+        if not queue:
+            return None
+        return max(queue, key=lambda t: t.priority)
 
     def __start_next_pending_upload(self):
-        """从待处理上传队列中启动下一个任务。"""
+        """从待处理上传队列中启动下一个任务（高优先级优先）。"""
         if not self._pending_upload_queue:
             return
         if self._active_upload_count >= self._max_concurrent_uploads:
             return
 
-        file_name, file_size, local_path, target_dir_id = self._pending_upload_queue.pop(0)
-
-    def _process_pending_queues(self):
-        """处理两个待处理队列（当并发限制变更时调用）。"""
-        self.__start_next_pending_upload()
-        self.__start_next_pending_download()
-        # 在 upload_tasks 中找到对应的任务对象
-        for task in self.upload_tasks:
-            if (
-                isinstance(task, UploadTask)
-                and task.file_name == file_name
-                and task.status == tr("transfer.status_queued", "排队中")
-            ):
-                task.status = tr("transfer.status_waiting", "等待中")
-                self.__start_upload_thread(task)
-                self.__update_upload_table()
-                return
-
-        # 按索引回退：若未按名称匹配到，取最后一个排队任务
-        logger.warning("按名称未匹配到排队上传任务，尝试回退匹配")
-        for task in self.upload_tasks:
-            if (
-                isinstance(task, UploadTask)
-                and task.status == tr("transfer.status_queued", "排队中")
-            ):
-                task.status = tr("transfer.status_waiting", "等待中")
-                self.__start_upload_thread(task)
-                self.__update_upload_table()
-                return
+        task = self._pick_next_pending(self._pending_upload_queue)
+        if task is None:
+            return
+        self._pending_upload_queue.remove(task)
+        if task.status == tr("transfer.status_queued", "排队中"):
+            task.status = tr("transfer.status_waiting", "等待中")
+        self.__start_upload_thread(task)
+        self.__update_upload_table()
 
     def __start_next_pending_download(self):
-        """从待处理下载队列中启动下一个任务。"""
+        """从待处理下载队列中启动下一个任务（高优先级优先）。"""
         if not self._pending_download_queue:
             return
         if self._active_download_count >= self._max_concurrent_downloads:
             return
 
-        file_name, file_size, file_id, save_path, current_dir_id = self._pending_download_queue.pop(0)
-        # 在 download_tasks 中找到对应的任务对象
-        for task in self.download_tasks:
-            if (
-                isinstance(task, DownloadTask)
-                and task.file_name == file_name
-                and task.status == tr("transfer.status_queued", "排队中")
-            ):
-                task.status = tr("transfer.status_waiting", "等待中")
-                self.__start_download_thread(task)
-                self.__update_download_table()
-                return
+        task = self._pick_next_pending(self._pending_download_queue)
+        if task is None:
+            return
+        self._pending_download_queue.remove(task)
+        if task.status == tr("transfer.status_queued", "排队中"):
+            task.status = tr("transfer.status_waiting", "等待中")
+        self.__start_download_thread(task)
+        self.__update_download_table()
 
-        # 按索引回退
-        logger.warning("按名称未匹配到排队下载任务，尝试回退匹配")
-        for task in self.download_tasks:
-            if (
-                isinstance(task, DownloadTask)
-                and task.status == tr("transfer.status_queued", "排队中")
-            ):
-                task.status = tr("transfer.status_waiting", "等待中")
-                self.__start_download_thread(task)
+    def _process_pending_queues(self):
+        """处理两个待处理队列（当并发限制变更时调用）。"""
+        self.__start_next_pending_upload()
+        self.__start_next_pending_download()
+
+    def __change_priority(self, task, task_type, priority):
+        """修改任务优先级（0=低 1=普通 2=高）。"""
+        task.priority = int(priority)
+        logger.info(
+            "修改任务优先级: type=%s, name=%s, priority=%s",
+            task_type, task.file_name, priority,
+        )
+
+    def __retry_task(self, task, task_type):
+        """重试失败任务（上传复用 S3 会话、下载复用临时文件，均断点续传）。"""
+        # 清理可能残留的线程
+        thread_list = (
+            self.upload_threads if task_type == "upload" else self.download_threads
+        )
+        for t in list(thread_list):
+            if t.task is task:
+                self.__cleanup_thread(t, task_type)
+                break
+
+        task.status = tr("transfer.status_waiting", "等待中")
+        task.progress = 0
+        task.history_recorded = False
+
+        # 重新建立活动任务记录（若此前已清理）
+        if getattr(task, "task_id", None) is None:
+            if task_type == "upload":
+                task.task_id = self._store.add_task(
+                    "upload", task.file_name, task.file_size,
+                    priority=task.priority, status=STATUS_QUEUED,
+                    local_path=task.local_path, target_dir_id=task.target_dir_id,
+                )
+            else:
+                task.task_id = self._store.add_task(
+                    "download", task.file_name, task.file_size,
+                    priority=task.priority, status=STATUS_QUEUED,
+                    local_path=task.save_path, file_id=task.file_id,
+                    current_dir_id=task.current_dir_id,
+                )
+
+        if task_type == "upload":
+            if self._active_upload_count >= self._max_concurrent_uploads:
+                task.status = tr("transfer.status_queued", "排队中")
+                self._pending_upload_queue.append(task)
+                self.__update_upload_table()
+                return
+            self.__start_upload_thread(task)
+            self.__update_upload_table()
+        else:
+            if self._active_download_count >= self._max_concurrent_downloads:
+                task.status = tr("transfer.status_queued", "排队中")
+                self._pending_download_queue.append(task)
                 self.__update_download_table()
                 return
+            self.__start_download_thread(task)
+            self.__update_download_table()
 
     def __update_table(self, table, tasks, task_type):
         """更新传输表格（上传/下载共用）。
@@ -637,46 +758,84 @@ class TransferInterface(QWidget):
             else:
                 name_item.setText(task.file_name)
 
+            # ---- 优先级下拉 ----
+            priority_combo = table.cellWidget(row, 1)
+            if not priority_combo:
+                priority_combo = QComboBox()
+                priority_combo.addItems(
+                    [
+                        tr("transfer.priority_low", "低"),
+                        tr("transfer.priority_normal", "普通"),
+                        tr("transfer.priority_high", "高"),
+                    ]
+                )
+                priority_combo.setFixedWidth(72)
+                priority_combo.setToolTip(
+                    tr("transfer.priority_tip", "设置任务优先级（高优先级先执行）")
+                )
+                priority_combo.currentIndexChanged.connect(
+                    lambda idx, t=task, tt=task_type: self.__change_priority(
+                        t, tt, idx
+                    )
+                )
+                table.setCellWidget(row, 1, priority_combo)
+            priority_combo.blockSignals(True)
+            priority_combo.setCurrentIndex(task.priority)
+            priority_combo.blockSignals(False)
+
             # ---- 文件大小 ----
-            size_item = table.item(row, 1)
+            size_item = table.item(row, 2)
             if not size_item:
                 size_item = QTableWidgetItem(format_file_size(task.file_size))
-                table.setItem(row, 1, size_item)
+                table.setItem(row, 2, size_item)
             else:
                 size_item.setText(format_file_size(task.file_size))
 
             # ---- 进度条 ----
-            progress_bar = table.cellWidget(row, 2)
+            progress_bar = table.cellWidget(row, 3)
             if not progress_bar:
                 progress_bar = ProgressBar()
                 progress_bar.setTextVisible(False)
-                table.setCellWidget(row, 2, progress_bar)
+                table.setCellWidget(row, 3, progress_bar)
             progress_bar.setValue(task.progress)
 
             # ---- 百分比 ----
-            percent_item = table.item(row, 3)
+            percent_item = table.item(row, 4)
             if not percent_item:
                 percent_item = QTableWidgetItem(f"{task.progress}%")
                 percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(row, 3, percent_item)
+                table.setItem(row, 4, percent_item)
             else:
                 percent_item.setText(f"{task.progress}%")
 
             # ---- 状态 ----
-            status_item = table.item(row, 4)
+            status_item = table.item(row, 5)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
-                table.setItem(row, 4, status_item)
+                table.setItem(row, 5, status_item)
             else:
                 status_item.setText(task.status)
 
-            # ---- 操作按钮 ----
-            if not table.cellWidget(row, 5):
+            # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
+            old_action = table.cellWidget(row, 6)
+            prev_status = (
+                status_item.data(Qt.ItemDataRole.UserRole) if old_action else None
+            )
+            status_item.setData(Qt.ItemDataRole.UserRole, task.status)
+
+            if old_action is None or prev_status != task.status:
+                if old_action is not None:
+                    table.removeCellWidget(row, 6)
+                    old_action.deleteLater()
+
                 action_layout = QHBoxLayout()
                 action_layout.setContentsMargins(0, 0, 0, 0)
 
                 # 暂停/恢复按钮
-                if task.status in (tr("transfer.status_uploading", "上传中"), tr("transfer.status_downloading", "下载中")):
+                if task.status in (
+                    tr("transfer.status_uploading", "上传中"),
+                    tr("transfer.status_downloading", "下载中"),
+                ):
                     pause_btn = PushButton(
                         FIF.PAUSE.icon(), tr("transfer.btn_pause", "暂停"), table
                     )
@@ -694,6 +853,16 @@ class TransferInterface(QWidget):
                         lambda _, t=task, tt=task_type: self.__resume_task(t, tt)
                     )
                     action_layout.addWidget(resume_btn)
+                elif task.status == tr("transfer.status_failed", "失败"):
+                    # 失败任务支持重试（上传/下载均走断点续传）
+                    retry_btn = PushButton(
+                        FIF.SYNC.icon(), tr("transfer.btn_retry", "重试"), table
+                    )
+                    retry_btn.setFixedSize(64, 24)
+                    retry_btn.clicked.connect(
+                        lambda _, t=task, tt=task_type: self.__retry_task(t, tt)
+                    )
+                    action_layout.addWidget(retry_btn)
 
                 delete_button = PushButton(
                     FIF.DELETE.icon(), tr("transfer.btn_delete", "删除"), table
@@ -705,10 +874,67 @@ class TransferInterface(QWidget):
                 action_layout.addWidget(delete_button)
                 action_widget = QWidget()
                 action_widget.setLayout(action_layout)
-                table.setCellWidget(row, 5, action_widget)
+                table.setCellWidget(row, 6, action_widget)
 
     def __update_upload_table(self):
         self.__update_table(self.uploadTable, self.upload_tasks, "upload")
 
     def __update_download_table(self):
         self.__update_table(self.downloadTable, self.download_tasks, "download")
+
+    # ---- 历史记录 ----
+
+    def __record_history(self, task, task_type, keep_active=False):
+        """记录任务历史。
+
+        keep_active=True 时保留活动任务记录（上传失败保留 S3 会话供续传），
+        否则记录后移除活动任务。history_recorded 防止重复记录。
+        """
+        if getattr(task, "history_recorded", False):
+            return
+        try:
+            self._store.add_history(
+                task_type, task.file_name, task.file_size, task.status
+            )
+            task.history_recorded = True
+            if getattr(task, "task_id", None) is not None:
+                if keep_active:
+                    self._store.update_task(task.task_id, status=STATUS_FAILED)
+                else:
+                    self._store.remove_task(task.task_id)
+                    task.task_id = None
+            logger.debug("已记录传输历史: %s (%s)", task.file_name, task.status)
+        except Exception as e:
+            logger.error("记录传输历史失败: %s", e)
+
+    def __refresh_history(self):
+        """刷新历史记录表格。"""
+        rows = self._store.get_history(limit=500)
+        self.historyTable.setRowCount(0)
+        for i, row in enumerate(rows):
+            self.historyTable.insertRow(i)
+            type_text = (
+                tr("transfer.type_upload", "上传")
+                if row["task_type"] == "upload"
+                else tr("transfer.type_download", "下载")
+            )
+            self.historyTable.setItem(i, 0, QTableWidgetItem(type_text))
+            self.historyTable.setItem(i, 1, QTableWidgetItem(row["file_name"]))
+            self.historyTable.setItem(
+                i, 2, QTableWidgetItem(format_file_size(row["file_size"]))
+            )
+            self.historyTable.setItem(i, 3, QTableWidgetItem(row["status"]))
+            # 时间展示（截断毫秒）
+            finished = row["finished_at"] or ""
+            display = str(finished).replace("T", " ").split(".", maxsplit=1)[0]
+            self.historyTable.setItem(i, 4, QTableWidgetItem(display))
+
+    def __clear_history(self):
+        """清空历史记录。"""
+        self._store.clear_history()
+        self.__refresh_history()
+        InfoBar.success(
+            title=tr("transfer.msg_history_cleared", "已清空"),
+            content=tr("transfer.msg_history_cleared_desc", "传输历史已清空"),
+            parent=self,
+        )

@@ -38,6 +38,7 @@ class Pan123:
         password="",
         authorization="",
         input_pwd=False,
+        anonymous=False,
     ):
         self._session = NetSession()
 
@@ -50,6 +51,8 @@ class Pan123:
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
         self.loginuuid = uuid.uuid4().hex
+        # 保持登录：为 True 时持久化凭证（密码/token），下次启动自动登录
+        self.stay_logged_in = True
 
         # 目录浏览状态
         self.list = []
@@ -58,11 +61,19 @@ class Pan123:
         self.file_page = 0
         self.parent_file_id = 0
 
+        if anonymous:
+            # 匿名会话：不加载配置、不自动登录，仅用于扫码登录流程
+            self.user_name = ""
+            self.password = ""
+            self.authorization = ""
+            self._sync_to_session()
+            return
+
         if readfile:
             self._auth.read_ini(user_name, password, input_pwd, authorization)
             self._sync_from_auth()
         else:
-            if user_name == "" or password == "":
+            if not authorization and (user_name == "" or password == ""):
                 raise Exception("用户名或密码为空")
             self._auth.user_name = user_name
             self._auth.password = password
@@ -70,10 +81,12 @@ class Pan123:
             self._sync_from_auth()
 
         self._sync_to_session()
-        res_code_getdir = self.get_dir()[0]
-        if res_code_getdir != 0:
-            self.login()
-            self.get_dir()
+        # 无账号密码（如扫码登录仅凭 token）时跳过自动登录与目录加载
+        if self.user_name and self.password:
+            res_code_getdir = self.get_dir()[0]
+            if res_code_getdir != 0:
+                self.login()
+                self.get_dir()
 
     def _sync_to_session(self):
         self._auth.devicetype = self.devicetype
@@ -82,6 +95,7 @@ class Pan123:
         self._auth.user_name = self.user_name
         self._auth.password = self.password
         self._auth.authorization = self.authorization
+        self._auth.stay_logged_in = self.stay_logged_in
         self._auth.sync_to_session()
 
     def _sync_from_auth(self):
@@ -91,6 +105,7 @@ class Pan123:
         self.user_name = self._auth.user_name
         self.password = self._auth.password
         self.authorization = self._auth.authorization
+        self.stay_logged_in = self._auth.stay_logged_in
 
     def login(self):
         logger.info("Pan123.login: user=%s", self.user_name)
@@ -125,7 +140,32 @@ class Pan123:
         self._auth.user_name = self.user_name
         self._auth.password = self.password
         self._auth.authorization = self.authorization
+        self._auth.stay_logged_in = self.stay_logged_in
         self._auth.save_file()
+
+    # ---- 二维码登录 ----
+
+    def qr_generate(self):
+        """获取二维码登录会话（uniID + url）。"""
+        return self._auth.qr_generate()
+
+    def qr_poll(self, uni_id):
+        """轮询二维码扫码状态。"""
+        return self._auth.qr_poll(uni_id)
+
+    def qr_wx_code(self, uni_id):
+        """获取微信扫码登录凭证（wxCode）。"""
+        return self._auth.qr_wx_code(uni_id)
+
+    def apply_saved_device(self):
+        """从已保存账户恢复设备指纹（扫码登录验证用）。"""
+        self._auth.load_saved_device()
+        self._sync_from_auth()
+        self._sync_to_session()
+
+    def close(self):
+        """释放网络会话资源。"""
+        self._session.close()
 
     def get_dir(self, save=True, force_refresh=False):
         return self.get_dir_by_id(self.parent_file_id, save, force_refresh=force_refresh)
@@ -167,6 +207,18 @@ class Pan123:
     def rename_file(self, file_id, new_name):
         return self._file.rename_file(file_id, new_name)
 
+    def move_file(self, file_id_list, target_parent_id):
+        """移动文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.move_files(file_id_list, target_parent_id)
+
     def share(self, file_id_list, share_pwd=""):
         return self._file.share(file_id_list, share_pwd)
 
@@ -174,8 +226,11 @@ class Pan123:
         """从回收站永久删除指定文件"""
         return self._file.permanent_delete_files(file_id_list)
 
-    def up_load(self, file_path):
-        return self._upload.up_load(file_path, self.parent_file_id)
+    def up_load(self, file_path, resume_info=None, session_callback=None):
+        return self._upload.up_load(
+            file_path, self.parent_file_id,
+            resume_info=resume_info, session_callback=session_callback,
+        )
 
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
@@ -214,8 +269,11 @@ class Pan123:
     def clear_download_proxy(self):
         self._download.clear_proxy()
 
-    def download_file(self, url, file_path, file_size, progress_callback=None):
-        return self._download.download_file(url, file_path, file_size, progress_callback)
+    def download_file(self, url, file_path, file_size, progress_callback=None,
+                      resume_offset=0):
+        return self._download.download_file(
+            url, file_path, file_size, progress_callback, resume_offset
+        )
 
 
 def check_version():

@@ -255,3 +255,129 @@ class TestNetSessionHttp:
         headers = session.headers
         headers["custom"] = "test"
         assert "custom" not in session._http.headers
+
+
+class TestDownloadResume:
+    @responses.activate
+    def test_download_single_resume(self, tmp_path):
+        session = NetSession()
+        file_path = tmp_path / "test.bin"
+        temp_path = file_path.with_suffix(".bin.tmp")
+        temp_path.write_bytes(b"PARTIAL" * 100)  # 600 字节
+        partial_size = temp_path.stat().st_size
+
+        remaining = b"REST" * 100
+        responses.get(
+            "https://cdn.example.com/test.bin",
+            body=remaining,
+            status=206,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+        reported = {}
+
+        def cb(d, t):
+            reported["d"] = d
+            reported["t"] = t
+
+        total = partial_size + len(remaining)
+        ok = session._download_single(
+            "https://cdn.example.com/test.bin", file_path, total, cb
+        )
+        assert ok is True
+        assert file_path.read_bytes() == b"PARTIAL" * 100 + remaining
+        assert reported["t"] == total
+        assert reported["d"] == total
+        # 验证发送了 Range 头
+        sent = responses.calls[0].request
+        assert sent.headers.get("Range") == f"bytes={partial_size}-"
+        # 临时文件应已改名
+        assert not temp_path.exists()
+
+    @responses.activate
+    def test_download_single_fresh(self, tmp_path):
+        """无部分文件时全量下载（wb 模式，无 Range）。"""
+        session = NetSession()
+        file_path = tmp_path / "fresh.bin"
+        body = b"FRESH" * 50
+        responses.get(
+            "https://cdn.example.com/fresh.bin",
+            body=body,
+            status=200,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        ok = session._download_single(
+            "https://cdn.example.com/fresh.bin", file_path, len(body)
+        )
+        assert ok is True
+        assert file_path.read_bytes() == body
+        sent = responses.calls[0].request
+        assert sent.headers.get("Range") is None
+
+    @responses.activate
+    def test_download_multithread_resume_falls_back_single(self, tmp_path):
+        """有续传偏移时走单线程续传。"""
+        session = NetSession()
+        file_path = tmp_path / "mt.bin"
+        temp_path = file_path.with_suffix(".bin.tmp")
+        temp_path.write_bytes(b"X" * 100)
+        partial_size = 100
+
+        remaining = b"Y" * 50
+        responses.get(
+            "https://cdn.example.com/mt.bin",
+            body=remaining,
+            status=206,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        ok = session.download_file_multithread(
+            "https://cdn.example.com/mt.bin", file_path, 150, resume_offset=partial_size
+        )
+        assert ok is True
+        assert file_path.read_bytes() == b"X" * 100 + b"Y" * 50
+        sent = responses.calls[0].request
+        assert sent.headers.get("Range") == "bytes=100-"
+
+
+class TestNetSessionModPid:
+    @responses.activate
+    def test_mod_pid_success(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            json={"code": 0, "message": ""},
+            status=200,
+        )
+        session = NetSession()
+        result = session.mod_pid([1, 2], 99)
+        assert result.code == 0
+        assert result.api_code_enum == ApiCode.success
+        # 验证请求体
+        sent = responses.calls[0].request
+        import json as _json
+        body = _json.loads(sent.body)
+        assert body["parentFileId"] == 99
+        assert body["fileIdList"] == [{"FileId": 1}, {"FileId": 2}]
+
+    @responses.activate
+    def test_mod_pid_failure(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            json={"code": 403, "message": "无权限"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.mod_pid([1], 99)
+        assert result.code == 403
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "无权限"
+
+    @responses.activate
+    def test_mod_pid_network_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            body=requests.exceptions.ConnectionError("connection refused"),
+        )
+        session = NetSession()
+        result = session.mod_pid([1], 99)
+        assert result.code == -1
+        assert result.api_code_enum == ApiCode.fail

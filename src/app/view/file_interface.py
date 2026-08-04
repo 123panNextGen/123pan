@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
     QLineEdit,
+    QDialog,
 )
 from PyQt6.QtGui import QAction
 
@@ -56,10 +57,12 @@ from ..tasks.file_tasks import (
     DeleteFileTask,
     BatchDeleteTask,
     LoadListTask,
+    MoveFileTask,
     RenameFileTask,
 )
 from ..tasks.signals import _LoadListSignals, _OpFinishedSignals
 from .dialogs import InputDialog
+from .folder_select_dialog import FolderSelectDialog
 
 logger = get_logger(__name__)
 
@@ -1147,6 +1150,76 @@ class FileInterface(QWidget):
                 # 显示错误信息
                 InfoBar.error(title=tr("file.msg_rename_failed", "重命名失败"), content=tr("file.msg_rename_failed", "重命名失败"), parent=self)
 
+    def __moveFile(self):
+        """移动选中文件/文件夹到目标目录"""
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            InfoBar.warning(
+                title=tr("file.msg_move_error", "移动错误"),
+                content=tr("file.msg_select_file_move", "请选择要移动的文件或文件夹"),
+                parent=self,
+            )
+            return
+
+        file_infos = []
+        seen = set()
+        for item in selected_items:
+            if item.column() != 0:
+                continue
+            row = item.row()
+            name_item = self.fileTable.item(row, 0)
+            if name_item is None:
+                continue
+            file_id = int(name_item.data(Qt.ItemDataRole.UserRole) or 0)
+            if file_id in seen:
+                continue
+            seen.add(file_id)
+            file_infos.append((file_id, name_item.text()))
+
+        if not file_infos:
+            return
+
+        # 不能移动到当前目录自身
+        dialog = FolderSelectDialog(
+            self.pan, exclude_dir_ids=(self.current_dir_id,), parent=self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        target = dialog.selected_dir_id()
+        if target is None or target == self.current_dir_id:
+            return
+
+        signals = _OpFinishedSignals()
+        signals.finished.connect(self.__onMoveFileFinished)
+        task = MoveFileTask(
+            self.pan, file_infos, target, self.current_dir_id, signals, self
+        )
+        QThreadPool.globalInstance().start(task)
+
+    def __onMoveFileFinished(
+        self, success, name, new_name, error, file_items, folder_items
+    ):
+        """移动文件完成后的回调 - 只负责UI更新"""
+        if success:
+            InfoBar.success(
+                title=tr("file.msg_move_success", "移动成功"),
+                content=tr("file.msg_move_done", "文件已移动到目标目录"),
+                parent=self,
+            )
+            # 更新文件列表与目录树（轻量级UI操作）
+            self.__updateFileListUI(file_items)
+            self.__updateTreeUI(folder_items)
+            current_item = self.__findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+        else:
+            msg = error or tr("file.msg_move_failed", "移动失败")
+            InfoBar.error(
+                title=tr("file.msg_move_failed", "移动失败"),
+                content=tr("file.msg_move_file_error", "移动文件时发生错误: {}").format(msg),
+                parent=self,
+            )
+
     # noinspection PyTypeChecker
     def __onFileTableContextMenu(self, position):
         """文件表格右键菜单"""
@@ -1180,6 +1253,11 @@ class FileInterface(QWidget):
         rename_action = QAction(FIF.EDIT.icon(), tr("file.menu_rename", "重命名"), self)
         rename_action.triggered.connect(self.__renameFile)
         menu.addAction(rename_action)
+
+        # 添加移动菜单项
+        move_action = QAction(FIF.RIGHT_ARROW.icon(), tr("file.menu_move", "移动到"), self)
+        move_action.triggered.connect(self.__moveFile)
+        menu.addAction(move_action)
 
         # 添加删除菜单项
         delete_action = QAction(FIF.DELETE.icon(), tr("file.delete", "删除"), self)

@@ -229,6 +229,30 @@ class FileService:
             self._db.mark_dirty(parent_file_id)
         return True
 
+    def move_files(self, file_id_list, target_parent_id):
+        """移动文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+
+        Returns:
+            (success, msg)
+        """
+        if not file_id_list:
+            return False, "文件列表为空"
+        result = self._session.mod_pid(file_id_list, target_parent_id)
+        if result.code != 0:
+            logger.error(
+                "移动文件失败: target=%s, code=%s, msg=%s",
+                target_parent_id, result.code, result.msg,
+            )
+            return False, result.msg or f"移动失败 (code={result.code})"
+        logger.info("移动成功: %d 个文件 -> 目录 %s", len(file_id_list), target_parent_id)
+        # 移动后源目录与目标目录缓存均失效
+        self._db.mark_dirty(target_parent_id)
+        return True, ""
+
     def delete_file_by_id(self, file_id, parent_file_id):
         """按文件ID删除文件（无需外部 file_list）。"""
         code, items, *_ = self.get_dir_by_id(parent_file_id, all=True, limit=1000)

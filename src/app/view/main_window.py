@@ -108,6 +108,21 @@ class MainWindow(FluentWindow):
             except Exception as e:
                 cfg_loaded = False
                 logger.warning("自动登录异常: %s", e)
+        elif current_info.get("authorization"):
+            # 扫码登录「保持登录」：无密码，仅凭 token 自动登录
+            try:
+                logger.debug("尝试 token 自动登录")
+                self.pan = Pan123(readfile=True, input_pwd=False)
+                res_code = self.pan.get_dir(save=False)[0]
+                if res_code == 0:
+                    cfg_loaded = True
+                    logger.info("token 自动登录成功: %s", current_account)
+                else:
+                    cfg_loaded = False
+                    logger.warning("token 自动登录失败: get_dir 返回 code=%s", res_code)
+            except Exception as e:
+                cfg_loaded = False
+                logger.warning("token 自动登录异常: %s", e)
 
         if not cfg_loaded:
             logger.debug("显示登录对话框")

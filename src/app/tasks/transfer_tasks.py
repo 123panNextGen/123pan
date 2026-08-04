@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from ..common.config import ConfigManager
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..common.transfer_store import TransferStore
 
 logger = get_logger(__name__)
 
@@ -25,11 +27,21 @@ logger = get_logger(__name__)
 class TransferTask:
     """传输任务基类"""
 
-    def __init__(self, file_name, file_size):
+    # 优先级：0=低 1=普通 2=高
+    PRIORITY_LOW = 0
+    PRIORITY_NORMAL = 1
+    PRIORITY_HIGH = 2
+
+    def __init__(self, file_name, file_size, priority=PRIORITY_NORMAL):
         self.file_name = file_name
         self.file_size = file_size
         self.progress = 0
         self.status = tr("transfer.status_waiting", "等待中")
+        self.priority = priority
+        # 持久化任务 ID（由 TransferStore 分配），用于历史记录与断点续传
+        self.task_id = None
+        # 是否已记录历史（防止重复记录）
+        self.history_recorded = False
 
 
 class UploadTask(TransferTask):
@@ -99,8 +111,36 @@ class UploadThread(QThread):
             self.pan.parent_file_id = self.task.target_dir_id
             logger.debug("上传目标目录: %s", self.task.target_dir_id)
 
+            # 断点续传：从持久化任务读取 S3 会话信息
+            resume_info = None
+            try:
+                if self.task.task_id is not None:
+                    store = TransferStore()
+                    for row in store.get_active_tasks("upload"):
+                        if row["id"] == self.task.task_id and row.get("resume_info"):
+                            resume_info = json.loads(row["resume_info"])
+                            break
+            except Exception as e:
+                logger.warning("读取上传续传信息失败: %s", e)
+
+            def _on_session(session_info):
+                """获得 S3 会话后持久化，供中断后断点续传。"""
+                try:
+                    if self.task.task_id is not None:
+                        TransferStore().update_task(
+                            self.task.task_id, resume_info=session_info
+                        )
+                except Exception as e:
+                    logger.error("持久化上传会话失败: %s", e)
+
             t0 = time.monotonic()
-            self.pan.up_load(self.task.local_path)
+            if resume_info:
+                self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
+            self.pan.up_load(
+                self.task.local_path,
+                resume_info=resume_info,
+                session_callback=_on_session,
+            )
             elapsed = time.monotonic() - t0
 
             self.pan.parent_file_id = current_parent_id
@@ -214,12 +254,36 @@ class DownloadThread(QThread):
                 logger.debug("创建下载目录: %s", save_dir)
 
             file_size = int(target_file.get("Size", self.task.file_size) or 0)
+
+            # 断点续传：检测已存在的临时文件（.tmp）
+            resume_offset = 0
+            temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+            if temp_path.exists() and file_size > 0:
+                partial = temp_path.stat().st_size
+                if 0 < partial < file_size:
+                    resume_offset = partial
+                    self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
+                    logger.info(
+                        "断点续传: %s 已下载 %d/%d 字节",
+                        self.task.file_name, partial, file_size,
+                    )
+                elif partial >= file_size:
+                    # 临时文件已完整，直接完成
+                    if file_path.exists():
+                        file_path.unlink()
+                    temp_path.rename(file_path)
+                    self.progress_updated.emit(100)
+                    self.status_updated.emit(tr("transfer.status_completed", "已完成"))
+                    self.finished.emit()
+                    return
+
             t0 = time.monotonic()
             success = self.pan.download_file(
                 download_url,
                 file_path,
                 file_size,
                 progress_callback=_on_progress,
+                resume_offset=resume_offset,
             )
             elapsed = time.monotonic() - t0
 

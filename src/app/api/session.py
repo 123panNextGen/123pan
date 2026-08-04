@@ -35,6 +35,8 @@ from .model import (
 )
 
 BASE_URL = "https://www.123pan.cn"
+# 二维码登录专用域名（web 端登录接口）
+LOGIN_BASE_URL = "https://login.123pan.com"
 
 
 class NetSession:
@@ -205,6 +207,7 @@ class NetSession:
         file_path: Path,
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        resume_offset: int = 0,
     ) -> bool:
         """多线程分片下载文件。
 
@@ -216,16 +219,18 @@ class NetSession:
             file_path: 保存路径。
             file_size: 文件总大小（字节）。
             progress_callback: 进度回调 (downloaded, total)。
+            resume_offset: 已下载字节数（断点续传），>0 时走单线程续传。
 
         Returns:
             是否下载成功。
         """
         logger.info(
-            "下载文件: %s (%.2f MB), multi=%s, threads=%s",
+            "下载文件: %s (%.2f MB), multi=%s, threads=%s, resume=%d",
             file_path.name,
             file_size / 1024 / 1024,
             self._multi_thread_enabled,
             self._num_threads,
+            resume_offset,
         )
 
         if file_size == 0:
@@ -235,6 +240,14 @@ class NetSession:
             if progress_callback:
                 progress_callback(0, 0)
             return True
+
+        # 断点续传时走单线程续传（保证 Range + 追加模式的正确性）
+        if resume_offset > 0:
+            logger.debug("存在续传偏移，使用单线程续传")
+            return self._download_single(
+                url, file_path, file_size, progress_callback,
+                resume_offset=resume_offset,
+            )
 
         # 单线程路径：_download_single 已内联处理 JSON 重定向，无需预检。
         # 跳过不必要的 HTTP 请求，避免消耗一次性下载链接（如文件夹 zip）。
@@ -329,25 +342,48 @@ class NetSession:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         _redirect_count: int = 0,
+        resume_offset: int = 0,
     ) -> bool:
-        """单线程流式下载。
+        """单线程流式下载（支持断点续传）。
 
         Args:
             _redirect_count: 内部参数，跟踪 JSON 重定向次数，防止无限循环。
+            resume_offset: 已下载字节数，>0 时从该偏移续传（追加模式 + Range）。
         """
         if _redirect_count >= 3:
             logger.error("JSON 重定向次数过多，放弃下载: %s", file_path.name)
             return False
 
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-        logger.debug("单线程下载开始: %s", file_path.name)
+        logger.debug("单线程下载开始: %s (resume_offset=%d)", file_path.name, resume_offset)
 
         # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次
         max_conn_retries = 3
         for conn_attempt in range(max_conn_retries):
             t0 = time.monotonic()
             try:
-                with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
+                # 每次尝试根据现有临时文件大小计算续传偏移（断点续传）
+                current_offset = temp_path.stat().st_size if temp_path.exists() else 0
+                if current_offset >= file_size:
+                    # 临时文件已完整，直接改名完成
+                    if file_path.exists():
+                        file_path.unlink()
+                    temp_path.rename(file_path)
+                    logger.info("临时文件已完整，直接完成: %s", file_path.name)
+                    return True
+                headers = {}
+                mode = "wb"
+                if current_offset > 0:
+                    mode = "ab"
+                    headers["Range"] = f"bytes={current_offset}-"
+                    logger.info(
+                        "断点续传: %s 从 %d/%d 字节继续",
+                        file_path.name, current_offset, file_size,
+                    )
+
+                with self._transfer.get(
+                    url, stream=True, timeout=(10, 60), headers=headers
+                ) as resp:
                     resp.raise_for_status()
 
                     # 检测 JSON 重定向响应
@@ -368,6 +404,7 @@ class NetSession:
                             return self._download_single(
                                 redirect_url, file_path, file_size,
                                 progress_callback, _redirect_count + 1,
+                                current_offset,
                             )
                         # JSON 响应但不是有效重定向，视为错误
                         msg = body.get("message", body.get("msg", "未知错误"))
@@ -376,9 +413,9 @@ class NetSession:
                             f"下载 {file_path.name} 失败，CDN 返回: {msg}"
                         )
 
-                    downloaded = 0
+                    downloaded = current_offset
                     last_report_ts = 0.0
-                    with open(temp_path, "wb") as f:
+                    with open(temp_path, mode) as f:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
                                 f.write(chunk)
@@ -422,8 +459,6 @@ class NetSession:
                         elapsed,
                         wait,
                     )
-                    if temp_path.exists():
-                        temp_path.unlink()
                     time.sleep(wait)
                     continue
                 logger.error(
@@ -434,8 +469,7 @@ class NetSession:
                     type(e).__name__,
                     e,
                 )
-                if temp_path.exists():
-                    temp_path.unlink()
+                # 保留临时文件，供下次断点续传
                 raise
 
             except Exception as e:
@@ -787,6 +821,186 @@ class NetSession:
             msg="",
             data=device_data,
         )
+
+    # ---- 二维码登录 ----
+
+    @staticmethod
+    def _qr_headers(loginuuid: str) -> dict[str, str]:
+        """二维码登录接口专用请求头（web 平台）。"""
+        return {
+            "loginuuid": loginuuid,
+            "app-version": "3",
+            "platform": "web",
+            "content-type": "application/json;charset=UTF-8",
+        }
+
+    def qr_generate(self, loginuuid: str = "") -> ApiReturnModel:
+        """获取二维码登录会话（uniID + url）。
+
+        调用 login.123pan.com/api/user/qr-code/generate 接口。
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/generate")
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(
+                url, headers=self._qr_headers(loginuuid), timeout=(3, 10)
+            )
+        except requests.RequestException as e:
+            logger.error("获取二维码失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("二维码响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取二维码 (%.2fs): code=%s", elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        data = body.get("data", {})
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={
+                "uniID": data.get("uniID", ""),
+                "url": data.get("url", ""),
+            },
+        )
+
+    def qr_poll(self, uni_id: str, loginuuid: str = "") -> ApiReturnModel:
+        """轮询二维码扫码状态。
+
+        调用 login.123pan.com/api/user/qr-code/result 接口。
+
+        返回 data:
+        - loginStatus: 0=等待扫码, 1=已扫码待确认, 2=拒绝, 3=确认登录, 4=过期
+        - scanPlatform: 4=微信, 7=123云盘App（仅确认登录时从 login_type 取）
+        - token: JWT token（仅 App 扫码确认时直接返回）
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/result")
+        params = {"uniID": uni_id}
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(
+                url,
+                params=params,
+                headers=self._qr_headers(loginuuid),
+                timeout=(3, 10),
+            )
+        except requests.RequestException as e:
+            logger.error("轮询扫码状态失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("扫码状态解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        data = body.get("data", {})
+        logger.info("轮询扫码状态 (%.2fs): code=%s", elapsed, code)
+        # code=200 表示用户已确认登录（映射为 loginStatus=3）
+        if code == 200:
+            return ApiReturnModel(
+                code=0,
+                api_code=0,
+                api_code_enum=ApiCode.success,
+                msg="",
+                data={
+                    "loginStatus": 3,
+                    "scanPlatform": data.get("login_type", 0),
+                    "token": data.get("token", ""),
+                },
+            )
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={
+                "loginStatus": data.get("loginStatus", -1),
+                "scanPlatform": data.get("scanPlatform", 0),
+            },
+        )
+
+    def qr_wx_code(self, uni_id: str, loginuuid: str = "") -> ApiReturnModel:
+        """获取微信扫码登录凭证（wxCode）。
+
+        调用 login.123pan.com/api/user/qr-code/wx_code 接口。
+        """
+        url = urljoin(LOGIN_BASE_URL, "/api/user/qr-code/wx_code")
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(
+                url,
+                headers=self._qr_headers(loginuuid),
+                json={"uniID": uni_id},
+                timeout=(3, 10),
+            )
+        except requests.RequestException as e:
+            logger.error("获取 wxCode 失败 (%.2fs): %s", time.monotonic() - t0, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            logger.error("wxCode 响应解析失败 (%.2fs): HTTP %s", elapsed, resp.status_code)
+            return error
+        code = body.get("code", -1)
+        logger.info("获取 wxCode (%.2fs): code=%s", elapsed, code)
+        if code != 0:
+            msg = body.get("message", "")
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        data = body.get("data", {})
+        return ApiReturnModel(
+            code=0,
+            api_code=0,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data={"wxCode": data.get("wxCode", "")},
+        )
+
+    def close(self):
+        """关闭内部 requests.Session，释放连接池资源。"""
+        for session in (self._http, self._transfer):
+            try:
+                session.close()
+            except Exception:
+                pass
 
     # ---- 文件列表 ----
 
@@ -1386,6 +1600,64 @@ class NetSession:
             logger.error(
                 "重命名失败: file_id=%s, code=%s, msg=%s",
                 file_id,
+                code,
+                body.get("message", ""),
+            )
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=body.get("message", ""),
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg="",
+        )
+
+    def mod_pid(self, file_id_list: list[int], target_parent_id: int) -> ApiReturnModel:
+        """移动文件/文件夹到目标目录。
+
+        调用 /b/api/file/mod_pid 接口。
+        """
+        url = urljoin(BASE_URL, "/b/api/file/mod_pid")
+        data = {
+            "fileIdList": [{"FileId": int(fid)} for fid in file_id_list],
+            "parentFileId": int(target_parent_id),
+        }
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(url, json=data, timeout=10)
+        except requests.RequestException as e:
+            logger.error(
+                "移动文件失败: target=%s, n=%d, err=%s",
+                target_parent_id,
+                len(file_id_list),
+                e,
+            )
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        logger.debug(
+            "移动文件 (%.2fs): target=%s, n=%d, code=%s",
+            elapsed,
+            target_parent_id,
+            len(file_id_list),
+            code,
+        )
+        if code != 0:
+            logger.error(
+                "移动文件失败: target=%s, code=%s, msg=%s",
+                target_parent_id,
                 code,
                 body.get("message", ""),
             )

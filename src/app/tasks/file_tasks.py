@@ -130,6 +130,37 @@ class RenameFileTask(QRunnable):
             self.signals.finished.emit(False, self.old_name, self.new_name, str(e), [], [])
 
 
+class MoveFileTask(QRunnable):
+    """移动文件/文件夹任务"""
+
+    def __init__(self, pan, file_infos, target_parent_id, current_dir_id, signals, file_interface):
+        super().__init__()
+        self.pan = pan
+        self.file_infos = file_infos  # list of (file_id, file_name)
+        self.target_parent_id = target_parent_id
+        self.current_dir_id = current_dir_id
+        self.signals = signals
+        self._fi = file_interface
+
+    def run(self):
+        try:
+            file_ids = [fid for fid, _ in self.file_infos]
+            names = [name for _, name in self.file_infos]
+            logger.info("移动文件: %s -> 目录 %s", names, self.target_parent_id)
+            success, msg = self.pan.move_file(file_ids, self.target_parent_id)
+            if success:
+                items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
+                self.signals.finished.emit(
+                    True, "移动成功", "", "", items, folder_items
+                )
+            else:
+                logger.warning("移动失败: %s", msg)
+                self.signals.finished.emit(False, "移动失败", "", msg, [], [])
+        except Exception as e:
+            logger.error("移动异常: %s", e)
+            self.signals.finished.emit(False, "移动失败", "", str(e), [], [])
+
+
 class BatchDeleteTask(QRunnable):
     """批量删除文件任务"""
 
