@@ -1255,7 +1255,7 @@ class FileInterface(QWidget):
         menu.addAction(rename_action)
 
         # 添加移动菜单项
-        move_action = QAction(FIF.MOVE_TO.icon(), tr("file.menu_move", "移动到"), self)
+        move_action = QAction(FIF.RIGHT_ARROW.icon(), tr("file.menu_move", "移动到"), self)
         move_action.triggered.connect(self.__moveFile)
         menu.addAction(move_action)
 
