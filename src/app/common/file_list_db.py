@@ -9,16 +9,16 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import json
-import os
 import threading
-import tempfile
 from datetime import datetime, timedelta, timezone
 
 from .const import CONFIG_DIR
+from .database import Database
 from .log import get_logger
 
 logger = get_logger(__name__)
 
+# 旧版 JSON 缓存路径（迁移检测用，迁移后改名备份）
 FILE_DB_PATH = CONFIG_DIR / "file_list_db.json"
 
 # 当前缓存格式版本（升级时递增，旧版本缓存自动失效重新拉取）
@@ -29,20 +29,14 @@ DEFAULT_CACHE_TTL_SECONDS = 30 * 60  # 30 分钟
 
 
 class FileListDB:
-    """本地文件列表数据库。
+    """本地文件列表缓存（SQLite 存储）。
 
-    数据结构：
-    {
-        "version": 2,
-        "dirs": {
-            "<dir_id>": {
-                "files": [ { ...file_info... }, ... ],
-                "total": 100,
-                "all_loaded": true,
-                "updated_at": "2024-01-01T00:00:00"
-            }
-        }
-    }
+    表结构（dir_cache）：
+        dir_id     TEXT PRIMARY KEY  -- 目录 ID
+        files      TEXT              -- 文件信息 JSON 数组
+        total      INTEGER           -- 文件总数
+        all_loaded INTEGER           -- 是否已加载全部文件
+        updated_at TEXT              -- 缓存更新时间 (ISO8601)
 
     使用方式：
         db = FileListDB()
@@ -69,63 +63,38 @@ class FileListDB:
         if self._initialized:
             return
         self._initialized = True
-        self._data = None
         self._dirty_dirs = set()
-        self._load()
+        self._db = Database()
+        self._migrate_legacy_json()
 
-    def _load(self):
-        """从磁盘加载数据库，自动迁移旧版本缓存。"""
+    def _migrate_legacy_json(self):
+        """将旧版 JSON 缓存迁移到 SQLite（迁移后改名备份）。"""
         if not FILE_DB_PATH.exists():
-            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
-            logger.debug("文件列表数据库不存在，创建空数据库")
             return
-
         try:
             with open(FILE_DB_PATH, "r", encoding="utf-8") as f:
-                self._data = json.load(f)
-            loaded_version = self._data.get("version", 0)
-            if loaded_version < CURRENT_CACHE_VERSION:
-                logger.info(
-                    "缓存版本过期 (v%d → v%d)，清除旧缓存重新拉取",
-                    loaded_version, CURRENT_CACHE_VERSION,
+                data = json.load(f)
+            dirs = data.get("dirs", {})
+            for dir_key, dir_data in dirs.items():
+                self._db.execute(
+                    "INSERT OR REPLACE INTO dir_cache"
+                    " (dir_id, files, total, all_loaded, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (
+                        str(dir_key),
+                        json.dumps(dir_data.get("files", []), ensure_ascii=False),
+                        int(dir_data.get("total", 0)),
+                        1 if dir_data.get("all_loaded", False) else 0,
+                        str(dir_data.get("updated_at", "")),
+                    ),
                 )
-                self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
-                self._save()
-                return
-            if "dirs" not in self._data:
-                self._data["dirs"] = {}
-            logger.debug(
-                "文件列表数据库已加载: %d 个目录 (v%d)",
-                len(self._data.get("dirs", {})),
-                self._data.get("version", 0),
+            backup = FILE_DB_PATH.with_suffix(".json.bak")
+            FILE_DB_PATH.rename(backup)
+            logger.info(
+                "文件列表缓存已从 JSON 迁移到 SQLite: %d 个目录", len(dirs)
             )
         except Exception as e:
-            logger.error("加载文件列表数据库失败: %s", e)
-            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
-
-    def _save(self):
-        """原子写入数据库到磁盘。"""
-        try:
-            if not FILE_DB_PATH.parent.exists():
-                FILE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(FILE_DB_PATH.parent),
-                prefix=".file_list_db_",
-                suffix=".tmp",
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(self._data, f, indent=2, ensure_ascii=False)
-                os.replace(tmp_path, str(FILE_DB_PATH))
-                logger.debug("文件列表数据库已保存")
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
-        except Exception as e:
-            logger.error("保存文件列表数据库失败: %s", e)
+            logger.error("迁移文件列表缓存失败: %s", e)
 
     def get_dir(self, dir_id):
         """获取指定目录的文件列表。
@@ -136,16 +105,17 @@ class FileListDB:
         Returns:
             (files, total, all_loaded) 元组，未缓存时返回 (None, 0, False)
         """
-        dir_key = str(dir_id)
-        with self._lock:
-            dir_data = self._data.get("dirs", {}).get(dir_key)
-            if dir_data is None:
-                return None, 0, False
-            return (
-                dir_data.get("files", []),
-                dir_data.get("total", 0),
-                dir_data.get("all_loaded", False),
-            )
+        row = self._db.query_one(
+            "SELECT files, total, all_loaded FROM dir_cache WHERE dir_id = ?",
+            (str(dir_id),),
+        )
+        if row is None:
+            return None, 0, False
+        try:
+            files = json.loads(row["files"])
+        except (ValueError, TypeError):
+            files = []
+        return files, int(row["total"]), bool(row["all_loaded"])
 
     def save_dir(self, dir_id, files, total=0, all_loaded=False):
         """保存目录的文件列表。
@@ -156,20 +126,20 @@ class FileListDB:
             total: 文件总数
             all_loaded: 是否已加载全部文件
         """
-        from datetime import datetime
-
-        dir_key = str(dir_id)
+        self._db.execute(
+            "INSERT OR REPLACE INTO dir_cache"
+            " (dir_id, files, total, all_loaded, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                str(dir_id),
+                json.dumps(files, ensure_ascii=False),
+                int(total),
+                1 if all_loaded else 0,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         with self._lock:
-            if "dirs" not in self._data:
-                self._data["dirs"] = {}
-            self._data["dirs"][dir_key] = {
-                "files": files,
-                "total": total,
-                "all_loaded": all_loaded,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self._dirty_dirs.discard(dir_key)
-            self._save()
+            self._dirty_dirs.discard(str(dir_id))
 
     def is_dirty(self, dir_id):
         """检查目录是否需要刷新（手动标记脏）。
@@ -180,9 +150,8 @@ class FileListDB:
         Returns:
             True 表示需要从服务器重新获取
         """
-        dir_key = str(dir_id)
         with self._lock:
-            return dir_key in self._dirty_dirs
+            return str(dir_id) in self._dirty_dirs
 
     def is_stale(self, dir_id, ttl_seconds=None):
         """检查目录缓存是否已过期（超过 TTL 未更新）。
@@ -200,37 +169,36 @@ class FileListDB:
         if ttl_seconds is None:
             ttl_seconds = DEFAULT_CACHE_TTL_SECONDS
 
-        dir_key = str(dir_id)
-        with self._lock:
-            dir_data = self._data.get("dirs", {}).get(dir_key)
-            if dir_data is None:
-                return True  # 无缓存视为过期
+        row = self._db.query_one(
+            "SELECT updated_at FROM dir_cache WHERE dir_id = ?", (str(dir_id),)
+        )
+        if row is None:
+            return True  # 无缓存视为过期
 
-            updated_at_str = dir_data.get("updated_at", "")
-            if not updated_at_str:
-                return True
+        updated_at_str = row.get("updated_at", "")
+        if not updated_at_str:
+            return True
 
-            try:
-                updated_at = datetime.fromisoformat(updated_at_str)
-                age = datetime.now(timezone.utc) - updated_at
-                return age > timedelta(seconds=ttl_seconds)
-            except (ValueError, TypeError):
-                return True
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str)
+            age = datetime.now(timezone.utc) - updated_at
+            return age > timedelta(seconds=ttl_seconds)
+        except (ValueError, TypeError):
+            return True
 
     def mark_dirty(self, dir_id):
         """标记目录需要强制刷新。"""
-        dir_key = str(dir_id)
         with self._lock:
-            self._dirty_dirs.add(dir_key)
-            logger.debug("标记目录 %s 为脏", dir_key)
+            self._dirty_dirs.add(str(dir_id))
+            logger.debug("标记目录 %s 为脏", dir_id)
 
     def mark_all_dirty(self):
         """标记所有目录需要强制刷新。"""
+        rows = self._db.query("SELECT dir_id FROM dir_cache")
         with self._lock:
-            keys = list(self._data.get("dirs", {}).keys())
-            for key in keys:
-                self._dirty_dirs.add(key)
-            logger.debug("已标记所有 %d 个目录为脏", len(keys))
+            for row in rows:
+                self._dirty_dirs.add(row["dir_id"])
+            logger.debug("已标记所有 %d 个目录为脏", len(rows))
 
     def update_file_in_dir(self, dir_id, file_id, new_info=None, remove=False):
         """增量更新目录中的单个文件。
@@ -241,56 +209,51 @@ class FileListDB:
             new_info: 新的文件信息字典（添加或更新时提供）
             remove: 是否移除该文件
         """
-        dir_key = str(dir_id)
-        with self._lock:
-            dir_data = self._data.get("dirs", {}).get(dir_key)
-            if dir_data is None:
-                return
+        files, total, all_loaded = self.get_dir(dir_id)
+        if files is None:
+            return
 
-            files = dir_data.get("files", [])
-            file_id_str = str(file_id)
+        file_id_str = str(file_id)
+        changed = False
 
-            if remove:
-                dir_data["files"] = [
-                    f for f in files if str(f.get("FileId", "")) != file_id_str
-                ]
-                dir_data["total"] = max(0, dir_data.get("total", 0) - 1)
-            elif new_info:
-                found = False
-                for i, f in enumerate(files):
-                    if str(f.get("FileId", "")) == file_id_str:
-                        files[i] = new_info
-                        found = True
-                        break
-                if not found:
-                    files.append(new_info)
-                    dir_data["total"] = dir_data.get("total", 0) + 1
-                dir_data["files"] = files
+        if remove:
+            new_files = [
+                f for f in files if str(f.get("FileId", "")) != file_id_str
+            ]
+            if len(new_files) != len(files):
+                files = new_files
+                total = max(0, total - 1)
+                changed = True
+        elif new_info:
+            found = False
+            for i, f in enumerate(files):
+                if str(f.get("FileId", "")) == file_id_str:
+                    files[i] = new_info
+                    found = True
+                    changed = True
+                    break
+            if not found:
+                files.append(new_info)
+                total += 1
+                changed = True
 
-            from datetime import datetime
-            dir_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-            self._save()
+        if changed:
+            self.save_dir(dir_id, files, total=total, all_loaded=all_loaded)
 
     def delete_dir(self, dir_id):
         """从数据库中删除指定目录。"""
-        dir_key = str(dir_id)
+        self._db.execute(
+            "DELETE FROM dir_cache WHERE dir_id = ?", (str(dir_id),)
+        )
         with self._lock:
-            if "dirs" in self._data:
-                self._data["dirs"].pop(dir_key, None)
-                self._dirty_dirs.discard(dir_key)
-                self._save()
+            self._dirty_dirs.discard(str(dir_id))
 
     def delete_db(self):
-        """删除整个数据库文件。"""
+        """清空文件列表缓存（保留其他表数据）。"""
+        self._db.execute("DELETE FROM dir_cache")
         with self._lock:
-            self._data = {"version": CURRENT_CACHE_VERSION, "dirs": {}}
             self._dirty_dirs.clear()
-            try:
-                if FILE_DB_PATH.exists():
-                    FILE_DB_PATH.unlink()
-                    logger.info("文件列表数据库已删除")
-            except OSError as e:
-                logger.error("删除文件列表数据库失败: %s", e)
+        logger.info("文件列表缓存已清空")
 
     def get_stats(self):
         """获取数据库统计信息。
@@ -298,10 +261,11 @@ class FileListDB:
         Returns:
             (目录数, 总文件数) 元组
         """
-        with self._lock:
-            dirs = self._data.get("dirs", {})
-            dir_count = len(dirs)
-            file_count = sum(
-                len(d.get("files", [])) for d in dirs.values()
-            )
-            return dir_count, file_count
+        rows = self._db.query("SELECT files FROM dir_cache")
+        file_count = 0
+        for row in rows:
+            try:
+                file_count += len(json.loads(row["files"]))
+            except (ValueError, TypeError):
+                pass
+        return len(rows), file_count

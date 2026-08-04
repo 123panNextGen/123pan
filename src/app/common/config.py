@@ -9,11 +9,11 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
+
 from .const import CONFIG_DIR
+from .database import Database
 from .log import get_logger
 
 logger = get_logger(__name__)
@@ -23,208 +23,220 @@ def isWin11():
     return sys.platform == "win32" and sys.getwindowsversion().build >= 22000
 
 
+# 旧版 JSON 配置路径（迁移检测用，迁移后改名备份）
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
+# 旧版配置中曾作为顶层字段存放的键（迁移时归入 accounts 区块）
+_LEGACY_TOP_KEYS = (
+    "userName",
+    "passWord",
+    "authorization",
+    "deviceType",
+    "osVersion",
+    "loginuuid",
+)
+
+
+def _get_default_settings():
+    """默认设置字典。"""
+    return {
+        "defaultDownloadPath": str(Path.home() / "Downloads"),
+        "askDownloadLocation": True,
+        "multiThreadDownload": True,
+        "downloadSpeedLimit": 0,
+        "uploadSpeedLimit": 0,
+        "maxConcurrentUploads": 3,
+        "maxConcurrentDownloads": 3,
+        "proxyEnabled": False,
+        "proxyType": "http",
+        "proxyHost": "",
+        "proxyPort": 0,
+        "proxyUsername": "",
+        "proxyPassword": "",
+        "logLevel": "DEBUG",
+        "windowOpacity": 100,
+    }
 
 
 class ConfigManager:
-    """配置管理类，带内存缓存和原子写入。"""
+    """配置管理类（SQLite 存储）。
 
-    _config_cache = None
-    _cache_dirty = False
-    _cache_file = None  # 缓存对应的文件路径，用于检测路径变化
+    表结构：
+        config(key TEXT PRIMARY KEY, value TEXT)   -- 设置项 + currentAccount
+        accounts(...)                              -- 已保存账户
+    """
+
+    @staticmethod
+    def _get_db():
+        """获取数据库连接，并在首次使用时迁移旧版 JSON 配置。"""
+        db = Database()
+        ConfigManager._migrate_legacy_json()
+        return db
+
+    @staticmethod
+    def _migrate_legacy_json():
+        """将旧版 config.json 迁移到 SQLite（迁移后改名备份）。"""
+        if not CONFIG_FILE.exists():
+            return
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            db = Database()
+
+            # settings
+            for key, value in (config.get("settings") or {}).items():
+                db.execute(
+                    "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                    (key, json.dumps(value, ensure_ascii=False)),
+                )
+
+            # accounts（兼容旧格式：顶层 userName 归入 accounts 区块）
+            accounts = dict(config.get("accounts") or {})
+            old_user = config.get("userName", "")
+            if old_user and old_user not in accounts:
+                accounts[old_user] = {
+                    "userName": old_user,
+                    "passWord": config.get("passWord", ""),
+                    "authorization": config.get("authorization", ""),
+                    "deviceType": config.get("deviceType", ""),
+                    "osVersion": config.get("osVersion", ""),
+                    "loginuuid": config.get("loginuuid", ""),
+                }
+            for name, info in accounts.items():
+                ConfigManager._save_account_row(name, info)
+
+            # currentAccount
+            current = config.get("currentAccount", "") or old_user
+            if not current and accounts:
+                current = next(iter(accounts))
+            if current:
+                db.execute(
+                    "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                    ("currentAccount", json.dumps(current, ensure_ascii=False)),
+                )
+
+            backup = CONFIG_FILE.with_suffix(".json.bak")
+            CONFIG_FILE.rename(backup)
+            logger.info("配置已从 JSON 迁移到 SQLite")
+        except Exception as e:
+            logger.error("迁移配置失败: %s", e)
+
+    @staticmethod
+    def _save_account_row(user_name, info):
+        """写入一条账户记录（内部方法）。"""
+        Database().execute(
+            "INSERT OR REPLACE INTO accounts"
+            " (user_name, pass_word, authorization, device_type, os_version, loginuuid)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                user_name,
+                info.get("passWord", ""),
+                info.get("authorization", ""),
+                info.get("deviceType", ""),
+                info.get("osVersion", ""),
+                info.get("loginuuid", ""),
+            ),
+        )
 
     @staticmethod
     def ensure_config_dir():
-        """确保配置目录存在"""
-        if not CONFIG_DIR.exists():
+        """确保配置目录存在。"""
+        try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    @staticmethod
-    def _get_default_config():
-        return {
-            "currentAccount": "",
-            "accounts": {},
-            "settings": {
-                "defaultDownloadPath": str(Path.home() / "Downloads"),
-                "askDownloadLocation": True,
-                "multiThreadDownload": True,
-                "downloadSpeedLimit": 0,
-                "uploadSpeedLimit": 0,
-                "maxConcurrentUploads": 3,
-                "maxConcurrentDownloads": 3,
-                "proxyEnabled": False,
-                "proxyType": "http",
-                "proxyHost": "",
-                "proxyPort": 0,
-                "proxyUsername": "",
-                "proxyPassword": "",
-                "logLevel": "DEBUG",
-                "windowOpacity": 100,
-            },
-        }
-
-    @staticmethod
-    def _invalidate_cache():
-        """标记缓存为脏，下次 load_config 时重新读取。"""
-        ConfigManager._config_cache = None
-        ConfigManager._cache_dirty = False
-        ConfigManager._cache_file = None
+        except OSError:
+            pass
 
     @staticmethod
     def load_config():
-        """加载配置（带内存缓存，避免重复磁盘 I/O）。"""
-        # 如果配置文件路径发生变化，失效缓存
-        if ConfigManager._cache_file != str(CONFIG_FILE):
-            ConfigManager._config_cache = None
-            ConfigManager._cache_file = str(CONFIG_FILE)
+        """返回完整配置字典（兼容旧接口）。"""
+        db = ConfigManager._get_db()
+        settings = {}
+        current = ""
 
-        if ConfigManager._config_cache is not None and not ConfigManager._cache_dirty:
-            return ConfigManager._config_cache
-
-        ConfigManager.ensure_config_dir()
-        default_config = ConfigManager._get_default_config()
-
-        if CONFIG_FILE.exists():
-            migrated = False
+        for row in db.query("SELECT key, value FROM config"):
+            key = row["key"]
             try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                    logger.debug(
-                        "配置文件已加载: %s (%d KB)",
-                        CONFIG_FILE,
-                        CONFIG_FILE.stat().st_size // 1024,
-                    )
-                    # 兼容旧版本配置
-                    if "settings" not in config:
-                        config["settings"] = default_config["settings"]
-                        migrated = True
-                        logger.info("配置迁移: 补全 settings 字段")
+                val = json.loads(row["value"])
+            except (ValueError, TypeError):
+                val = row["value"]
+            if key == "currentAccount":
+                current = val or ""
+            else:
+                settings[key] = val
 
-                    if "accounts" not in config:
-                        config["accounts"] = {}
+        accounts = {}
+        for acc in db.query("SELECT * FROM accounts"):
+            accounts[acc["user_name"]] = {
+                "userName": acc["user_name"],
+                "passWord": acc["pass_word"],
+                "authorization": acc["authorization"],
+                "deviceType": acc["device_type"],
+                "osVersion": acc["os_version"],
+                "loginuuid": acc["loginuuid"],
+            }
 
-                    old_user = config.get("userName", "")
-                    if old_user:
-                        config["accounts"].setdefault(
-                            old_user,
-                            {
-                                "userName": old_user,
-                                "passWord": config.get("passWord", ""),
-                                "authorization": config.get("authorization", ""),
-                                "deviceType": config.get("deviceType", ""),
-                                "osVersion": config.get("osVersion", ""),
-                                "loginuuid": config.get("loginuuid", ""),
-                            },
-                        )
-                        migrated = True
-                        logger.info(
-                            "配置迁移: 将旧账号 %s 迁移到 accounts 区块", old_user
-                        )
+        merged = _get_default_settings()
+        merged.update(settings)
 
-                    if "currentAccount" not in config or not config.get(
-                        "currentAccount", ""
-                    ):
-                        config["currentAccount"] = config.get("userName", "")
-                        if not config["currentAccount"] and config["accounts"]:
-                            config["currentAccount"] = next(iter(config["accounts"]))
-                        migrated = True
-                        logger.info(
-                            "配置迁移: 补全 currentAccount=%s", config["currentAccount"]
-                        )
-
-                    for k in [
-                        "userName",
-                        "passWord",
-                        "authorization",
-                        "deviceType",
-                        "osVersion",
-                        "loginuuid",
-                    ]:
-                        if k in config:
-                            del config[k]
-                            migrated = True
-                            logger.info("配置迁移: 删除冗余顶层字段 %s", k)
-
-                    for key, val in default_config["settings"].items():
-                        if key not in config.get("settings", {}):
-                            config["settings"][key] = val
-                            migrated = True
-                            logger.info("配置迁移: 补全默认设置 %s=%s", key, val)
-
-                    if migrated:
-                        ConfigManager._save_config_internal(config)
-                    ConfigManager._config_cache = config
-                    ConfigManager._cache_dirty = False
-                    return config
-            except Exception as e:
-                logger.error(f"加载配置失败: {e}")
-                try:
-                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                        json.dump(default_config, f, indent=2, ensure_ascii=False)
-                    logger.info("配置文件已重置为默认值")
-                except Exception as e2:
-                    logger.error(f"重写配置失败: {e2}")
-                ConfigManager._config_cache = default_config
-                ConfigManager._cache_dirty = False
-                return default_config
-        logger.debug("配置文件不存在，使用默认配置")
-        ConfigManager._config_cache = default_config
-        ConfigManager._cache_dirty = False
-        return default_config
+        return {
+            "currentAccount": current,
+            "accounts": accounts,
+            "settings": merged,
+        }
 
     @staticmethod
     def save_config(config):
-        """保存配置（原子写入：先写临时文件再 rename）。"""
-        ConfigManager._config_cache = config
-        ConfigManager._cache_dirty = False
-        return ConfigManager._save_config_internal(config)
-
-    @staticmethod
-    def _save_config_internal(config):
-        """内部保存方法，执行实际的原子写入。"""
-        try:
-            ConfigManager.ensure_config_dir()
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(CONFIG_DIR), prefix=".config_", suffix=".tmp"
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(config, f, indent=2, ensure_ascii=False)
-                os.replace(tmp_path, str(CONFIG_FILE))
-                logger.debug("配置已原子写入 %s", CONFIG_FILE)
-                return True
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
-        except Exception as e:
-            logger.error(f"保存配置失败: {e}")
-            return False
+        """将完整配置字典写入 SQLite（兼容旧接口）。"""
+        # settings
+        for key, value in (config.get("settings") or {}).items():
+            ConfigManager.set_setting(key, value)
+        # currentAccount
+        current = config.get("currentAccount", "")
+        ConfigManager.set_setting("currentAccount", current or "")
+        # accounts
+        for name, info in (config.get("accounts") or {}).items():
+            ConfigManager._save_account_row(name, info)
+        logger.debug("配置已保存到 SQLite")
+        return True
 
     @staticmethod
     def get_current_account_name():
-        config = ConfigManager.load_config()
-        name = config.get("currentAccount", "")
+        name = ConfigManager.get_setting("currentAccount", "")
         logger.debug("当前账号: %s", name or "(无)")
         return name
 
     @staticmethod
     def get_account(user_name=None):
-        config = ConfigManager.load_config()
-        accounts = config.get("accounts", {})
+        db = ConfigManager._get_db()
         if user_name:
-            account = accounts.get(user_name, {})
-            logger.debug("获取账号 %s: %s", user_name, "存在" if account else "不存在")
+            row = db.query_one(
+                "SELECT * FROM accounts WHERE user_name = ?", (user_name,)
+            )
+            logger.debug("获取账号 %s: %s", user_name, "存在" if row else "不存在")
         else:
-            current = config.get("currentAccount", "")
-            account = accounts.get(current, {})
+            current = ConfigManager.get_current_account_name()
+            row = (
+                db.query_one(
+                    "SELECT * FROM accounts WHERE user_name = ?", (current,)
+                )
+                if current
+                else None
+            )
             logger.debug(
-                "获取当前账号 %s: %s", current, "存在" if account else "不存在"
+                "获取当前账号 %s: %s", current, "存在" if row else "不存在"
             )
 
-        if account and account.get("passWord", "").startswith("enc:"):
+        if row is None:
+            return {}
+        account = {
+            "userName": row["user_name"],
+            "passWord": row["pass_word"],
+            "authorization": row["authorization"],
+            "deviceType": row["device_type"],
+            "osVersion": row["os_version"],
+            "loginuuid": row["loginuuid"],
+        }
+        if account.get("passWord", "").startswith("enc:"):
             from .credential import decrypt_credential
 
             account = dict(account)
@@ -234,17 +246,15 @@ class ConfigManager:
 
     @staticmethod
     def get_account_names():
-        names = list(ConfigManager.load_config().get("accounts", {}).keys())
+        rows = ConfigManager._get_db().query(
+            "SELECT user_name FROM accounts ORDER BY user_name"
+        )
+        names = [r["user_name"] for r in rows]
         logger.debug("已保存账号列表: %s", names)
         return names
 
     @staticmethod
     def save_account(user_name, account_info, set_current=True):
-        config = ConfigManager.load_config()
-        if "accounts" not in config:
-            config["accounts"] = {}
-            logger.debug("初始化 accounts 区块")
-
         info = dict(account_info)
         pwd = info.get("passWord", "")
         if pwd and not pwd.startswith("enc:"):
@@ -253,37 +263,52 @@ class ConfigManager:
             info["passWord"] = encrypt_credential(pwd)
             logger.debug("账号密码已加密存储")
 
-        config["accounts"][user_name] = info
+        ConfigManager._save_account_row(user_name, info)
         if set_current:
-            config["currentAccount"] = user_name
+            ConfigManager.set_setting("currentAccount", user_name)
             logger.info("保存账号 %s (设为当前)", user_name)
         else:
             logger.info("保存账号 %s", user_name)
-        return ConfigManager.save_config(config)
+        return True
 
     @staticmethod
     def set_current_account(user_name):
-        config = ConfigManager.load_config()
-        if user_name and user_name not in config.get("accounts", {}):
-            logger.warning("设置当前账号失败: %s 不存在于已保存账号中", user_name)
-            return False
-        config["currentAccount"] = user_name
+        if user_name:
+            row = ConfigManager._get_db().query_one(
+                "SELECT user_name FROM accounts WHERE user_name = ?", (user_name,)
+            )
+            if row is None:
+                logger.warning("设置当前账号失败: %s 不存在于已保存账号中", user_name)
+                return False
+        ConfigManager.set_setting("currentAccount", user_name or "")
         logger.info("切换当前账号为: %s", user_name or "(空)")
-        return ConfigManager.save_config(config)
+        return True
 
     @staticmethod
     def get_setting(key, default=None):
-        config = ConfigManager.load_config()
-        settings = config.get("settings", {})
-        val = settings.get(key, default)
-        logger.debug("读取设置 %s = %s", key, val)
-        return val
+        row = ConfigManager._get_db().query_one(
+            "SELECT value FROM config WHERE key = ?", (key,)
+        )
+        if row is not None:
+            try:
+                val = json.loads(row["value"])
+            except (ValueError, TypeError):
+                val = row["value"]
+            logger.debug("读取设置 %s = %s", key, val)
+            return val
+        # 未存储时回退到默认设置，再回退到调用方默认值
+        defaults = _get_default_settings()
+        if key in defaults:
+            logger.debug("读取设置 %s = %s (默认)", key, defaults[key])
+            return defaults[key]
+        logger.debug("读取设置 %s = %s (默认)", key, default)
+        return default
 
     @staticmethod
     def set_setting(key, value):
-        config = ConfigManager.load_config()
-        if "settings" not in config:
-            config["settings"] = {}
-        config["settings"][key] = value
+        ConfigManager._get_db().execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+            (key, json.dumps(value, ensure_ascii=False)),
+        )
         logger.info("设置变更: %s = %s", key, value)
-        return ConfigManager.save_config(config)
+        return True
