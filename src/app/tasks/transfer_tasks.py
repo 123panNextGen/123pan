@@ -36,6 +36,8 @@ class TransferTask:
         self.progress = 0
         self.status = tr("transfer.status_waiting", "等待中")
         self.priority = priority
+        # 持久化任务 ID（由 TransferStore 分配），用于历史记录与断点续传
+        self.task_id = None
 
 
 class UploadTask(TransferTask):
