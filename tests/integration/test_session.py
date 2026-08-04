@@ -255,3 +255,47 @@ class TestNetSessionHttp:
         headers = session.headers
         headers["custom"] = "test"
         assert "custom" not in session._http.headers
+
+
+class TestNetSessionModPid:
+    @responses.activate
+    def test_mod_pid_success(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            json={"code": 0, "message": ""},
+            status=200,
+        )
+        session = NetSession()
+        result = session.mod_pid([1, 2], 99)
+        assert result.code == 0
+        assert result.api_code_enum == ApiCode.success
+        # 验证请求体
+        sent = responses.calls[0].request
+        import json as _json
+        body = _json.loads(sent.body)
+        assert body["parentFileId"] == 99
+        assert body["fileIdList"] == [{"FileId": 1}, {"FileId": 2}]
+
+    @responses.activate
+    def test_mod_pid_failure(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            json={"code": 403, "message": "无权限"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.mod_pid([1], 99)
+        assert result.code == 403
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "无权限"
+
+    @responses.activate
+    def test_mod_pid_network_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/mod_pid",
+            body=requests.exceptions.ConnectionError("connection refused"),
+        )
+        session = NetSession()
+        result = session.mod_pid([1], 99)
+        assert result.code == -1
+        assert result.api_code_enum == ApiCode.fail

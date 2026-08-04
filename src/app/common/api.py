@@ -207,6 +207,18 @@ class Pan123:
     def rename_file(self, file_id, new_name):
         return self._file.rename_file(file_id, new_name)
 
+    def move_file(self, file_id_list, target_parent_id):
+        """移动文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.move_files(file_id_list, target_parent_id)
+
     def share(self, file_id_list, share_pwd=""):
         return self._file.share(file_id_list, share_pwd)
 
