@@ -25,11 +25,17 @@ logger = get_logger(__name__)
 class TransferTask:
     """传输任务基类"""
 
-    def __init__(self, file_name, file_size):
+    # 优先级：0=低 1=普通 2=高
+    PRIORITY_LOW = 0
+    PRIORITY_NORMAL = 1
+    PRIORITY_HIGH = 2
+
+    def __init__(self, file_name, file_size, priority=PRIORITY_NORMAL):
         self.file_name = file_name
         self.file_size = file_size
         self.progress = 0
         self.status = tr("transfer.status_waiting", "等待中")
+        self.priority = priority
 
 
 class UploadTask(TransferTask):
