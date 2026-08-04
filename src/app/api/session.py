@@ -1583,3 +1583,61 @@ class NetSession:
             api_code_enum=ApiCode.success,
             msg="",
         )
+
+    def mod_pid(self, file_id_list: list[int], target_parent_id: int) -> ApiReturnModel:
+        """移动文件/文件夹到目标目录。
+
+        调用 /b/api/file/mod_pid 接口。
+        """
+        url = urljoin(BASE_URL, "/b/api/file/mod_pid")
+        data = {
+            "fileIdList": [{"FileId": int(fid)} for fid in file_id_list],
+            "parentFileId": int(target_parent_id),
+        }
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(url, json=data, timeout=10)
+        except requests.RequestException as e:
+            logger.error(
+                "移动文件失败: target=%s, n=%d, err=%s",
+                target_parent_id,
+                len(file_id_list),
+                e,
+            )
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        logger.debug(
+            "移动文件 (%.2fs): target=%s, n=%d, code=%s",
+            elapsed,
+            target_parent_id,
+            len(file_id_list),
+            code,
+        )
+        if code != 0:
+            logger.error(
+                "移动文件失败: target=%s, code=%s, msg=%s",
+                target_parent_id,
+                code,
+                body.get("message", ""),
+            )
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=body.get("message", ""),
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg="",
+        )
