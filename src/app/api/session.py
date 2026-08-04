@@ -207,6 +207,7 @@ class NetSession:
         file_path: Path,
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        resume_offset: int = 0,
     ) -> bool:
         """多线程分片下载文件。
 
@@ -218,16 +219,18 @@ class NetSession:
             file_path: 保存路径。
             file_size: 文件总大小（字节）。
             progress_callback: 进度回调 (downloaded, total)。
+            resume_offset: 已下载字节数（断点续传），>0 时走单线程续传。
 
         Returns:
             是否下载成功。
         """
         logger.info(
-            "下载文件: %s (%.2f MB), multi=%s, threads=%s",
+            "下载文件: %s (%.2f MB), multi=%s, threads=%s, resume=%d",
             file_path.name,
             file_size / 1024 / 1024,
             self._multi_thread_enabled,
             self._num_threads,
+            resume_offset,
         )
 
         if file_size == 0:
@@ -237,6 +240,14 @@ class NetSession:
             if progress_callback:
                 progress_callback(0, 0)
             return True
+
+        # 断点续传时走单线程续传（保证 Range + 追加模式的正确性）
+        if resume_offset > 0:
+            logger.debug("存在续传偏移，使用单线程续传")
+            return self._download_single(
+                url, file_path, file_size, progress_callback,
+                resume_offset=resume_offset,
+            )
 
         # 单线程路径：_download_single 已内联处理 JSON 重定向，无需预检。
         # 跳过不必要的 HTTP 请求，避免消耗一次性下载链接（如文件夹 zip）。
@@ -331,25 +342,48 @@ class NetSession:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         _redirect_count: int = 0,
+        resume_offset: int = 0,
     ) -> bool:
-        """单线程流式下载。
+        """单线程流式下载（支持断点续传）。
 
         Args:
             _redirect_count: 内部参数，跟踪 JSON 重定向次数，防止无限循环。
+            resume_offset: 已下载字节数，>0 时从该偏移续传（追加模式 + Range）。
         """
         if _redirect_count >= 3:
             logger.error("JSON 重定向次数过多，放弃下载: %s", file_path.name)
             return False
 
         temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-        logger.debug("单线程下载开始: %s", file_path.name)
+        logger.debug("单线程下载开始: %s (resume_offset=%d)", file_path.name, resume_offset)
 
         # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次
         max_conn_retries = 3
         for conn_attempt in range(max_conn_retries):
             t0 = time.monotonic()
             try:
-                with self._transfer.get(url, stream=True, timeout=(10, 60)) as resp:
+                # 每次尝试根据现有临时文件大小计算续传偏移（断点续传）
+                current_offset = temp_path.stat().st_size if temp_path.exists() else 0
+                if current_offset >= file_size:
+                    # 临时文件已完整，直接改名完成
+                    if file_path.exists():
+                        file_path.unlink()
+                    temp_path.rename(file_path)
+                    logger.info("临时文件已完整，直接完成: %s", file_path.name)
+                    return True
+                headers = {}
+                mode = "wb"
+                if current_offset > 0:
+                    mode = "ab"
+                    headers["Range"] = f"bytes={current_offset}-"
+                    logger.info(
+                        "断点续传: %s 从 %d/%d 字节继续",
+                        file_path.name, current_offset, file_size,
+                    )
+
+                with self._transfer.get(
+                    url, stream=True, timeout=(10, 60), headers=headers
+                ) as resp:
                     resp.raise_for_status()
 
                     # 检测 JSON 重定向响应
@@ -370,6 +404,7 @@ class NetSession:
                             return self._download_single(
                                 redirect_url, file_path, file_size,
                                 progress_callback, _redirect_count + 1,
+                                current_offset,
                             )
                         # JSON 响应但不是有效重定向，视为错误
                         msg = body.get("message", body.get("msg", "未知错误"))
@@ -378,9 +413,9 @@ class NetSession:
                             f"下载 {file_path.name} 失败，CDN 返回: {msg}"
                         )
 
-                    downloaded = 0
+                    downloaded = current_offset
                     last_report_ts = 0.0
-                    with open(temp_path, "wb") as f:
+                    with open(temp_path, mode) as f:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
                                 f.write(chunk)
@@ -424,8 +459,6 @@ class NetSession:
                         elapsed,
                         wait,
                     )
-                    if temp_path.exists():
-                        temp_path.unlink()
                     time.sleep(wait)
                     continue
                 logger.error(
@@ -436,8 +469,7 @@ class NetSession:
                     type(e).__name__,
                     e,
                 )
-                if temp_path.exists():
-                    temp_path.unlink()
+                # 保留临时文件，供下次断点续传
                 raise
 
             except Exception as e:

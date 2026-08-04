@@ -36,6 +36,7 @@ from ..common.transfer_store import (
     TransferStore,
     STATUS_QUEUED,
     STATUS_RUNNING,
+    STATUS_FAILED,
 )
 
 from ..common.log import get_logger
@@ -487,7 +488,8 @@ class TransferInterface(QWidget):
             self._active_download_count -= 1
             self.__update_download_table()
             self.__start_next_pending_download()
-        self.__record_history(task, task_type)
+        # 上传失败保留活动任务记录（含 S3 会话），支持重试续传
+        self.__record_history(task, task_type, keep_active=(task_type == "upload"))
 
     def __cleanup_thread(self, thread, task_type):
         """断开线程所有信号并从列表中移除，释放资源。"""
@@ -586,6 +588,10 @@ class TransferInterface(QWidget):
         """删除任务及其关联线程。同时从等待队列中移除（若在队列中）。"""
         # 移除活动任务时记录历史（已完成/失败任务此前已记录，这里防重复）
         self.__record_history(task, task_type)
+        # 显式清理活动任务记录（含续传会话），用户删除后不再保留
+        if getattr(task, "task_id", None) is not None:
+            self._store.remove_task(task.task_id)
+            task.task_id = None
         if task_type == "upload":
             if task in self.upload_tasks:
                 self.upload_tasks.remove(task)
@@ -686,6 +692,54 @@ class TransferInterface(QWidget):
             task_type, task.file_name, priority,
         )
 
+    def __retry_task(self, task, task_type):
+        """重试失败任务（上传复用 S3 会话、下载复用临时文件，均断点续传）。"""
+        # 清理可能残留的线程
+        thread_list = (
+            self.upload_threads if task_type == "upload" else self.download_threads
+        )
+        for t in list(thread_list):
+            if t.task is task:
+                self.__cleanup_thread(t, task_type)
+                break
+
+        task.status = tr("transfer.status_waiting", "等待中")
+        task.progress = 0
+        task.history_recorded = False
+
+        # 重新建立活动任务记录（若此前已清理）
+        if getattr(task, "task_id", None) is None:
+            if task_type == "upload":
+                task.task_id = self._store.add_task(
+                    "upload", task.file_name, task.file_size,
+                    priority=task.priority, status=STATUS_QUEUED,
+                    local_path=task.local_path, target_dir_id=task.target_dir_id,
+                )
+            else:
+                task.task_id = self._store.add_task(
+                    "download", task.file_name, task.file_size,
+                    priority=task.priority, status=STATUS_QUEUED,
+                    local_path=task.save_path, file_id=task.file_id,
+                    current_dir_id=task.current_dir_id,
+                )
+
+        if task_type == "upload":
+            if self._active_upload_count >= self._max_concurrent_uploads:
+                task.status = tr("transfer.status_queued", "排队中")
+                self._pending_upload_queue.append(task)
+                self.__update_upload_table()
+                return
+            self.__start_upload_thread(task)
+            self.__update_upload_table()
+        else:
+            if self._active_download_count >= self._max_concurrent_downloads:
+                task.status = tr("transfer.status_queued", "排队中")
+                self._pending_download_queue.append(task)
+                self.__update_download_table()
+                return
+            self.__start_download_thread(task)
+            self.__update_download_table()
+
     def __update_table(self, table, tasks, task_type):
         """更新传输表格（上传/下载共用）。
 
@@ -762,13 +816,26 @@ class TransferInterface(QWidget):
             else:
                 status_item.setText(task.status)
 
-            # ---- 操作按钮 ----
-            if not table.cellWidget(row, 6):
+            # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
+            old_action = table.cellWidget(row, 6)
+            prev_status = (
+                status_item.data(Qt.ItemDataRole.UserRole) if old_action else None
+            )
+            status_item.setData(Qt.ItemDataRole.UserRole, task.status)
+
+            if old_action is None or prev_status != task.status:
+                if old_action is not None:
+                    table.removeCellWidget(row, 6)
+                    old_action.deleteLater()
+
                 action_layout = QHBoxLayout()
                 action_layout.setContentsMargins(0, 0, 0, 0)
 
                 # 暂停/恢复按钮
-                if task.status in (tr("transfer.status_uploading", "上传中"), tr("transfer.status_downloading", "下载中")):
+                if task.status in (
+                    tr("transfer.status_uploading", "上传中"),
+                    tr("transfer.status_downloading", "下载中"),
+                ):
                     pause_btn = PushButton(
                         FIF.PAUSE.icon(), tr("transfer.btn_pause", "暂停"), table
                     )
@@ -786,6 +853,16 @@ class TransferInterface(QWidget):
                         lambda _, t=task, tt=task_type: self.__resume_task(t, tt)
                     )
                     action_layout.addWidget(resume_btn)
+                elif task.status == tr("transfer.status_failed", "失败"):
+                    # 失败任务支持重试（上传/下载均走断点续传）
+                    retry_btn = PushButton(
+                        FIF.SYNC.icon(), tr("transfer.btn_retry", "重试"), table
+                    )
+                    retry_btn.setFixedSize(64, 24)
+                    retry_btn.clicked.connect(
+                        lambda _, t=task, tt=task_type: self.__retry_task(t, tt)
+                    )
+                    action_layout.addWidget(retry_btn)
 
                 delete_button = PushButton(
                     FIF.DELETE.icon(), tr("transfer.btn_delete", "删除"), table
@@ -807,16 +884,25 @@ class TransferInterface(QWidget):
 
     # ---- 历史记录 ----
 
-    def __record_history(self, task, task_type):
-        """记录任务历史并清理活动任务记录（防重复记录）。"""
-        if getattr(task, "task_id", None) is None:
+    def __record_history(self, task, task_type, keep_active=False):
+        """记录任务历史。
+
+        keep_active=True 时保留活动任务记录（上传失败保留 S3 会话供续传），
+        否则记录后移除活动任务。history_recorded 防止重复记录。
+        """
+        if getattr(task, "history_recorded", False):
             return
         try:
             self._store.add_history(
                 task_type, task.file_name, task.file_size, task.status
             )
-            self._store.remove_task(task.task_id)
-            task.task_id = None
+            task.history_recorded = True
+            if getattr(task, "task_id", None) is not None:
+                if keep_active:
+                    self._store.update_task(task.task_id, status=STATUS_FAILED)
+                else:
+                    self._store.remove_task(task.task_id)
+                    task.task_id = None
             logger.debug("已记录传输历史: %s (%s)", task.file_name, task.status)
         except Exception as e:
             logger.error("记录传输历史失败: %s", e)
@@ -840,7 +926,7 @@ class TransferInterface(QWidget):
             self.historyTable.setItem(i, 3, QTableWidgetItem(row["status"]))
             # 时间展示（截断毫秒）
             finished = row["finished_at"] or ""
-            display = str(finished).replace("T", " ").split(".")[0]
+            display = str(finished).replace("T", " ").split(".", maxsplit=1)[0]
             self.historyTable.setItem(i, 4, QTableWidgetItem(display))
 
     def __clear_history(self):

@@ -109,8 +109,11 @@ class DownloadService:
         file_path: Path,
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        resume_offset: int = 0,
     ) -> bool:
-        """多线程分片下载文件。"""
-        return self._session.download_file_multithread(url, file_path, file_size, progress_callback)
+        """多线程分片下载文件（支持断点续传）。"""
+        return self._session.download_file_multithread(
+            url, file_path, file_size, progress_callback, resume_offset
+        )
 
 
