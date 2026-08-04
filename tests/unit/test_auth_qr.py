@@ -81,14 +81,7 @@ class TestAuthQR:
 
 
 class TestAuthLoadSavedDevice:
-    def _use_tmp_config(self, tmp_path):
-        import src.app.common.config as config_mod
-
-        config_mod.CONFIG_DIR = tmp_path / "123pan"
-        config_mod.CONFIG_FILE = config_mod.CONFIG_DIR / "config.json"
-
-    def test_load_saved_device(self, tmp_path):
-        self._use_tmp_config(tmp_path)
+    def test_load_saved_device(self, tmp_db):
         ConfigManager.save_account(
             "test-user",
             {
@@ -106,8 +99,7 @@ class TestAuthLoadSavedDevice:
         assert auth.osversion == "Android 13"
         assert auth.loginuuid == "saved-uuid"
 
-    def test_load_saved_device_no_account(self, tmp_path):
-        self._use_tmp_config(tmp_path)
+    def test_load_saved_device_no_account(self, tmp_db):
         auth = AuthService(MagicMock())
         original = (auth.devicetype, auth.osversion, auth.loginuuid)
         auth.load_saved_device()
