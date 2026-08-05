@@ -25,12 +25,33 @@ from qfluentwidgets import (
     InfoBar,
 )
 
+from PyQt6.QtCore import QThreadPool
+
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import (
+    LoadTrashListTask,
+    PermDeleteTrashTask,
+    RestoreTrashTask,
+    connect_tracked,
+)
+from ..tasks.signals import _TrashListSignals, _TrashOpSignals
 
 logger = get_logger(__name__)
+
+# 图标缓存：避免每行重复解码 SVG 图标
+_ICON_FOLDER = None
+_ICON_FILE = None
+
+
+def _cached_icons():
+    global _ICON_FOLDER, _ICON_FILE
+    if _ICON_FOLDER is None:
+        _ICON_FOLDER = FIF.FOLDER.icon()
+        _ICON_FILE = FIF.DOCUMENT.icon()
+    return _ICON_FOLDER, _ICON_FILE
 
 
 class TrashInterface(QWidget):
@@ -42,6 +63,8 @@ class TrashInterface(QWidget):
 
         self.pan = None
         self._trash_items = []
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
@@ -54,6 +77,9 @@ class TrashInterface(QWidget):
     def set_pan(self, pan):
         """设置 Pan123 实例"""
         self.pan = pan
+        # 异步登录期间页面可能已显示：设置 pan 后若可见则立即刷新
+        if pan and self.isVisible():
+            self.__refreshTrashList()
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)
@@ -129,45 +155,54 @@ class TrashInterface(QWidget):
         self.deleteButton.clicked.connect(self.__permanentlyDeleteSelected)
 
     def __refreshTrashList(self):
-        """刷新回收站列表"""
+        """刷新回收站列表（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
             logger.warning("回收站刷新: pan 未设置")
             return
 
-        try:
-            items = self.pan._file.recycle()
-            self._trash_items = items
-            self.__updateTrashTableUI()
-            logger.info("回收站列表已刷新: %d 个文件", len(items))
-        except Exception as e:
-            logger.error("回收站刷新失败: %s", e)
+        signals = _TrashListSignals()
+        task = LoadTrashListTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onTrashListLoaded, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onTrashListLoaded(self, items, error):
+        """回收站列表加载完成回调（主线程）。"""
+        if error:
+            logger.error("回收站刷新失败: %s", error)
             InfoBar.error(
                 title=tr("trash.msg_refresh_failed", "刷新失败"),
-                content=tr("trash.msg_trash_list_error", "获取回收站列表失败: {}").format(e),
+                content=tr("trash.msg_trash_list_error", "获取回收站列表失败: {}").format(error),
                 parent=self,
             )
+            return
+        self._trash_items = items
+        self.__updateTrashTableUI()
+        logger.info("回收站列表已刷新: %d 个文件", len(items))
 
     def __updateTrashTableUI(self):
         """更新回收站表格"""
         self.trashTable.setRowCount(len(self._trash_items))
-        for row, item in enumerate(self._trash_items):
-            file_name = item.get("FileName", "")
-            file_type = int(item.get("Type", 0))
-            file_size = int(item.get("Size", 0) or 0)
+        folder_icon, file_icon = _cached_icons()
+        self.trashTable.setUpdatesEnabled(False)
+        try:
+            for row, item in enumerate(self._trash_items):
+                file_name = item.get("FileName", "")
+                file_type = int(item.get("Type", 0))
+                file_size = int(item.get("Size", 0) or 0)
 
-            type_text = tr("trash.type_folder", "文件夹") if file_type == 1 else tr("trash.type_file", "文件")
-            size_text = format_file_size(file_size)
+                type_text = tr("trash.type_folder", "文件夹") if file_type == 1 else tr("trash.type_file", "文件")
+                size_text = format_file_size(file_size)
 
-            name_item = QTableWidgetItem(file_name)
-            name_item.setIcon(
-                FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
-            )
-            type_item = QTableWidgetItem(type_text)
-            size_item = QTableWidgetItem(size_text)
+                name_item = QTableWidgetItem(file_name)
+                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
+                type_item = QTableWidgetItem(type_text)
+                size_item = QTableWidgetItem(size_text)
 
-            self.trashTable.setItem(row, 0, name_item)
-            self.trashTable.setItem(row, 1, type_item)
-            self.trashTable.setItem(row, 2, size_item)
+                self.trashTable.setItem(row, 0, name_item)
+                self.trashTable.setItem(row, 1, type_item)
+                self.trashTable.setItem(row, 2, size_item)
+        finally:
+            self.trashTable.setUpdatesEnabled(True)
 
     def __getSelectedItems(self):
         """获取选中的回收站条目信息"""
@@ -182,7 +217,7 @@ class TrashInterface(QWidget):
         return result
 
     def __restoreSelected(self):
-        """恢复选中的文件"""
+        """恢复选中的文件（后台任务，避免阻塞 GUI）。"""
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
@@ -192,32 +227,37 @@ class TrashInterface(QWidget):
             )
             return
 
-        try:
-            for file_info in selected:
-                self.pan._file.delete_file(
-                    self._trash_items, file_info, by_num=False, operation=False
-                )
+        # 保存当前列表快照与选中信息供后台任务和回调使用
+        trash_items = list(self._trash_items)
+        self._last_op_count = len(selected)
+        self._last_op_names = [item.get("FileName", "") for item in selected]
+        signals = _TrashOpSignals()
+        task = RestoreTrashTask(self.pan, trash_items, list(selected), signals)
+        connect_tracked(self, signals, "finished", self.__onRestoreFinished, task)
+        QThreadPool.globalInstance().start(task)
 
-            file_names = ", ".join(
-                item.get("FileName", "") for item in selected[:3]
-            )
-            suffix = "..." if len(selected) > 3 else ""
-            InfoBar.success(
-                title=tr("trash.msg_restore_success", "恢复成功"),
-                content=tr("trash.msg_files_restored", "已恢复 {} 个文件: {}").format(len(selected), file_names + suffix),
-                parent=self,
-            )
-            self.__refreshTrashList()
-        except Exception as e:
-            logger.error("恢复文件失败: %s", e)
+    def __onRestoreFinished(self, success, error):
+        """恢复完成回调（主线程）。"""
+        if not success:
+            logger.error("恢复文件失败: %s", error)
             InfoBar.error(
                 title=tr("trash.msg_restore_failed", "恢复失败"),
-                content=tr("trash.msg_restore_error", "恢复文件时发生错误: {}").format(e),
+                content=tr("trash.msg_restore_error", "恢复文件时发生错误: {}").format(error),
                 parent=self,
             )
+            return
+
+        file_names = ", ".join(getattr(self, "_last_op_names", [])[:3])
+        suffix = "..." if getattr(self, "_last_op_count", 0) > 3 else ""
+        InfoBar.success(
+            title=tr("trash.msg_restore_success", "恢复成功"),
+            content=tr("trash.msg_files_restored", "已恢复 {} 个文件: {}").format(getattr(self, "_last_op_count", 0), file_names + suffix),
+            parent=self,
+        )
+        self.__refreshTrashList()
 
     def __permanentlyDeleteSelected(self):
-        """永久删除选中的文件（从回收站彻底删除 = 再次删除）"""
+        """永久删除选中的文件（从回收站彻底删除 = 再次删除）。"""
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
@@ -227,26 +267,30 @@ class TrashInterface(QWidget):
             )
             return
 
-        try:
-            file_ids = [int(item.get("FileId", 0)) for item in selected]
-            success, msg = self.pan._file.permanent_delete_files(file_ids)
-            if not success:
-                raise RuntimeError(msg)
+        file_ids = [int(item.get("FileId", 0)) for item in selected]
+        self._last_op_count = len(selected)
+        self._last_op_names = [item.get("FileName", "") for item in selected]
+        signals = _TrashOpSignals()
+        task = PermDeleteTrashTask(self.pan, file_ids, signals)
+        connect_tracked(self, signals, "finished", self.__onPermDeleteFinished, task)
+        QThreadPool.globalInstance().start(task)
 
-            file_names = ", ".join(
-                item.get("FileName", "") for item in selected[:3]
-            )
-            suffix = "..." if len(selected) > 3 else ""
-            InfoBar.success(
-                title=tr("trash.msg_perm_delete_success", "删除成功"),
-                content=tr("trash.msg_files_perm_deleted", "已永久删除 {} 个文件: {}").format(len(selected), file_names + suffix),
-                parent=self,
-            )
-            self.__refreshTrashList()
-        except Exception as e:
-            logger.error("永久删除失败: %s", e)
+    def __onPermDeleteFinished(self, success, msg):
+        """永久删除完成回调（主线程）。"""
+        if not success:
+            logger.error("永久删除失败: %s", msg)
             InfoBar.error(
                 title=tr("trash.msg_perm_delete_failed", "删除失败"),
-                content=tr("trash.msg_perm_delete_error", "永久删除文件时发生错误: {}").format(e),
+                content=tr("trash.msg_perm_delete_error", "永久删除文件时发生错误: {}").format(msg),
                 parent=self,
             )
+            return
+
+        file_names = ", ".join(getattr(self, "_last_op_names", [])[:3])
+        suffix = "..." if getattr(self, "_last_op_count", 0) > 3 else ""
+        InfoBar.success(
+            title=tr("trash.msg_perm_delete_success", "删除成功"),
+            content=tr("trash.msg_files_perm_deleted", "已永久删除 {} 个文件: {}").format(getattr(self, "_last_op_count", 0), file_names + suffix),
+            parent=self,
+        )
+        self.__refreshTrashList()

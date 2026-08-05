@@ -27,6 +27,9 @@ CURRENT_CACHE_VERSION = 2
 # 缓存默认有效期（秒），超过此时间未更新的缓存视为过期
 DEFAULT_CACHE_TTL_SECONDS = 30 * 60  # 30 分钟
 
+# 内存缓存条目上限：防止浏览目录过多时内存无限增长
+_CACHE_MAX_ENTRIES = 20
+
 
 class FileListDB:
     """本地文件列表缓存（SQLite 存储）。
@@ -64,8 +67,31 @@ class FileListDB:
             return
         self._initialized = True
         self._dirty_dirs = set()
+        # 内存缓存：dir_id(str) -> (files, total, all_loaded, updated_at)
+        # 避免每次浏览目录都重复 json.loads 全量列表
+        self._cache = {}
         self._db = Database()
         self._migrate_legacy_json()
+
+    # ---- 内存缓存 ----
+
+    def _cache_put(self, dir_id, files, total, all_loaded, updated_at):
+        """写入内存缓存，超限时淘汰最旧条目。"""
+        with self._lock:
+            self._cache[dir_id] = (files, total, all_loaded, updated_at)
+            if len(self._cache) > _CACHE_MAX_ENTRIES:
+                # dict 保持插入顺序，淘汰最早插入的键
+                oldest = next(iter(self._cache))
+                del self._cache[oldest]
+
+    def _cache_get(self, dir_id):
+        """读取内存缓存，命中返回 (files, total, all_loaded, updated_at)。"""
+        with self._lock:
+            return self._cache.get(dir_id)
+
+    def _cache_discard(self, dir_id):
+        with self._lock:
+            self._cache.pop(dir_id, None)
 
     def _migrate_legacy_json(self):
         """将旧版 JSON 缓存迁移到 SQLite（迁移后改名备份）。"""
@@ -105,9 +131,15 @@ class FileListDB:
         Returns:
             (files, total, all_loaded) 元组，未缓存时返回 (None, 0, False)
         """
+        key = str(dir_id)
+        cached = self._cache_get(key)
+        if cached is not None:
+            # 返回浅拷贝，避免调用方意外修改污染缓存
+            return list(cached[0]), cached[1], cached[2]
+
         row = self._db.query_one(
-            "SELECT files, total, all_loaded FROM dir_cache WHERE dir_id = ?",
-            (str(dir_id),),
+            "SELECT files, total, all_loaded, updated_at FROM dir_cache WHERE dir_id = ?",
+            (key,),
         )
         if row is None:
             return None, 0, False
@@ -115,7 +147,11 @@ class FileListDB:
             files = json.loads(row["files"])
         except (ValueError, TypeError):
             files = []
-        return files, int(row["total"]), bool(row["all_loaded"])
+        result = (files, int(row["total"]), bool(row["all_loaded"]))
+        self._cache_put(
+            key, result[0], result[1], result[2], row.get("updated_at", "")
+        )
+        return result
 
     def save_dir(self, dir_id, files, total=0, all_loaded=False):
         """保存目录的文件列表。
@@ -126,20 +162,23 @@ class FileListDB:
             total: 文件总数
             all_loaded: 是否已加载全部文件
         """
+        key = str(dir_id)
+        updated_at = datetime.now(timezone.utc).isoformat()
         self._db.execute(
             "INSERT OR REPLACE INTO dir_cache"
             " (dir_id, files, total, all_loaded, updated_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (
-                str(dir_id),
+                key,
                 json.dumps(files, ensure_ascii=False),
                 int(total),
                 1 if all_loaded else 0,
-                datetime.now(timezone.utc).isoformat(),
+                updated_at,
             ),
         )
         with self._lock:
-            self._dirty_dirs.discard(str(dir_id))
+            self._dirty_dirs.discard(key)
+            self._cache[key] = (files, int(total), bool(all_loaded), updated_at)
 
     def is_dirty(self, dir_id):
         """检查目录是否需要刷新（手动标记脏）。
@@ -169,6 +208,8 @@ class FileListDB:
         if ttl_seconds is None:
             ttl_seconds = DEFAULT_CACHE_TTL_SECONDS
 
+        # 注意：必须查询数据库（而非内存缓存），因为要检测外部进程对
+        # 数据库的直接修改（如其他客户端操作导致的数据变更）。
         row = self._db.query_one(
             "SELECT updated_at FROM dir_cache WHERE dir_id = ?", (str(dir_id),)
         )
@@ -188,8 +229,10 @@ class FileListDB:
 
     def mark_dirty(self, dir_id):
         """标记目录需要强制刷新。"""
+        key = str(dir_id)
         with self._lock:
-            self._dirty_dirs.add(str(dir_id))
+            self._dirty_dirs.add(key)
+            self._cache.pop(key, None)
             logger.debug("标记目录 %s 为脏", dir_id)
 
     def mark_all_dirty(self):
@@ -198,6 +241,7 @@ class FileListDB:
         with self._lock:
             for row in rows:
                 self._dirty_dirs.add(row["dir_id"])
+                self._cache.pop(row["dir_id"], None)
             logger.debug("已标记所有 %d 个目录为脏", len(rows))
 
     def update_file_in_dir(self, dir_id, file_id, new_info=None, remove=False):
@@ -242,17 +286,20 @@ class FileListDB:
 
     def delete_dir(self, dir_id):
         """从数据库中删除指定目录。"""
+        key = str(dir_id)
         self._db.execute(
-            "DELETE FROM dir_cache WHERE dir_id = ?", (str(dir_id),)
+            "DELETE FROM dir_cache WHERE dir_id = ?", (key,)
         )
         with self._lock:
-            self._dirty_dirs.discard(str(dir_id))
+            self._dirty_dirs.discard(key)
+            self._cache.pop(key, None)
 
     def delete_db(self):
         """清空文件列表缓存（保留其他表数据）。"""
         self._db.execute("DELETE FROM dir_cache")
         with self._lock:
             self._dirty_dirs.clear()
+            self._cache.clear()
         logger.info("文件列表缓存已清空")
 
     def get_stats(self):

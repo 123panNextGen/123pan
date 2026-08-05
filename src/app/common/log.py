@@ -47,12 +47,15 @@ _LEVEL_NAMES = list(_LEVEL_MAP.keys())
 
 _current_level = logging.DEBUG
 
+# 共享 handler（懒加载，仅创建一次）
+# 所有 logger 复用同一组 handler，避免每个 logger 打开独立的文件句柄
+_shared_handlers = None
 
-def get_logger(name: str = "123pan"):
-    logger = logging.getLogger(name)
-    logger.setLevel(_current_level)
 
-    if not logger.handlers:
+def _get_handlers():
+    """获取共享的文件/控制台 handler（懒创建）。"""
+    global _shared_handlers
+    if _shared_handlers is None:
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
@@ -66,8 +69,17 @@ def get_logger(name: str = "123pan"):
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
 
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
+        _shared_handlers = [file_handler, console_handler]
+    return _shared_handlers
+
+
+def get_logger(name: str = "123pan"):
+    logger = logging.getLogger(name)
+    logger.setLevel(_current_level)
+
+    if not logger.handlers:
+        for handler in _get_handlers():
+            logger.addHandler(handler)
 
     return logger
 
@@ -94,7 +106,7 @@ def set_log_level(level_name_or_int):
 
     root_logger = logging.getLogger("123pan")
     root_logger.setLevel(level)
-    for handler in root_logger.handlers:
+    for handler in _get_handlers():
         handler.setLevel(level)
 
 

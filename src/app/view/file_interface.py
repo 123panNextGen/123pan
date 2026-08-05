@@ -54,20 +54,42 @@ from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import (
     CreateFolderTask,
+    CreateShareTask,
     DeleteFileTask,
     BatchDeleteTask,
+    GetDownloadLinkTask,
+    LoadFolderListTask,
     LoadListTask,
+    LoadStorageInfoTask,
     MoveFileTask,
     RenameFileTask,
+    connect_tracked,
 )
-from ..tasks.signals import _LoadListSignals, _OpFinishedSignals
+from ..tasks.signals import (
+    _DownloadLinkSignals,
+    _FolderListSignals,
+    _LoadListSignals,
+    _OpFinishedSignals,
+    _ShareCreateSignals,
+    _StorageInfoSignals,
+)
+from ..tasks.file_tasks import LoadStorageInfoTask
 from .dialogs import InputDialog
 from .folder_select_dialog import FolderSelectDialog
 
 logger = get_logger(__name__)
 
+# 图标缓存：避免每行/每次右键都重新解码 SVG 图标
+_ICONS = {}
 
-# noinspection PyUnresolvedReferences
+
+def _icon(enum_member):
+    """懒加载并缓存 FluentIcon 对应的 QIcon（线程安全由 GIL 保证）。"""
+    icon = _ICONS.get(enum_member)
+    if icon is None:
+        icon = enum_member.icon()
+        _ICONS[enum_member] = icon
+    return icon# noinspection PyUnresolvedReferences
 class FileInterface(QWidget):
     """文件页面（仅浏览）"""
 
@@ -83,6 +105,12 @@ class FileInterface(QWidget):
         self.transfer_interface = None
         # 当前目录的文件列表（用于下载/预览/分享等操作的文件查找）
         self._current_file_items = []
+        # 文件 ID -> 文件详情 索引（避免线性扫描）
+        self._file_index_by_id = {}
+        # 目录 ID -> 树节点 缓存（避免每次全树迭代查找）
+        self._tree_item_cache = {}
+        # 持有后台任务引用，防止任务/信号被 GC 回收导致 RuntimeError
+        self._pending_tasks = []
 
         # 排序模式: 0=按名称, 2=按大小, 3=按日期
         self.sort_mode = 0
@@ -317,12 +345,14 @@ class FileInterface(QWidget):
 
     def __initTree(self):
         self.folderTree.clear()
+        self._tree_item_cache.clear()
 
         root_item = QTreeWidgetItem([tr("file.root_dir", "根目录")])
-        root_item.setIcon(0, FIF.FOLDER.icon())
+        root_item.setIcon(0, _icon(FIF.FOLDER))
         root_item.setData(0, Qt.ItemDataRole.UserRole, 0)
         root_item.setData(0, Qt.ItemDataRole.UserRole + 1, False)
         self.folderTree.addTopLevelItem(root_item)
+        self._tree_item_cache[0] = root_item
 
         self.__addPlaceholder(root_item)
         self.folderTree.expandItem(root_item)
@@ -346,26 +376,46 @@ class FileInterface(QWidget):
         if loaded or dir_id is None:
             return
 
+        # 标记加载中并清空占位，后台加载子文件夹（避免主线程网络阻塞）
         self.is_loading_tree = True
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+        item.takeChildren()
+
+        signals = _FolderListSignals()
+        task = LoadFolderListTask(self.pan, int(dir_id), signals)
+        connect_tracked(
+            self, signals, "finished",
+            lambda did, folders, err, it=item: self.__onTreeFolderLoaded(
+                it, did, folders, err
+            ),
+            task,
+        )
+        QThreadPool.globalInstance().start(task)
+
+    def __onTreeFolderLoaded(self, item, dir_id, folders, error):
+        """目录树子文件夹加载完成回调（主线程）。"""
+        self.is_loading_tree = False
         try:
-            item.takeChildren()
-            folder_list = self.__fetchDirList(dir_id)
-            for folder in folder_list:
-                if int(folder.get("Type", 0)) != 1:
-                    continue
+            if error or not item.treeWidget():
+                return
+            if item.data(0, Qt.ItemDataRole.UserRole) != dir_id:
+                return  # 用户已切换目录，丢弃过期结果
+        except RuntimeError:
+            return  # 控件已销毁
 
-                child = QTreeWidgetItem([folder.get("FileName", "")])
-                child.setIcon(0, FIF.FOLDER.icon())
-                child_id = int(folder.get("FileId", 0))
-                child.setData(0, Qt.ItemDataRole.UserRole, child_id)
-                child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
-                item.addChild(child)
+        for folder in folders:
+            if int(folder.get("Type", 0)) != 1:
+                continue
 
-                self.__addPlaceholder(child)
+            child = QTreeWidgetItem([folder.get("FileName", "")])
+            child.setIcon(0, _icon(FIF.FOLDER))
+            child_id = int(folder.get("FileId", 0))
+            child.setData(0, Qt.ItemDataRole.UserRole, child_id)
+            child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
+            item.addChild(child)
+            self._tree_item_cache[child_id] = child
 
-            item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
-        finally:
-            self.is_loading_tree = False
+            self.__addPlaceholder(child)
 
     def __onTreeItemClicked(self, item):
         dir_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -442,11 +492,11 @@ class FileInterface(QWidget):
         self.fileTable.setRowCount(0)
 
         signals = _LoadListSignals()
-        signals.finished.connect(self.__onLoadListFinished)
         task = LoadListTask(
             lambda dir_id: self.__fetchDirList(dir_id, force_refresh),
             self.current_dir_id, signals,
         )
+        connect_tracked(self, signals, "finished", self.__onLoadListFinished, task)
 
         QThreadPool.globalInstance().start(task)
 
@@ -499,10 +549,21 @@ class FileInterface(QWidget):
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
     def __findTreeItemById(self, dir_id):
+        """按目录 ID 查找树节点（优先使用缓存，失效时全树扫描兜底）。"""
+        cached = self._tree_item_cache.get(dir_id)
+        if cached is not None:
+            try:
+                if cached.treeWidget() is self.folderTree:
+                    return cached
+            except RuntimeError:
+                # 节点已被销毁，缓存失效
+                self._tree_item_cache.pop(dir_id, None)
+
         iterator = QTreeWidgetItemIterator(self.folderTree)
         while iterator.value():
             item = iterator.value()
             if item is not None and item.data(0, Qt.ItemDataRole.UserRole) == dir_id:
+                self._tree_item_cache[dir_id] = item
                 return item
             iterator += 1
 
@@ -569,10 +630,10 @@ class FileInterface(QWidget):
 
             # 在主线程创建信号
             signals = _OpFinishedSignals()
-            signals.finished.connect(self.__onCreateFolderFinished)
             task = CreateFolderTask(
                 self.pan, folder_name, self.current_dir_id, signals, self
             )
+            connect_tracked(self, signals, "finished", self.__onCreateFolderFinished, task)
 
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
@@ -616,6 +677,10 @@ class FileInterface(QWidget):
         """
         if update_cache:
             self._current_file_items = file_items
+            # 构建 file_id -> 文件详情 索引，供下载/预览/分享 O(1) 查找
+            self._file_index_by_id = {
+                str(item.get("FileId")): item for item in file_items
+            }
 
         # 暂停重绘和信号，批量更新完成后再一次性刷新
         self.fileTable.setUpdatesEnabled(False)
@@ -623,6 +688,9 @@ class FileInterface(QWidget):
         try:
             count = len(file_items)
             self.fileTable.setRowCount(count)
+
+            folder_icon = _icon(FIF.FOLDER)
+            file_icon = _icon(FIF.DOCUMENT)
 
             for row, file_item in enumerate(file_items):
                 file_name = file_item.get("FileName", "")
@@ -641,9 +709,7 @@ class FileInterface(QWidget):
                 name_item.setText(file_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, file_id)
                 name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
-                name_item.setIcon(
-                    FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
-                )
+                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
 
                 type_item = self.fileTable.item(row, 1)
                 if type_item is None:
@@ -789,6 +855,7 @@ class FileInterface(QWidget):
                 file_id = child.data(0, Qt.ItemDataRole.UserRole)
                 if file_id:
                     existing_items[file_id] = child
+                    self._tree_item_cache[file_id] = child
 
             # 添加新的文件夹
             for folder in folder_items:
@@ -800,10 +867,11 @@ class FileInterface(QWidget):
                     continue
 
                 child = QTreeWidgetItem([file_name])
-                child.setIcon(0, FIF.FOLDER.icon())
+                child.setIcon(0, _icon(FIF.FOLDER))
                 child.setData(0, Qt.ItemDataRole.UserRole, file_id)
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
                 current_item.addChild(child)
+                self._tree_item_cache[file_id] = child
 
                 # 添加占位符
                 self.__addPlaceholder(child)
@@ -972,10 +1040,10 @@ class FileInterface(QWidget):
 
         # 单文件删除
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onDeleteFileFinished)
         task = DeleteFileTask(
             self.pan, file_id, file_name, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onDeleteFileFinished, task)
         QThreadPool.globalInstance().start(task)
 
     def __batchDeleteFiles(self, selected_rows):
@@ -989,13 +1057,15 @@ class FileInterface(QWidget):
 
         # 在主线程创建信号
         signals = _OpFinishedSignals()
-        signals.finished.connect(
-            lambda success, name, new_name, error, items, folders: self.__onBatchDeleteFinished(
-                success, name, new_name, error, items, folders
-            )
-        )
         task = BatchDeleteTask(
             self.pan, file_infos, self.current_dir_id, signals, self
+        )
+        connect_tracked(
+            self, signals, "finished",
+            lambda success, name, new_name, error, items, folders: self.__onBatchDeleteFinished(
+                success, name, new_name, error, items, folders
+            ),
+            task,
         )
         QThreadPool.globalInstance().start(task)
 
@@ -1107,10 +1177,10 @@ class FileInterface(QWidget):
 
         # 在主线程创建信号
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onRenameFileFinished)
         task = RenameFileTask(
             self.pan, file_id, old_name, new_name, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onRenameFileFinished, task)
 
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
@@ -1190,10 +1260,10 @@ class FileInterface(QWidget):
             return
 
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onMoveFileFinished)
         task = MoveFileTask(
             self.pan, file_infos, target, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onMoveFileFinished, task)
         QThreadPool.globalInstance().start(task)
 
     def __onMoveFileFinished(
@@ -1235,32 +1305,32 @@ class FileInterface(QWidget):
         menu = QMenu(self)
 
         # 添加获取下载链接菜单项
-        copy_link_action = QAction(FIF.LINK.icon(), tr("file.menu_copy_link", "获取下载链接"), self)
+        copy_link_action = QAction(_icon(FIF.LINK), tr("file.menu_copy_link", "获取下载链接"), self)
         copy_link_action.triggered.connect(self.__copyDownloadLink)
         menu.addAction(copy_link_action)
 
         # 添加预览菜单项
-        preview_action = QAction(FIF.VIEW.icon(), tr("file.menu_preview", "预览"), self)
+        preview_action = QAction(_icon(FIF.VIEW), tr("file.menu_preview", "预览"), self)
         preview_action.triggered.connect(self.__previewFile)
         menu.addAction(preview_action)
 
         # 添加分享菜单项
-        share_action = QAction(FIF.LINK.icon(), tr("file.menu_share", "分享"), self)
+        share_action = QAction(_icon(FIF.LINK), tr("file.menu_share", "分享"), self)
         share_action.triggered.connect(self.__shareFile)
         menu.addAction(share_action)
 
         # 添加重命名菜单项
-        rename_action = QAction(FIF.EDIT.icon(), tr("file.menu_rename", "重命名"), self)
+        rename_action = QAction(_icon(FIF.EDIT), tr("file.menu_rename", "重命名"), self)
         rename_action.triggered.connect(self.__renameFile)
         menu.addAction(rename_action)
 
         # 添加移动菜单项
-        move_action = QAction(FIF.RIGHT_ARROW.icon(), tr("file.menu_move", "移动到"), self)
+        move_action = QAction(_icon(FIF.RIGHT_ARROW), tr("file.menu_move", "移动到"), self)
         move_action.triggered.connect(self.__moveFile)
         menu.addAction(move_action)
 
         # 添加删除菜单项
-        delete_action = QAction(FIF.DELETE.icon(), tr("file.delete", "删除"), self)
+        delete_action = QAction(_icon(FIF.DELETE), tr("file.delete", "删除"), self)
         delete_action.triggered.connect(self.__deleteFile)
         menu.addAction(delete_action)
 
@@ -1287,27 +1357,32 @@ class FileInterface(QWidget):
             InfoBar.error(title=tr("file.msg_copy_link_failed", "复制链接失败"), content=tr("file.msg_file_detail_not_found", "无法找到文件详情"), parent=self)
             return
 
-        try:
-            url = self.pan.link_by_fileDetail(file_detail, showlink=False)
-            if isinstance(url, str) and url:
-                clipboard = QApplication.clipboard()
-                clipboard.setText(url)
-                logger.info("下载链接已复制: %s", file_name)
-                InfoBar.success(
-                    title=tr("file.msg_copy_success", "复制成功"),
-                    content=tr("file.msg_link_copied", "已复制 {} 的下载链接到剪贴板").format(file_name),
-                    parent=self,
-                )
-            else:
-                logger.error("获取下载链接失败: name=%s, url=%s", file_name, url)
-                InfoBar.error(
-                    title=tr("file.msg_copy_link_failed", "复制链接失败"), content=tr("file.msg_get_link_failed", "获取下载链接失败"), parent=self
-                )
-        except Exception as e:
-            logger.error(f"复制下载链接失败: {e}")
+        # 后台获取下载链接，避免主线程网络请求阻塞
+        self.__last_copy_name = file_name
+        signals = _DownloadLinkSignals()
+        task = GetDownloadLinkTask(self.pan, file_detail, signals)
+        connect_tracked(self, signals, "finished", self.__onDownloadLinkReady, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onDownloadLinkReady(self, url, error):
+        """下载链接获取完成回调（主线程）。"""
+        if error or not url:
+            logger.error("获取下载链接失败: %s", error)
             InfoBar.error(
-                title="复制链接失败", content=tr("file.msg_error_occurred", "发生错误: {}").format(str(e)), parent=self
+                title=tr("file.msg_copy_link_failed", "复制链接失败"),
+                content=tr("file.msg_get_link_failed", "获取下载链接失败"),
+                parent=self,
             )
+            return
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(url)
+        logger.info("下载链接已复制: %s", url[:80])
+        InfoBar.success(
+            title=tr("file.msg_copy_success", "复制成功"),
+            content=tr("file.msg_link_copied", "已复制 {} 的下载链接到剪贴板").format(self.__last_copy_name or ""),
+            parent=self,
+        )
 
     def __shareFile(self):
         """为选中文件/文件夹生成分享链接并复制到剪贴板（可选设置密码）。"""
@@ -1331,33 +1406,41 @@ class FileInterface(QWidget):
             logger.debug("用户取消分享密码设置")
             return
 
-        try:
-            share_url = self.pan.share([int(file_id)], share_pwd=pwd or "")
-            if isinstance(share_url, str) and share_url:
-                QApplication.clipboard().setText(share_url)
-                logger.info("分享成功: %s -> %s", file_name, share_url)
-                InfoBar.success(
-                    title=tr("file.msg_share_success", "分享成功"),
-                    content=tr("file.msg_share_generated", "已生成分享链接并复制到剪贴板：{}").format(share_url),
-                    parent=self,
-                )
-            else:
-                logger.error("分享失败: name=%s, url=%s", file_name, share_url)
-                InfoBar.error(title=tr("file.msg_share_failed", "分享失败"), content=tr("file.msg_share_gen_failed", "生成分享链接失败"), parent=self)
-        except Exception as e:
-            logger.error(f"生成分享链接失败: {e}")
-            InfoBar.error(title="分享失败", content=str(e), parent=self)
+        # 后台创建分享链接，避免主线程网络请求阻塞
+        self.__last_share_name = file_name
+        signals = _ShareCreateSignals()
+        task = CreateShareTask(self.pan, int(file_id), pwd or "", signals)
+        connect_tracked(self, signals, "finished", self.__onShareCreated, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onShareCreated(self, share_url, error):
+        """分享链接创建完成回调（主线程）。"""
+        if error or not share_url:
+            logger.error("生成分享链接失败: %s", error)
+            InfoBar.error(
+                title=tr("file.msg_share_failed", "分享失败"),
+                content=tr("file.msg_share_gen_failed", "生成分享链接失败"),
+                parent=self,
+            )
+            return
+
+        QApplication.clipboard().setText(share_url)
+        logger.info("分享成功: %s -> %s", self.__last_share_name or "", share_url)
+        InfoBar.success(
+            title=tr("file.msg_share_success", "分享成功"),
+            content=tr("file.msg_share_generated", "已生成分享链接并复制到剪贴板：{}").format(share_url),
+            parent=self,
+        )
 
     def __findFileById(self, file_id):
         """从缓存的文件列表中根据 file_id 查找文件详情。
 
-        优先搜索 _current_file_items（当前目录），
+        优先使用 O(1) 索引（当前目录），
         回退到 pan.list（历史缓存）。
         """
-        # 先在当前目录缓存中查找
-        for item in self._current_file_items:
-            if str(item.get("FileId")) == str(file_id):
-                return item
+        item = self._file_index_by_id.get(str(file_id))
+        if item is not None:
+            return item
         # 回退到 pan.list
         for item in self.pan.list:
             if str(item.get("FileId")) == str(file_id):
@@ -1442,21 +1525,21 @@ class FileInterface(QWidget):
         self.storageValueLabel.setText(f"{used_text} / {total_text}")
 
     def load_and_update_storage_info(self):
-        """从 API 获取用户云盘空间信息并更新显示。"""
+        """从 API 获取用户云盘空间信息并更新显示（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
             return
 
-        try:
-            result = self.pan.get_user_info()
-        except Exception as e:
-            logger.error("获取用户信息失败: %s", e)
+        signals = _StorageInfoSignals()
+        task = LoadStorageInfoTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onStorageInfoFinished, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onStorageInfoFinished(self, user_info, error):
+        """云盘空间信息加载完成回调（主线程）。"""
+        if error or user_info is None:
+            logger.warning("获取用户信息失败: %s", error)
             return
 
-        if result.code != 0 or not hasattr(result, 'data') or result.data is None:
-            logger.warning("获取用户信息返回异常: code=%s", result.code)
-            return
-
-        user_info = result.data
-        space_used = getattr(user_info, 'space_used', 0)
-        space_total = getattr(user_info, 'space_total', 0)
+        space_used = getattr(user_info, "space_used", 0)
+        space_total = getattr(user_info, "space_total", 0)
         self.update_storage_info(space_used, space_total)

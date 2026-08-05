@@ -35,8 +35,39 @@ from .model import (
 )
 
 BASE_URL = "https://www.123pan.cn"
+FALLBACK_BASE_URL = "https://api.123278.com"
 # 二维码登录专用域名（web 端登录接口）
 LOGIN_BASE_URL = "https://login.123pan.com"
+
+# 预编译正则：解析 HTML body 中 href='...' 形式的下载链接
+# 避免每次调用 _resolve_download_url 时重复编译
+_HREF_URL_RE = re.compile(r"href='(https?://[^']+)'")
+
+
+class _ApiSession(requests.Session):
+    def __init__(self):
+        super().__init__()
+        self._use_fallback = False
+
+    def request(self, method, url, **kwargs):
+        parsed = urlparse(url)
+        is_primary_api = (
+            parsed.netloc == urlparse(BASE_URL).netloc and "/api/" in parsed.path
+        )
+        if not is_primary_api:
+            return super().request(method, url, **kwargs)
+
+        fallback_url = url.replace(BASE_URL, FALLBACK_BASE_URL, 1)
+        if self._use_fallback:
+            return super().request(method, fallback_url, **kwargs)
+
+        try:
+            return super().request(method, url, **kwargs)
+        except requests.exceptions.ConnectionError as error:
+            logger.warning("API 请求失败，切换备用地址: %s", error)
+            response = super().request(method, fallback_url, **kwargs)
+            self._use_fallback = True
+            return response
 
 
 class NetSession:
@@ -47,14 +78,13 @@ class NetSession:
 
     def __init__(self):
         self._user_info: Optional[UserInfoModel] = None
-        self._http = requests.Session()
+        self._http = _ApiSession()
         self._http.headers.update(
             {
                 "accept-encoding": "gzip",
                 "content-type": "application/json",
                 "platform": "android",
                 "devicename": "Xiaomi",
-                "host": "www.123pan.cn",
                 "app-version": "61",
                 "x-app-version": "2.4.0",
             }
@@ -1518,8 +1548,7 @@ class NetSession:
 
             # 2. 检查 HTML body 中的 href 链接
             text = resp.text[:500]
-            url_pattern = re.compile(r"href='(https?://[^']+)'")
-            match = url_pattern.search(text)
+            match = _HREF_URL_RE.search(text)
             if match:
                 resolved = match.group(1)
                 logger.debug("下载 URL 已通过 href 解析: %s ...", resolved[:80])

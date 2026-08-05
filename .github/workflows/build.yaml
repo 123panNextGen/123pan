@@ -62,8 +62,15 @@ jobs:
             libxcb-xfixes0 \
             libxcb-xinerama0 \
             zip \
+            upx \
             clang \
             ccache
+
+      - name: Install Windows Dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install upx -y
 
       - name: Install dependencies
         run: |
@@ -149,7 +156,6 @@ jobs:
           files: |
             ./artifacts/windows-x64/123pan-windows-x64.zip
             ./artifacts/linux-x64/123pan-linux-x64.zip
-            ./artifacts/windows-arm64/123pan-windows-arm64.zip
             ./artifacts/linux-arm64/123pan-linux-arm64.zip
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false

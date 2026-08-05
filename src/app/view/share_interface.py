@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThreadPool
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -32,6 +32,12 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import (
+    DeleteSharesTask,
+    LoadShareListsTask,
+    connect_tracked,
+)
+from ..tasks.signals import _DeleteSharesSignals, _ShareListSignals
 
 logger = get_logger(__name__)
 
@@ -46,6 +52,8 @@ class ShareInterface(QWidget):
         self.pan = None
         self._free_shares = []
         self._pay_shares = []
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
@@ -58,6 +66,9 @@ class ShareInterface(QWidget):
     def set_pan(self, pan):
         """设置 Pan123 实例"""
         self.pan = pan
+        # 异步登录期间页面可能已显示：设置 pan 后若可见则立即刷新
+        if pan and self.isVisible():
+            self.__refreshAll()
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)
@@ -180,61 +191,39 @@ class ShareInterface(QWidget):
         return self._pay_shares
 
     def __refreshAll(self):
-        """刷新所有分享列表"""
-        self.__refreshFreeShares()
-        self.__refreshPayShares()
-
-    def __refreshFreeShares(self):
-        """刷新免费分享列表"""
+        """刷新所有分享列表（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
-            logger.warning("免费分享刷新: pan 未设置")
+            logger.warning("分享刷新: pan 未设置")
             return
-        try:
-            result = self.pan.get_free_share_list()
-            if result.code != 0:
-                InfoBar.error(
-                    title=tr("share.msg_refresh_failed", "刷新失败"),
-                    content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(result.msg),
-                    parent=self,
-                )
-                return
-            share_data = result.data
-            self._free_shares = share_data.data.info_list
+
+        signals = _ShareListSignals()
+        task = LoadShareListsTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onShareListsLoaded, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onShareListsLoaded(self, free_data, free_err, pay_data, pay_err):
+        """分享列表加载完成回调（主线程）。"""
+        if free_err:
+            InfoBar.error(
+                title=tr("share.msg_refresh_failed", "刷新失败"),
+                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(free_err),
+                parent=self,
+            )
+        elif free_data is not None:
+            self._free_shares = free_data.info_list
             self.__updateTableUI(self.freeTab.findChild(TableWidget), self._free_shares)
             logger.info("免费分享列表已刷新: %d 条", len(self._free_shares))
-        except Exception as e:
-            logger.error("免费分享刷新失败: %s", e)
+
+        if pay_err:
             InfoBar.error(
                 title=tr("share.msg_refresh_failed", "刷新失败"),
-                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(e),
+                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(pay_err),
                 parent=self,
             )
-
-    def __refreshPayShares(self):
-        """刷新付费分享列表"""
-        if not self.pan:
-            logger.warning("付费分享刷新: pan 未设置")
-            return
-        try:
-            result = self.pan.get_pay_share_list()
-            if result.code != 0:
-                InfoBar.error(
-                    title=tr("share.msg_refresh_failed", "刷新失败"),
-                    content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(result.msg),
-                    parent=self,
-                )
-                return
-            share_data = result.data
-            self._pay_shares = share_data.data.info_list
+        elif pay_data is not None:
+            self._pay_shares = pay_data.info_list
             self.__updateTableUI(self.payTab.findChild(TableWidget), self._pay_shares)
             logger.info("付费分享列表已刷新: %d 条", len(self._pay_shares))
-        except Exception as e:
-            logger.error("付费分享刷新失败: %s", e)
-            InfoBar.error(
-                title=tr("share.msg_refresh_failed", "刷新失败"),
-                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(e),
-                parent=self,
-            )
 
     def __updateTableUI(self, table, share_list):
         """更新分享表格"""
@@ -409,28 +398,19 @@ class ShareInterface(QWidget):
         if not box.exec():
             return
 
-        success_count = 0
-        fail_count = 0
-        last_error = ""
-
         for item in selected:
-            share_id = item.share_id
-            share_name = item.share_name
-            logger.info("正在删除分享: name=%s, shareId=%s", share_name, share_id)
-            try:
-                result = self.pan.delete_share(share_id)
-                if result.code == 0:
-                    success_count += 1
-                    logger.info("分享删除成功: %s (shareId=%s)", share_name, share_id)
-                else:
-                    fail_count += 1
-                    last_error = result.msg
-                    logger.warning("分享删除失败: %s (shareId=%s), msg=%s", share_name, share_id, result.msg)
-            except Exception as e:
-                fail_count += 1
-                last_error = str(e)
-                logger.error("分享删除异常: %s (shareId=%s): %s", share_name, share_id, e)
+            logger.info("正在删除分享: name=%s, shareId=%s", item.share_name, item.share_id)
 
+        # 后台批量删除，避免逐个网络请求阻塞主线程
+        signals = _DeleteSharesSignals()
+        task = DeleteSharesTask(
+            self.pan, [item.share_id for item in selected], signals
+        )
+        connect_tracked(self, signals, "finished", self.__onSharesDeleted, task)
+        QThreadPool.globalInstance().start(task)
+
+    def __onSharesDeleted(self, success_count, fail_count, last_error):
+        """批量删除分享完成回调（主线程）。"""
         # 显示结果
         if fail_count == 0:
             InfoBar.success(
