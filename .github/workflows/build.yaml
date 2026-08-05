@@ -82,14 +82,15 @@ jobs:
         run: |
           $suffix = "${{ matrix.arch }}"
           Compress-Archive `
-            -Path 123pan.exe `
+            -Path "123pan.dist" `
             -DestinationPath "123pan-windows-$suffix.zip" `
+            -CompressionLevel Optimal `
             -Force
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         run: |
-          zip -9 "123pan-linux-${{ matrix.arch }}.zip" 123pan
+          zip -9 -r "123pan-linux-${{ matrix.arch }}.zip" 123pan.dist
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'

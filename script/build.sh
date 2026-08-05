@@ -41,7 +41,6 @@ else
     --windows-console-mode=disable
     --msvc=latest
     --static-libpython=no
-    --onefile-no-compression
   )
 fi
 
@@ -68,7 +67,6 @@ NOFOLLOW=(
 
   uv run -m nuitka src/123pan.py \
     --lto=yes \
-    --onefile \
     --standalone \
     --enable-plugin=pyqt6 \
     --jobs="$JOBS" \
