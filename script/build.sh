@@ -45,6 +45,7 @@ else
 fi
 
 NOFOLLOW=(
+  # 注意：不要随便修改排除列表
   pytest unittest pdb doctest test
   tests tkinter turtle idlelib setuptools
   wheel pip distutils ensurepip venv zipapp
@@ -54,7 +55,6 @@ NOFOLLOW=(
   readline PyQt6.uic PyQt6.QtWebEngine
   PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
   PyQt6.QtWebChannel PyQt6.QtMultimedia PyQt6.QtBluetooth
-  # 注意：PyQt6.QtPdf/QtPdfWidgets 有意不排除 —— PDF 预览是打包版
   PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
   PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
