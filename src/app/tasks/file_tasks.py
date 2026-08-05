@@ -18,9 +18,11 @@ from .signals import (
     _CheckVersionSignals,
     _DeleteSharesSignals,
     _DeviceListSignals,
+    _DownloadLinkSignals,
     _FolderListSignals,
     _LoadListSignals,
     _PasswordLoginSignals,
+    _ShareCreateSignals,
     _ShareListSignals,
     _StorageInfoSignals,
     _TrashListSignals,
@@ -332,6 +334,51 @@ class PermDeleteTrashTask(QRunnable):
         except Exception as e:
             logger.error("永久删除失败: %s", e)
             self.signals.finished.emit(False, str(e))
+
+
+class GetDownloadLinkTask(QRunnable):
+    """后台获取文件下载链接。"""
+
+    def __init__(self, pan, file_detail, signals: _DownloadLinkSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_detail = file_detail
+        self.signals = signals
+
+    def run(self):
+        try:
+            url = self.pan.link_by_fileDetail(self.file_detail, showlink=False)
+            if isinstance(url, str) and url:
+                self.signals.finished.emit(url, "")
+            else:
+                self.signals.finished.emit("", f"获取下载链接失败 (code={url})")
+        except Exception as e:
+            logger.error("获取下载链接失败: %s", e)
+            self.signals.finished.emit("", str(e))
+
+
+class CreateShareTask(QRunnable):
+    """后台创建分享链接。"""
+
+    def __init__(self, pan, file_id, share_pwd, signals: _ShareCreateSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_id = file_id
+        self.share_pwd = share_pwd
+        self.signals = signals
+
+    def run(self):
+        try:
+            share_url = self.pan.share(
+                [self.file_id], share_pwd=self.share_pwd or ""
+            )
+            if isinstance(share_url, str) and share_url:
+                self.signals.finished.emit(share_url, "")
+            else:
+                self.signals.finished.emit("", "生成分享链接失败")
+        except Exception as e:
+            logger.error("生成分享链接失败: %s", e)
+            self.signals.finished.emit("", str(e))
 
 
 class CreateFolderTask(QRunnable):

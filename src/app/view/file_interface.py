@@ -54,15 +54,22 @@ from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import (
     CreateFolderTask,
+    CreateShareTask,
     DeleteFileTask,
     BatchDeleteTask,
+    GetDownloadLinkTask,
+    LoadFolderListTask,
     LoadListTask,
+    LoadStorageInfoTask,
     MoveFileTask,
     RenameFileTask,
 )
 from ..tasks.signals import (
+    _DownloadLinkSignals,
+    _FolderListSignals,
     _LoadListSignals,
     _OpFinishedSignals,
+    _ShareCreateSignals,
     _StorageInfoSignals,
 )
 from ..tasks.file_tasks import LoadStorageInfoTask
@@ -369,27 +376,45 @@ class FileInterface(QWidget):
         if loaded or dir_id is None:
             return
 
+        # 标记加载中并清空占位，后台加载子文件夹（避免主线程网络阻塞）
         self.is_loading_tree = True
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+        item.takeChildren()
+
+        signals = _FolderListSignals()
+        signals.finished.connect(
+            lambda did, folders, err, it=item: self.__onTreeFolderLoaded(
+                it, did, folders, err
+            )
+        )
+        QThreadPool.globalInstance().start(
+            LoadFolderListTask(self.pan, int(dir_id), signals)
+        )
+
+    def __onTreeFolderLoaded(self, item, dir_id, folders, error):
+        """目录树子文件夹加载完成回调（主线程）。"""
+        self.is_loading_tree = False
         try:
-            item.takeChildren()
-            folder_list = self.__fetchDirList(dir_id)
-            for folder in folder_list:
-                if int(folder.get("Type", 0)) != 1:
-                    continue
+            if error or not item.treeWidget():
+                return
+            if item.data(0, Qt.ItemDataRole.UserRole) != dir_id:
+                return  # 用户已切换目录，丢弃过期结果
+        except RuntimeError:
+            return  # 控件已销毁
 
-                child = QTreeWidgetItem([folder.get("FileName", "")])
-                child.setIcon(0, _icon(FIF.FOLDER))
-                child_id = int(folder.get("FileId", 0))
-                child.setData(0, Qt.ItemDataRole.UserRole, child_id)
-                child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
-                item.addChild(child)
-                self._tree_item_cache[child_id] = child
+        for folder in folders:
+            if int(folder.get("Type", 0)) != 1:
+                continue
 
-                self.__addPlaceholder(child)
+            child = QTreeWidgetItem([folder.get("FileName", "")])
+            child.setIcon(0, _icon(FIF.FOLDER))
+            child_id = int(folder.get("FileId", 0))
+            child.setData(0, Qt.ItemDataRole.UserRole, child_id)
+            child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
+            item.addChild(child)
+            self._tree_item_cache[child_id] = child
 
-            item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
-        finally:
-            self.is_loading_tree = False
+            self.__addPlaceholder(child)
 
     def __onTreeItemClicked(self, item):
         dir_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -1329,27 +1354,33 @@ class FileInterface(QWidget):
             InfoBar.error(title=tr("file.msg_copy_link_failed", "复制链接失败"), content=tr("file.msg_file_detail_not_found", "无法找到文件详情"), parent=self)
             return
 
-        try:
-            url = self.pan.link_by_fileDetail(file_detail, showlink=False)
-            if isinstance(url, str) and url:
-                clipboard = QApplication.clipboard()
-                clipboard.setText(url)
-                logger.info("下载链接已复制: %s", file_name)
-                InfoBar.success(
-                    title=tr("file.msg_copy_success", "复制成功"),
-                    content=tr("file.msg_link_copied", "已复制 {} 的下载链接到剪贴板").format(file_name),
-                    parent=self,
-                )
-            else:
-                logger.error("获取下载链接失败: name=%s, url=%s", file_name, url)
-                InfoBar.error(
-                    title=tr("file.msg_copy_link_failed", "复制链接失败"), content=tr("file.msg_get_link_failed", "获取下载链接失败"), parent=self
-                )
-        except Exception as e:
-            logger.error(f"复制下载链接失败: {e}")
+        # 后台获取下载链接，避免主线程网络请求阻塞
+        self.__last_copy_name = file_name
+        signals = _DownloadLinkSignals()
+        signals.finished.connect(self.__onDownloadLinkReady)
+        QThreadPool.globalInstance().start(
+            GetDownloadLinkTask(self.pan, file_detail, signals)
+        )
+
+    def __onDownloadLinkReady(self, url, error):
+        """下载链接获取完成回调（主线程）。"""
+        if error or not url:
+            logger.error("获取下载链接失败: %s", error)
             InfoBar.error(
-                title="复制链接失败", content=tr("file.msg_error_occurred", "发生错误: {}").format(str(e)), parent=self
+                title=tr("file.msg_copy_link_failed", "复制链接失败"),
+                content=tr("file.msg_get_link_failed", "获取下载链接失败"),
+                parent=self,
             )
+            return
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(url)
+        logger.info("下载链接已复制: %s", url[:80])
+        InfoBar.success(
+            title=tr("file.msg_copy_success", "复制成功"),
+            content=tr("file.msg_link_copied", "已复制 {} 的下载链接到剪贴板").format(self.__last_copy_name or ""),
+            parent=self,
+        )
 
     def __shareFile(self):
         """为选中文件/文件夹生成分享链接并复制到剪贴板（可选设置密码）。"""
@@ -1373,22 +1404,32 @@ class FileInterface(QWidget):
             logger.debug("用户取消分享密码设置")
             return
 
-        try:
-            share_url = self.pan.share([int(file_id)], share_pwd=pwd or "")
-            if isinstance(share_url, str) and share_url:
-                QApplication.clipboard().setText(share_url)
-                logger.info("分享成功: %s -> %s", file_name, share_url)
-                InfoBar.success(
-                    title=tr("file.msg_share_success", "分享成功"),
-                    content=tr("file.msg_share_generated", "已生成分享链接并复制到剪贴板：{}").format(share_url),
-                    parent=self,
-                )
-            else:
-                logger.error("分享失败: name=%s, url=%s", file_name, share_url)
-                InfoBar.error(title=tr("file.msg_share_failed", "分享失败"), content=tr("file.msg_share_gen_failed", "生成分享链接失败"), parent=self)
-        except Exception as e:
-            logger.error(f"生成分享链接失败: {e}")
-            InfoBar.error(title="分享失败", content=str(e), parent=self)
+        # 后台创建分享链接，避免主线程网络请求阻塞
+        self.__last_share_name = file_name
+        signals = _ShareCreateSignals()
+        signals.finished.connect(self.__onShareCreated)
+        QThreadPool.globalInstance().start(
+            CreateShareTask(self.pan, int(file_id), pwd or "", signals)
+        )
+
+    def __onShareCreated(self, share_url, error):
+        """分享链接创建完成回调（主线程）。"""
+        if error or not share_url:
+            logger.error("生成分享链接失败: %s", error)
+            InfoBar.error(
+                title=tr("file.msg_share_failed", "分享失败"),
+                content=tr("file.msg_share_gen_failed", "生成分享链接失败"),
+                parent=self,
+            )
+            return
+
+        QApplication.clipboard().setText(share_url)
+        logger.info("分享成功: %s -> %s", self.__last_share_name or "", share_url)
+        InfoBar.success(
+            title=tr("file.msg_share_success", "分享成功"),
+            content=tr("file.msg_share_generated", "已生成分享链接并复制到剪贴板：{}").format(share_url),
+            parent=self,
+        )
 
     def __findFileById(self, file_id):
         """从缓存的文件列表中根据 file_id 查找文件详情。

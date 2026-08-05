@@ -74,6 +74,16 @@ class _TrashOpSignals(QObject):
     finished = pyqtSignal(bool, str)  # (success, msg)
 
 
+class _DownloadLinkSignals(QObject):
+    """下载链接获取完成信号。"""
+    finished = pyqtSignal(str, str)  # (url, error)
+
+
+class _ShareCreateSignals(QObject):
+    """分享链接创建完成信号。"""
+    finished = pyqtSignal(str, str)  # (url, error)
+
+
 class _QRGenerateSignals(QObject):
     finished = pyqtSignal(dict)  # 二维码生成成功（uniID/url/_pan_temp）
     error = pyqtSignal(str)      # 失败原因
