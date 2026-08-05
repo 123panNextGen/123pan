@@ -194,7 +194,8 @@ class Pan123:
         self.all_file = all_file
         self.file_page += 1
         if save:
-            self.list = self.list + items
+            # 原地追加，避免 list + list 整体复制（大目录分页时 O(n²) -> O(n)）
+            self.list.extend(items)
 
         return 0, items
 
