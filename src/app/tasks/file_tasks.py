@@ -11,15 +11,20 @@ the Free Software Foundation, either version 3 of the License, or
 from PyQt6.QtCore import QRunnable
 
 from ..common.api import Pan123
+from ..common.config import ConfigManager
 from ..common.log import get_logger
 from .signals import (
     _AutoLoginSignals,
+    _CheckVersionSignals,
+    _DeleteSharesSignals,
     _DeviceListSignals,
     _FolderListSignals,
     _LoadListSignals,
+    _PasswordLoginSignals,
     _ShareListSignals,
     _StorageInfoSignals,
     _TrashListSignals,
+    _TrashOpSignals,
     _UserInfoSignals,
 )
 
@@ -209,6 +214,124 @@ class AutoLoginTask(QRunnable):
                 pan.close()
             logger.warning("自动登录异常: %s", e)
             self.signals.finished.emit(None, str(e))
+
+
+class CheckVersionTask(QRunnable):
+    """后台检查 GitHub 最新版本。"""
+
+    def __init__(self, signals: _CheckVersionSignals):
+        super().__init__()
+        self.signals = signals
+
+    def run(self):
+        try:
+            from ..common.api import check_version
+
+            self.signals.finished.emit(check_version())
+        except Exception as e:
+            logger.error("检查版本失败: %s", e)
+            self.signals.finished.emit(False)
+
+
+class PasswordLoginTask(QRunnable):
+    """后台执行密码登录（构造 Pan123 + login），避免阻塞登录对话框。"""
+
+    def __init__(self, user_name, password, signals: _PasswordLoginSignals):
+        super().__init__()
+        self.user_name = user_name
+        self.password = password
+        self.signals = signals
+
+    def run(self):
+        pan = None
+        try:
+            account = ConfigManager.get_account(self.user_name)
+            if account:
+                logger.debug("使用已保存账号信息登录: %s", self.user_name)
+                pan = Pan123(readfile=True, user_name=self.user_name, password=self.password)
+            else:
+                logger.debug("新账号登录: %s", self.user_name)
+                pan = Pan123(readfile=False, user_name=self.user_name, password=self.password)
+
+            code = pan.login()
+            self.signals.finished.emit(pan, code, "")
+        except Exception as e:
+            if pan is not None:
+                pan.close()
+            logger.error("登录异常: %s", e)
+            self.signals.finished.emit(None, -1, str(e))
+
+
+class DeleteSharesTask(QRunnable):
+    """后台批量删除分享链接。"""
+
+    def __init__(self, pan, share_ids, signals: _DeleteSharesSignals):
+        super().__init__()
+        self.pan = pan
+        self.share_ids = share_ids
+        self.signals = signals
+
+    def run(self):
+        success_count = 0
+        fail_count = 0
+        last_error = ""
+        for share_id in self.share_ids:
+            try:
+                result = self.pan.delete_share(share_id)
+                if result.code == 0:
+                    success_count += 1
+                else:
+                    fail_count += 1
+                    last_error = result.msg
+                    logger.warning(
+                        "分享删除失败 (shareId=%s), msg=%s", share_id, result.msg
+                    )
+            except Exception as e:
+                fail_count += 1
+                last_error = str(e)
+                logger.error("分享删除异常 (shareId=%s): %s", share_id, e)
+        logger.info("分享删除完成: 成功 %d, 失败 %d", success_count, fail_count)
+        self.signals.finished.emit(success_count, fail_count, last_error)
+
+
+class RestoreTrashTask(QRunnable):
+    """后台恢复回收站文件。"""
+
+    def __init__(self, pan, trash_items, selected, signals: _TrashOpSignals):
+        super().__init__()
+        self.pan = pan
+        self.trash_items = trash_items
+        self.selected = selected
+        self.signals = signals
+
+    def run(self):
+        try:
+            for file_info in self.selected:
+                self.pan._file.delete_file(
+                    self.trash_items, file_info, by_num=False, operation=False
+                )
+            self.signals.finished.emit(True, "")
+        except Exception as e:
+            logger.error("恢复文件失败: %s", e)
+            self.signals.finished.emit(False, str(e))
+
+
+class PermDeleteTrashTask(QRunnable):
+    """后台永久删除回收站文件。"""
+
+    def __init__(self, pan, file_ids, signals: _TrashOpSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_ids = file_ids
+        self.signals = signals
+
+    def run(self):
+        try:
+            success, msg = self.pan._file.permanent_delete_files(self.file_ids)
+            self.signals.finished.emit(success, msg)
+        except Exception as e:
+            logger.error("永久删除失败: %s", e)
+            self.signals.finished.emit(False, str(e))
 
 
 class CreateFolderTask(QRunnable):

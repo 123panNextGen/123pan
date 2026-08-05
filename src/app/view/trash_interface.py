@@ -31,8 +31,12 @@ from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.file_tasks import LoadTrashListTask
-from ..tasks.signals import _TrashListSignals
+from ..tasks.file_tasks import (
+    LoadTrashListTask,
+    PermDeleteTrashTask,
+    RestoreTrashTask,
+)
+from ..tasks.signals import _TrashListSignals, _TrashOpSignals
 
 logger = get_logger(__name__)
 
@@ -211,7 +215,7 @@ class TrashInterface(QWidget):
         return result
 
     def __restoreSelected(self):
-        """恢复选中的文件"""
+        """恢复选中的文件（后台任务，避免阻塞 GUI）。"""
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
@@ -221,32 +225,38 @@ class TrashInterface(QWidget):
             )
             return
 
-        try:
-            for file_info in selected:
-                self.pan._file.delete_file(
-                    self._trash_items, file_info, by_num=False, operation=False
-                )
+        # 保存当前列表快照与选中信息供后台任务和回调使用
+        trash_items = list(self._trash_items)
+        self._last_op_count = len(selected)
+        self._last_op_names = [item.get("FileName", "") for item in selected]
+        signals = _TrashOpSignals()
+        signals.finished.connect(self.__onRestoreFinished)
+        QThreadPool.globalInstance().start(
+            RestoreTrashTask(self.pan, trash_items, list(selected), signals)
+        )
 
-            file_names = ", ".join(
-                item.get("FileName", "") for item in selected[:3]
-            )
-            suffix = "..." if len(selected) > 3 else ""
-            InfoBar.success(
-                title=tr("trash.msg_restore_success", "恢复成功"),
-                content=tr("trash.msg_files_restored", "已恢复 {} 个文件: {}").format(len(selected), file_names + suffix),
-                parent=self,
-            )
-            self.__refreshTrashList()
-        except Exception as e:
-            logger.error("恢复文件失败: %s", e)
+    def __onRestoreFinished(self, success, error):
+        """恢复完成回调（主线程）。"""
+        if not success:
+            logger.error("恢复文件失败: %s", error)
             InfoBar.error(
                 title=tr("trash.msg_restore_failed", "恢复失败"),
-                content=tr("trash.msg_restore_error", "恢复文件时发生错误: {}").format(e),
+                content=tr("trash.msg_restore_error", "恢复文件时发生错误: {}").format(error),
                 parent=self,
             )
+            return
+
+        file_names = ", ".join(getattr(self, "_last_op_names", [])[:3])
+        suffix = "..." if getattr(self, "_last_op_count", 0) > 3 else ""
+        InfoBar.success(
+            title=tr("trash.msg_restore_success", "恢复成功"),
+            content=tr("trash.msg_files_restored", "已恢复 {} 个文件: {}").format(getattr(self, "_last_op_count", 0), file_names + suffix),
+            parent=self,
+        )
+        self.__refreshTrashList()
 
     def __permanentlyDeleteSelected(self):
-        """永久删除选中的文件（从回收站彻底删除 = 再次删除）"""
+        """永久删除选中的文件（从回收站彻底删除 = 再次删除）。"""
         selected = self.__getSelectedItems()
         if not selected:
             InfoBar.warning(
@@ -256,26 +266,31 @@ class TrashInterface(QWidget):
             )
             return
 
-        try:
-            file_ids = [int(item.get("FileId", 0)) for item in selected]
-            success, msg = self.pan._file.permanent_delete_files(file_ids)
-            if not success:
-                raise RuntimeError(msg)
+        file_ids = [int(item.get("FileId", 0)) for item in selected]
+        self._last_op_count = len(selected)
+        self._last_op_names = [item.get("FileName", "") for item in selected]
+        signals = _TrashOpSignals()
+        signals.finished.connect(self.__onPermDeleteFinished)
+        QThreadPool.globalInstance().start(
+            PermDeleteTrashTask(self.pan, file_ids, signals)
+        )
 
-            file_names = ", ".join(
-                item.get("FileName", "") for item in selected[:3]
-            )
-            suffix = "..." if len(selected) > 3 else ""
-            InfoBar.success(
-                title=tr("trash.msg_perm_delete_success", "删除成功"),
-                content=tr("trash.msg_files_perm_deleted", "已永久删除 {} 个文件: {}").format(len(selected), file_names + suffix),
-                parent=self,
-            )
-            self.__refreshTrashList()
-        except Exception as e:
-            logger.error("永久删除失败: %s", e)
+    def __onPermDeleteFinished(self, success, msg):
+        """永久删除完成回调（主线程）。"""
+        if not success:
+            logger.error("永久删除失败: %s", msg)
             InfoBar.error(
                 title=tr("trash.msg_perm_delete_failed", "删除失败"),
-                content=tr("trash.msg_perm_delete_error", "永久删除文件时发生错误: {}").format(e),
+                content=tr("trash.msg_perm_delete_error", "永久删除文件时发生错误: {}").format(msg),
                 parent=self,
             )
+            return
+
+        file_names = ", ".join(getattr(self, "_last_op_names", [])[:3])
+        suffix = "..." if getattr(self, "_last_op_count", 0) > 3 else ""
+        InfoBar.success(
+            title=tr("trash.msg_perm_delete_success", "删除成功"),
+            content=tr("trash.msg_files_perm_deleted", "已永久删除 {} 个文件: {}").format(getattr(self, "_last_op_count", 0), file_names + suffix),
+            parent=self,
+        )
+        self.__refreshTrashList()

@@ -32,8 +32,8 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.file_tasks import LoadShareListsTask
-from ..tasks.signals import _ShareListSignals
+from ..tasks.file_tasks import DeleteSharesTask, LoadShareListsTask
+from ..tasks.signals import _DeleteSharesSignals, _ShareListSignals
 
 logger = get_logger(__name__)
 
@@ -393,28 +393,20 @@ class ShareInterface(QWidget):
         if not box.exec():
             return
 
-        success_count = 0
-        fail_count = 0
-        last_error = ""
-
         for item in selected:
-            share_id = item.share_id
-            share_name = item.share_name
-            logger.info("正在删除分享: name=%s, shareId=%s", share_name, share_id)
-            try:
-                result = self.pan.delete_share(share_id)
-                if result.code == 0:
-                    success_count += 1
-                    logger.info("分享删除成功: %s (shareId=%s)", share_name, share_id)
-                else:
-                    fail_count += 1
-                    last_error = result.msg
-                    logger.warning("分享删除失败: %s (shareId=%s), msg=%s", share_name, share_id, result.msg)
-            except Exception as e:
-                fail_count += 1
-                last_error = str(e)
-                logger.error("分享删除异常: %s (shareId=%s): %s", share_name, share_id, e)
+            logger.info("正在删除分享: name=%s, shareId=%s", item.share_name, item.share_id)
 
+        # 后台批量删除，避免逐个网络请求阻塞主线程
+        signals = _DeleteSharesSignals()
+        signals.finished.connect(self.__onSharesDeleted)
+        QThreadPool.globalInstance().start(
+            DeleteSharesTask(
+                self.pan, [item.share_id for item in selected], signals
+            )
+        )
+
+    def __onSharesDeleted(self, success_count, fail_count, last_error):
+        """批量删除分享完成回调（主线程）。"""
         # 显示结果
         if fail_count == 0:
             InfoBar.success(

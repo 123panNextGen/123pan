@@ -54,6 +54,26 @@ class _AutoLoginSignals(QObject):
     finished = pyqtSignal(object, str)  # (pan, error)
 
 
+class _CheckVersionSignals(QObject):
+    """版本检查完成信号。"""
+    finished = pyqtSignal(bool)  # 是否最新版本
+
+
+class _PasswordLoginSignals(QObject):
+    """密码登录完成信号。"""
+    finished = pyqtSignal(object, int, str)  # (pan, code, error)
+
+
+class _DeleteSharesSignals(QObject):
+    """批量删除分享完成信号。"""
+    finished = pyqtSignal(int, int, str)  # (success_count, fail_count, last_error)
+
+
+class _TrashOpSignals(QObject):
+    """回收站恢复/永久删除完成信号。"""
+    finished = pyqtSignal(bool, str)  # (success, msg)
+
+
 class _QRGenerateSignals(QObject):
     finished = pyqtSignal(dict)  # 二维码生成成功（uniID/url/_pan_temp）
     error = pyqtSignal(str)      # 失败原因

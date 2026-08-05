@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QThreadPool, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
@@ -32,7 +32,6 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF
 
-from ..common.api import check_version
 from ..common.config import isWin11, ConfigManager
 from ..common.const import YEAR, ABOUT_URL, VERSION
 from ..common.file_list_db import FileListDB
@@ -40,6 +39,8 @@ from ..common.i18n import tr
 from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
+from ..tasks.file_tasks import CheckVersionTask
+from ..tasks.signals import _CheckVersionSignals
 
 logger = get_logger(__name__)
 
@@ -588,7 +589,13 @@ class SettingInterface(ScrollArea):
     # ---- 事件处理 ----
 
     def check(self):
-        if check_version():
+        """后台检查版本更新，避免主线程网络请求阻塞。"""
+        signals = _CheckVersionSignals()
+        signals.finished.connect(self.__onCheckVersionFinished)
+        QThreadPool.globalInstance().start(CheckVersionTask(signals))
+
+    def __onCheckVersionFinished(self, is_latest):
+        if is_latest:
             InfoBar.success(
                 title=tr("settings.msg_check_success", "检查成功"),
                 content=tr("settings.msg_latest_version", "当前是最新版本"),

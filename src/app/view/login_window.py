@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThreadPool
 from PyQt6.QtWidgets import (
     QApplication,
     QVBoxLayout,
@@ -30,13 +30,19 @@ from qfluentwidgets import (
     CheckBox,
 )
 
-from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import PasswordLoginTask
+from ..tasks.signals import _PasswordLoginSignals
 from .qr_login_page import QRLoginPage
 
 logger = get_logger(__name__)
+
+
+def user_name_of(pan):
+    """安全获取 Pan123 实例的用户名。"""
+    return pan.user_name if hasattr(pan, "user_name") else "?"
 
 
 class LoginDialog(QDialog):
@@ -190,7 +196,7 @@ class LoginDialog(QDialog):
             logger.debug("账号 %s 无保存信息", account_name)
 
     def on_ok(self):
-        """登录处理"""
+        """登录处理（后台线程执行网络请求，避免阻塞对话框）。"""
         user = self.cbo_accounts.currentText().strip()
         pwd = self.le_pass.text()
         logger.info("登录尝试: user=%s, has_pwd=%s", user, bool(pwd))
@@ -202,52 +208,48 @@ class LoginDialog(QDialog):
                 self,
             ).exec()
             return
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            account = ConfigManager.get_account(user)
-            if account:
-                logger.debug("使用已保存账号信息登录: %s", user)
-                self.pan = Pan123(readfile=True, user_name=user, password=pwd)
-            else:
-                logger.debug("新账号登录: %s", user)
-                self.pan = Pan123(readfile=False, user_name=user, password=pwd)
 
-            code = self.pan.login()
-            logger.info("登录结果: user=%s, code=%s", user, code)
-            if code != 200 and code != 0:
-                self.login_error = tr("login.msg_login_failed_code", "登录失败，返回码: {}").format(code)
-                QApplication.restoreOverrideCursor()
-                MessageBox(
-                    tr("login.msg_login_failed", "登录失败"),
-                    self.login_error,
-                    self,
-                ).exec()
-                return
-        except Exception as e:
-            self.login_error = str(e)
-            logger.error("登录异常: %s", e)
-            QApplication.restoreOverrideCursor()
+        # 禁用按钮防止重复提交，等待后台登录结果
+        self.btn_ok.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+
+        signals = _PasswordLoginSignals()
+        signals.finished.connect(self.__onLoginFinished)
+        QThreadPool.globalInstance().start(
+            PasswordLoginTask(user, pwd, signals)
+        )
+
+    def __onLoginFinished(self, pan, code, error):
+        """后台登录完成回调（主线程）。"""
+        QApplication.restoreOverrideCursor()
+        self.btn_ok.setEnabled(True)
+
+        if error or (code != 200 and code != 0):
+            self.login_error = (
+                error
+                if error
+                else tr("login.msg_login_failed_code", "登录失败，返回码: {}").format(code)
+            )
             MessageBox(
-                tr("login.msg_login_error", "登录异常"),
-                tr("login.msg_login_exception", "登录时发生异常:\n{}").format(str(e)),
+                tr("login.msg_login_failed", "登录失败"),
+                self.login_error,
                 self,
             ).exec()
             return
-        finally:
-            QApplication.restoreOverrideCursor()
 
+        self.pan = pan
         try:
-            self.pan.stay_logged_in = self.cb_stay_logged_in.isChecked()
+            pan.stay_logged_in = self.cb_stay_logged_in.isChecked()
             ConfigManager.set_setting(
                 "stayLoggedIn", self.cb_stay_logged_in.isChecked()
             )
-            if hasattr(self.pan, "save_file"):
-                self.pan.save_file()
+            if hasattr(pan, "save_file"):
+                pan.save_file()
         except (IOError, OSError) as e:
             logger.warning(f"保存配置失败: {e}")
         except Exception as e:
             logger.error(f"保存配置时发生未知错误: {e}")
-        logger.info("登录成功，对话框关闭: %s", user)
+        logger.info("登录成功，对话框关闭: %s", user_name_of(pan))
         self.accept()
 
     def _on_tab_changed(self, route_key):
