@@ -10,8 +10,10 @@ the Free Software Foundation, either version 3 of the License, or
 
 from PyQt6.QtCore import QRunnable
 
+from ..common.api import Pan123
 from ..common.log import get_logger
 from .signals import (
+    _AutoLoginSignals,
     _DeviceListSignals,
     _FolderListSignals,
     _LoadListSignals,
@@ -178,6 +180,35 @@ class LoadFolderListTask(QRunnable):
         except Exception as e:
             logger.error("加载目录失败: dir_id=%s, err=%s", self.dir_id, e)
             self.signals.finished.emit(self.dir_id, [], str(e))
+
+
+class AutoLoginTask(QRunnable):
+    """后台自动登录：构造 Pan123 并校验 get_dir，避免启动时阻塞主线程。
+
+    Pan123 构造器内部会进行网络请求（get_dir / login），
+    在后台线程完成后再通过信号回到主线程继续登录流程。
+    """
+
+    def __init__(self, signals: _AutoLoginSignals):
+        super().__init__()
+        self.signals = signals
+
+    def run(self):
+        pan = None
+        try:
+            pan = Pan123(readfile=True, input_pwd=False)
+            res_code = pan.get_dir(save=False)[0]
+            if res_code == 0:
+                self.signals.finished.emit(pan, "")
+            else:
+                logger.warning("自动登录失败: get_dir 返回 code=%s", res_code)
+                pan.close()
+                self.signals.finished.emit(None, f"get_dir 返回 code={res_code}")
+        except Exception as e:
+            if pan is not None:
+                pan.close()
+            logger.warning("自动登录异常: %s", e)
+            self.signals.finished.emit(None, str(e))
 
 
 class CreateFolderTask(QRunnable):

@@ -70,6 +70,9 @@ class TrashInterface(QWidget):
     def set_pan(self, pan):
         """设置 Pan123 实例"""
         self.pan = pan
+        # 异步登录期间页面可能已显示：设置 pan 后若可见则立即刷新
+        if pan and self.isVisible():
+            self.__refreshTrashList()
 
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)

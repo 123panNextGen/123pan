@@ -49,6 +49,11 @@ class _FolderListSignals(QObject):
     finished = pyqtSignal(int, list, str)  # (dir_id, folder_items, error)
 
 
+class _AutoLoginSignals(QObject):
+    """后台自动登录完成信号。"""
+    finished = pyqtSignal(object, str)  # (pan, error)
+
+
 class _QRGenerateSignals(QObject):
     finished = pyqtSignal(dict)  # 二维码生成成功（uniID/url/_pan_temp）
     error = pyqtSignal(str)      # 失败原因

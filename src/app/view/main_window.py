@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QThreadPool, QTimer
 from PyQt6.QtWidgets import QDialog
 
 import sys
@@ -27,10 +27,11 @@ from .trash_interface import TrashInterface
 from .share_interface import ShareInterface
 from .login_window import LoginDialog
 
-from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import AutoLoginTask
+from ..tasks.signals import _AutoLoginSignals
 
 logger = get_logger(__name__)
 
@@ -84,7 +85,11 @@ class MainWindow(FluentWindow):
         )
 
     def _startup_login_flow(self):
-        cfg_loaded = False
+        """启动登录流程。
+
+        有已保存凭证时在后台线程自动登录（Pan123 构造含网络请求），
+        避免阻塞主线程导致启动白屏；无凭证时直接弹出登录框。
+        """
         current_account = ConfigManager.get_current_account_name()
         current_info = (
             ConfigManager.get_account(current_account) if current_account else {}
@@ -94,49 +99,44 @@ class MainWindow(FluentWindow):
             current_account or "(无)",
             bool(current_info.get("passWord")),
         )
-        if current_info.get("passWord"):
-            try:
-                logger.debug("尝试自动登录")
-                self.pan = Pan123(readfile=True, input_pwd=False)
-                res_code = self.pan.get_dir(save=False)[0]
-                if res_code == 0:
-                    cfg_loaded = True
-                    logger.info("自动登录成功: %s", current_account)
-                else:
-                    cfg_loaded = False
-                    logger.warning("自动登录失败: get_dir 返回 code=%s", res_code)
-            except Exception as e:
-                cfg_loaded = False
-                logger.warning("自动登录异常: %s", e)
-        elif current_info.get("authorization"):
-            # 扫码登录「保持登录」：无密码，仅凭 token 自动登录
-            try:
-                logger.debug("尝试 token 自动登录")
-                self.pan = Pan123(readfile=True, input_pwd=False)
-                res_code = self.pan.get_dir(save=False)[0]
-                if res_code == 0:
-                    cfg_loaded = True
-                    logger.info("token 自动登录成功: %s", current_account)
-                else:
-                    cfg_loaded = False
-                    logger.warning("token 自动登录失败: get_dir 返回 code=%s", res_code)
-            except Exception as e:
-                cfg_loaded = False
-                logger.warning("token 自动登录异常: %s", e)
-
-        if not cfg_loaded:
+        if current_info.get("passWord") or current_info.get("authorization"):
+            # 后台自动登录（含密码/token 两种方式，行为与原先一致）
+            signals = _AutoLoginSignals()
+            signals.finished.connect(self.__onAutoLoginFinished)
+            QThreadPool.globalInstance().start(AutoLoginTask(signals))
+        else:
             logger.debug("显示登录对话框")
-            dlg = LoginDialog(self)
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                logger.info("用户取消登录，退出程序")
-                QTimer.singleShot(0, self.close)
-                return
-            self.pan = dlg.get_pan()
+            self.__show_login_dialog()
+
+    def __onAutoLoginFinished(self, pan, error):
+        """后台自动登录完成回调（主线程）。"""
+        if pan is not None:
+            self.pan = pan
             logger.info(
-                "登录成功: %s",
+                "自动登录成功: %s",
                 self.pan.user_name if hasattr(self.pan, "user_name") else "?",
             )
+            self.__finish_login_flow()
+        else:
+            logger.warning("自动登录失败: %s", error)
+            self.__show_login_dialog()
 
+    def __show_login_dialog(self):
+        """显示登录对话框（主线程）。"""
+        dlg = LoginDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            logger.info("用户取消登录，退出程序")
+            QTimer.singleShot(0, self.close)
+            return
+        self.pan = dlg.get_pan()
+        logger.info(
+            "登录成功: %s",
+            self.pan.user_name if hasattr(self.pan, "user_name") else "?",
+        )
+        self.__finish_login_flow()
+
+    def __finish_login_flow(self):
+        """登录成功后同步 pan 到各子界面。"""
         self.file_interface.pan = self.pan
         self._sync_pan_to_interfaces()
 
