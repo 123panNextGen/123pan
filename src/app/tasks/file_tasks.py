@@ -11,7 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 from PyQt6.QtCore import QRunnable
 
 from ..common.log import get_logger
-from .signals import _LoadListSignals
+from .signals import _LoadListSignals, _StorageInfoSignals
 
 logger = get_logger(__name__)
 
@@ -29,6 +29,26 @@ class LoadListTask(QRunnable):
             self.signals.finished.emit(file_items, "")
         except Exception as e:
             self.signals.finished.emit([], str(e))
+
+
+class LoadStorageInfoTask(QRunnable):
+    """后台加载云盘空间信息，避免主线程网络请求阻塞 GUI。"""
+
+    def __init__(self, pan, signals: _StorageInfoSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_user_info()
+            if result.code != 0 or result.data is None:
+                self.signals.finished.emit(None, "获取用户信息失败")
+            else:
+                self.signals.finished.emit(result.data, "")
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            self.signals.finished.emit(None, str(e))
 
 
 class CreateFolderTask(QRunnable):

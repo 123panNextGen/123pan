@@ -60,11 +60,28 @@ from ..tasks.file_tasks import (
     MoveFileTask,
     RenameFileTask,
 )
-from ..tasks.signals import _LoadListSignals, _OpFinishedSignals
+from ..tasks.signals import (
+    _LoadListSignals,
+    _OpFinishedSignals,
+    _StorageInfoSignals,
+)
+from ..tasks.file_tasks import LoadStorageInfoTask
 from .dialogs import InputDialog
 from .folder_select_dialog import FolderSelectDialog
 
 logger = get_logger(__name__)
+
+# 图标缓存：避免每行/每次右键都重新解码 SVG 图标
+_ICONS = {}
+
+
+def _icon(enum_member):
+    """懒加载并缓存 FluentIcon 对应的 QIcon（线程安全由 GIL 保证）。"""
+    icon = _ICONS.get(enum_member)
+    if icon is None:
+        icon = enum_member.icon()
+        _ICONS[enum_member] = icon
+    return icon
 
 
 # noinspection PyUnresolvedReferences
@@ -83,6 +100,10 @@ class FileInterface(QWidget):
         self.transfer_interface = None
         # 当前目录的文件列表（用于下载/预览/分享等操作的文件查找）
         self._current_file_items = []
+        # 文件 ID -> 文件详情 索引（避免线性扫描）
+        self._file_index_by_id = {}
+        # 目录 ID -> 树节点 缓存（避免每次全树迭代查找）
+        self._tree_item_cache = {}
 
         # 排序模式: 0=按名称, 2=按大小, 3=按日期
         self.sort_mode = 0
@@ -317,12 +338,14 @@ class FileInterface(QWidget):
 
     def __initTree(self):
         self.folderTree.clear()
+        self._tree_item_cache.clear()
 
         root_item = QTreeWidgetItem([tr("file.root_dir", "根目录")])
-        root_item.setIcon(0, FIF.FOLDER.icon())
+        root_item.setIcon(0, _icon(FIF.FOLDER))
         root_item.setData(0, Qt.ItemDataRole.UserRole, 0)
         root_item.setData(0, Qt.ItemDataRole.UserRole + 1, False)
         self.folderTree.addTopLevelItem(root_item)
+        self._tree_item_cache[0] = root_item
 
         self.__addPlaceholder(root_item)
         self.folderTree.expandItem(root_item)
@@ -355,11 +378,12 @@ class FileInterface(QWidget):
                     continue
 
                 child = QTreeWidgetItem([folder.get("FileName", "")])
-                child.setIcon(0, FIF.FOLDER.icon())
+                child.setIcon(0, _icon(FIF.FOLDER))
                 child_id = int(folder.get("FileId", 0))
                 child.setData(0, Qt.ItemDataRole.UserRole, child_id)
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
                 item.addChild(child)
+                self._tree_item_cache[child_id] = child
 
                 self.__addPlaceholder(child)
 
@@ -499,10 +523,21 @@ class FileInterface(QWidget):
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
     def __findTreeItemById(self, dir_id):
+        """按目录 ID 查找树节点（优先使用缓存，失效时全树扫描兜底）。"""
+        cached = self._tree_item_cache.get(dir_id)
+        if cached is not None:
+            try:
+                if cached.treeWidget() is self.folderTree:
+                    return cached
+            except RuntimeError:
+                # 节点已被销毁，缓存失效
+                self._tree_item_cache.pop(dir_id, None)
+
         iterator = QTreeWidgetItemIterator(self.folderTree)
         while iterator.value():
             item = iterator.value()
             if item is not None and item.data(0, Qt.ItemDataRole.UserRole) == dir_id:
+                self._tree_item_cache[dir_id] = item
                 return item
             iterator += 1
 
@@ -616,6 +651,10 @@ class FileInterface(QWidget):
         """
         if update_cache:
             self._current_file_items = file_items
+            # 构建 file_id -> 文件详情 索引，供下载/预览/分享 O(1) 查找
+            self._file_index_by_id = {
+                str(item.get("FileId")): item for item in file_items
+            }
 
         # 暂停重绘和信号，批量更新完成后再一次性刷新
         self.fileTable.setUpdatesEnabled(False)
@@ -623,6 +662,9 @@ class FileInterface(QWidget):
         try:
             count = len(file_items)
             self.fileTable.setRowCount(count)
+
+            folder_icon = _icon(FIF.FOLDER)
+            file_icon = _icon(FIF.DOCUMENT)
 
             for row, file_item in enumerate(file_items):
                 file_name = file_item.get("FileName", "")
@@ -641,9 +683,7 @@ class FileInterface(QWidget):
                 name_item.setText(file_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, file_id)
                 name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
-                name_item.setIcon(
-                    FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
-                )
+                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
 
                 type_item = self.fileTable.item(row, 1)
                 if type_item is None:
@@ -789,6 +829,7 @@ class FileInterface(QWidget):
                 file_id = child.data(0, Qt.ItemDataRole.UserRole)
                 if file_id:
                     existing_items[file_id] = child
+                    self._tree_item_cache[file_id] = child
 
             # 添加新的文件夹
             for folder in folder_items:
@@ -800,10 +841,11 @@ class FileInterface(QWidget):
                     continue
 
                 child = QTreeWidgetItem([file_name])
-                child.setIcon(0, FIF.FOLDER.icon())
+                child.setIcon(0, _icon(FIF.FOLDER))
                 child.setData(0, Qt.ItemDataRole.UserRole, file_id)
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
                 current_item.addChild(child)
+                self._tree_item_cache[file_id] = child
 
                 # 添加占位符
                 self.__addPlaceholder(child)
@@ -1235,32 +1277,32 @@ class FileInterface(QWidget):
         menu = QMenu(self)
 
         # 添加获取下载链接菜单项
-        copy_link_action = QAction(FIF.LINK.icon(), tr("file.menu_copy_link", "获取下载链接"), self)
+        copy_link_action = QAction(_icon(FIF.LINK), tr("file.menu_copy_link", "获取下载链接"), self)
         copy_link_action.triggered.connect(self.__copyDownloadLink)
         menu.addAction(copy_link_action)
 
         # 添加预览菜单项
-        preview_action = QAction(FIF.VIEW.icon(), tr("file.menu_preview", "预览"), self)
+        preview_action = QAction(_icon(FIF.VIEW), tr("file.menu_preview", "预览"), self)
         preview_action.triggered.connect(self.__previewFile)
         menu.addAction(preview_action)
 
         # 添加分享菜单项
-        share_action = QAction(FIF.LINK.icon(), tr("file.menu_share", "分享"), self)
+        share_action = QAction(_icon(FIF.LINK), tr("file.menu_share", "分享"), self)
         share_action.triggered.connect(self.__shareFile)
         menu.addAction(share_action)
 
         # 添加重命名菜单项
-        rename_action = QAction(FIF.EDIT.icon(), tr("file.menu_rename", "重命名"), self)
+        rename_action = QAction(_icon(FIF.EDIT), tr("file.menu_rename", "重命名"), self)
         rename_action.triggered.connect(self.__renameFile)
         menu.addAction(rename_action)
 
         # 添加移动菜单项
-        move_action = QAction(FIF.RIGHT_ARROW.icon(), tr("file.menu_move", "移动到"), self)
+        move_action = QAction(_icon(FIF.RIGHT_ARROW), tr("file.menu_move", "移动到"), self)
         move_action.triggered.connect(self.__moveFile)
         menu.addAction(move_action)
 
         # 添加删除菜单项
-        delete_action = QAction(FIF.DELETE.icon(), tr("file.delete", "删除"), self)
+        delete_action = QAction(_icon(FIF.DELETE), tr("file.delete", "删除"), self)
         delete_action.triggered.connect(self.__deleteFile)
         menu.addAction(delete_action)
 
@@ -1351,13 +1393,12 @@ class FileInterface(QWidget):
     def __findFileById(self, file_id):
         """从缓存的文件列表中根据 file_id 查找文件详情。
 
-        优先搜索 _current_file_items（当前目录），
+        优先使用 O(1) 索引（当前目录），
         回退到 pan.list（历史缓存）。
         """
-        # 先在当前目录缓存中查找
-        for item in self._current_file_items:
-            if str(item.get("FileId")) == str(file_id):
-                return item
+        item = self._file_index_by_id.get(str(file_id))
+        if item is not None:
+            return item
         # 回退到 pan.list
         for item in self.pan.list:
             if str(item.get("FileId")) == str(file_id):
@@ -1442,21 +1483,22 @@ class FileInterface(QWidget):
         self.storageValueLabel.setText(f"{used_text} / {total_text}")
 
     def load_and_update_storage_info(self):
-        """从 API 获取用户云盘空间信息并更新显示。"""
+        """从 API 获取用户云盘空间信息并更新显示（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
             return
 
-        try:
-            result = self.pan.get_user_info()
-        except Exception as e:
-            logger.error("获取用户信息失败: %s", e)
+        signals = _StorageInfoSignals()
+        signals.finished.connect(self.__onStorageInfoFinished)
+        QThreadPool.globalInstance().start(
+            LoadStorageInfoTask(self.pan, signals)
+        )
+
+    def __onStorageInfoFinished(self, user_info, error):
+        """云盘空间信息加载完成回调（主线程）。"""
+        if error or user_info is None:
+            logger.warning("获取用户信息失败: %s", error)
             return
 
-        if result.code != 0 or not hasattr(result, 'data') or result.data is None:
-            logger.warning("获取用户信息返回异常: code=%s", result.code)
-            return
-
-        user_info = result.data
-        space_used = getattr(user_info, 'space_used', 0)
-        space_total = getattr(user_info, 'space_total', 0)
+        space_used = getattr(user_info, "space_used", 0)
+        space_total = getattr(user_info, "space_total", 0)
         self.update_storage_info(space_used, space_total)

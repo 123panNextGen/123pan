@@ -19,6 +19,11 @@ class _OpFinishedSignals(QObject):
     finished = pyqtSignal(bool, str, str, str, list, list)
 
 
+class _StorageInfoSignals(QObject):
+    """云盘空间信息加载完成信号。"""
+    finished = pyqtSignal(object, str)  # (user_info, error)
+
+
 class _QRGenerateSignals(QObject):
     finished = pyqtSignal(dict)  # 二维码生成成功（uniID/url/_pan_temp）
     error = pyqtSignal(str)      # 失败原因
