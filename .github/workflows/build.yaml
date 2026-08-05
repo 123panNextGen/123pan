@@ -62,8 +62,15 @@ jobs:
             libxcb-xfixes0 \
             libxcb-xinerama0 \
             zip \
+            upx \
             clang \
             ccache
+
+      - name: Install Windows Dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install upx -y
 
       - name: Install dependencies
         run: |
@@ -81,18 +88,15 @@ jobs:
         shell: pwsh
         run: |
           $suffix = "${{ matrix.arch }}"
-          # 打包 Nuitka standalone 目录（123pan.dist），而非单一 exe
           Compress-Archive `
-            -Path "123pan.dist" `
+            -Path 123pan.exe `
             -DestinationPath "123pan-windows-$suffix.zip" `
-            -CompressionLevel Optimal `
             -Force
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         run: |
-          # 打包 Nuitka standalone 目录（123pan.dist），zip -9 最高压缩比
-          zip -9 -r "123pan-linux-${{ matrix.arch }}.zip" 123pan.dist
+          zip -9 "123pan-linux-${{ matrix.arch }}.zip" 123pan
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
