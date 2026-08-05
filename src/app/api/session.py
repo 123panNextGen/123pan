@@ -38,6 +38,10 @@ BASE_URL = "https://www.123pan.cn"
 # 二维码登录专用域名（web 端登录接口）
 LOGIN_BASE_URL = "https://login.123pan.com"
 
+# 预编译正则：解析 HTML body 中 href='...' 形式的下载链接
+# 避免每次调用 _resolve_download_url 时重复编译
+_HREF_URL_RE = re.compile(r"href='(https?://[^']+)'")
+
 
 class NetSession:
     """123云盘 HTTP API 会话层，负责所有 HTTP 请求。
@@ -1518,8 +1522,7 @@ class NetSession:
 
             # 2. 检查 HTML body 中的 href 链接
             text = resp.text[:500]
-            url_pattern = re.compile(r"href='(https?://[^']+)'")
-            match = url_pattern.search(text)
+            match = _HREF_URL_RE.search(text)
             if match:
                 resolved = match.group(1)
                 logger.debug("下载 URL 已通过 href 解析: %s ...", resolved[:80])

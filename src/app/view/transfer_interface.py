@@ -743,13 +743,23 @@ class TransferInterface(QWidget):
     def __update_table(self, table, tasks, task_type):
         """更新传输表格（上传/下载共用）。
 
-        只在行数变化时增删行；进度更新时仅刷新文字和进度条，
-        不再重建操作按钮等重量级控件。
+        只在行数变化时增删行；逐行对比上次渲染状态，
+        未变化的行完全跳过，避免高频进度信号下重复 setText/setValue。
         """
         if table.rowCount() != len(tasks):
             table.setRowCount(len(tasks))
 
         for row, task in enumerate(tasks):
+            status_item = table.item(row, 5)
+            last_state = (
+                status_item.data(Qt.ItemDataRole.UserRole) if status_item else None
+            )
+            # 渲染状态 = (状态, 进度, 大小, 名称)，任一变化才更新该行
+            state = (task.status, task.progress, task.file_size, task.file_name)
+
+            if state == last_state:
+                continue
+
             # ---- 文件名 ----
             name_item = table.item(row, 0)
             if not name_item:
@@ -809,7 +819,6 @@ class TransferInterface(QWidget):
                 percent_item.setText(f"{task.progress}%")
 
             # ---- 状态 ----
-            status_item = table.item(row, 5)
             if not status_item:
                 status_item = QTableWidgetItem(task.status)
                 table.setItem(row, 5, status_item)
@@ -818,10 +827,8 @@ class TransferInterface(QWidget):
 
             # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
             old_action = table.cellWidget(row, 6)
-            prev_status = (
-                status_item.data(Qt.ItemDataRole.UserRole) if old_action else None
-            )
-            status_item.setData(Qt.ItemDataRole.UserRole, task.status)
+            prev_status = last_state[0] if last_state else None
+            status_item.setData(Qt.ItemDataRole.UserRole, state)
 
             if old_action is None or prev_status != task.status:
                 if old_action is not None:
@@ -910,24 +917,28 @@ class TransferInterface(QWidget):
     def __refresh_history(self):
         """刷新历史记录表格。"""
         rows = self._store.get_history(limit=500)
-        self.historyTable.setRowCount(0)
-        for i, row in enumerate(rows):
-            self.historyTable.insertRow(i)
-            type_text = (
-                tr("transfer.type_upload", "上传")
-                if row["task_type"] == "upload"
-                else tr("transfer.type_download", "下载")
-            )
-            self.historyTable.setItem(i, 0, QTableWidgetItem(type_text))
-            self.historyTable.setItem(i, 1, QTableWidgetItem(row["file_name"]))
-            self.historyTable.setItem(
-                i, 2, QTableWidgetItem(format_file_size(row["file_size"]))
-            )
-            self.historyTable.setItem(i, 3, QTableWidgetItem(row["status"]))
-            # 时间展示（截断毫秒）
-            finished = row["finished_at"] or ""
-            display = str(finished).replace("T", " ").split(".", maxsplit=1)[0]
-            self.historyTable.setItem(i, 4, QTableWidgetItem(display))
+        count = len(rows)
+        self.historyTable.setRowCount(count)
+        self.historyTable.setUpdatesEnabled(False)
+        try:
+            for i, row in enumerate(rows):
+                type_text = (
+                    tr("transfer.type_upload", "上传")
+                    if row["task_type"] == "upload"
+                    else tr("transfer.type_download", "下载")
+                )
+                self.historyTable.setItem(i, 0, QTableWidgetItem(type_text))
+                self.historyTable.setItem(i, 1, QTableWidgetItem(row["file_name"]))
+                self.historyTable.setItem(
+                    i, 2, QTableWidgetItem(format_file_size(row["file_size"]))
+                )
+                self.historyTable.setItem(i, 3, QTableWidgetItem(row["status"]))
+                # 时间展示（截断毫秒）
+                finished = row["finished_at"] or ""
+                display = str(finished).replace("T", " ").split(".", maxsplit=1)[0]
+                self.historyTable.setItem(i, 4, QTableWidgetItem(display))
+        finally:
+            self.historyTable.setUpdatesEnabled(True)
 
     def __clear_history(self):
         """清空历史记录。"""

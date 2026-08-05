@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
@@ -23,7 +23,12 @@ from qfluentwidgets import (
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..common.style_sheet import StyleSheet
-from ..api.model import ApiCode
+from ..tasks.file_tasks import (
+    LoadDeviceListTask,
+    LoadUserInfoTask,
+    connect_tracked,
+)
+from ..tasks.signals import _DeviceListSignals, _UserInfoSignals
 
 logger = get_logger(__name__)
 
@@ -52,6 +57,8 @@ class CloudInterface(ScrollArea):
         self.pan = None
         self._user_info = None
         self.setObjectName("CloudInterface")
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         # 滚动区域内部容器
         self.scrollWidget = QWidget()
@@ -214,27 +221,24 @@ class CloudInterface(ScrollArea):
             username = _mask_username(self.pan.user_name)
             self.username_label.setText(username)
 
-        # 异步获取用户云盘信息
-        self._fetch_user_info()
+        # 异步获取用户云盘信息与设备列表（后台线程，不阻塞 GUI）
+        user_signals = _UserInfoSignals()
+        user_task = LoadUserInfoTask(self.pan, user_signals)
+        connect_tracked(self, user_signals, "finished", self.__onUserInfoLoaded, user_task)
+        QThreadPool.globalInstance().start(user_task)
 
-        # 获取登录设备列表
-        self._fetch_device_list()
+        device_signals = _DeviceListSignals()
+        device_task = LoadDeviceListTask(self.pan, device_signals)
+        connect_tracked(self, device_signals, "finished", self.__onDeviceListLoaded, device_task)
+        QThreadPool.globalInstance().start(device_task)
 
-    def _fetch_user_info(self):
-        """从 API 获取用户云盘信息（UID、空间、VIP等）。"""
-        try:
-            result = self.pan.get_user_info()
-        except Exception as e:
-            logger.error("获取用户信息失败: %s", e)
+    def __onUserInfoLoaded(self, user_info, error):
+        """用户信息加载完成回调（主线程）。"""
+        if error or user_info is None:
+            logger.warning("获取用户信息失败: %s", error)
             self._show_user_info_error()
             return
-
-        if result.code != 0 or result.api_code_enum != ApiCode.success:
-            logger.warning("获取用户信息返回异常: code=%s", result.code)
-            self._show_user_info_error()
-            return
-
-        self._user_info = result.data
+        self._user_info = user_info
         self._update_display()
 
     def _update_display(self):
@@ -282,19 +286,12 @@ class CloudInterface(ScrollArea):
         self.file_count_label.setText("-")
         self.traffic_label.setText("-")
 
-    def _fetch_device_list(self):
-        """从 API 获取登录设备列表并更新界面。"""
-        if not self.pan:
+    def __onDeviceListLoaded(self, device_data, error):
+        """设备列表加载完成回调（主线程）。"""
+        if error or device_data is None:
+            logger.warning("获取设备列表失败: %s", error)
             return
-        try:
-            result = self.pan.get_device_list()
-        except Exception as e:
-            logger.error("获取设备列表失败: %s", e)
-            return
-        if result.code != 0:
-            logger.warning("获取设备列表失败: code=%s, msg=%s", result.code, result.msg)
-            return
-        self._update_device_display(result.data)
+        self._update_device_display(device_data)
 
     def _update_device_display(self, device_data):
         """更新设备列表界面。"""

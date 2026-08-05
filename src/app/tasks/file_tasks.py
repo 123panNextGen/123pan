@@ -10,10 +10,56 @@ the Free Software Foundation, either version 3 of the License, or
 
 from PyQt6.QtCore import QRunnable
 
+from ..common.api import Pan123
+from ..common.config import ConfigManager
 from ..common.log import get_logger
-from .signals import _LoadListSignals
+from .signals import (
+    _AutoLoginSignals,
+    _CheckVersionSignals,
+    _DeleteSharesSignals,
+    _DeviceListSignals,
+    _DownloadLinkSignals,
+    _FolderListSignals,
+    _LoadListSignals,
+    _PasswordLoginSignals,
+    _ShareCreateSignals,
+    _ShareListSignals,
+    _StorageInfoSignals,
+    _TrashListSignals,
+    _TrashOpSignals,
+    _UserInfoSignals,
+)
 
 logger = get_logger(__name__)
+
+
+def track_task(widget, task):
+    """持有后台任务引用，防止任务/信号在工作线程运行期间被 GC 回收。
+
+    背景：QRunnable 若不被 Python 侧持有引用，GC 可能在 worker 线程
+    仍运行 run() 时回收其包装对象（连带回收信号对象），导致
+    'wrapped C/C++ object has been deleted' 的 RuntimeError。
+    界面需在 __init__ 中初始化 `self._pending_tasks = []`。
+    """
+    widget._pending_tasks.append(task)
+
+
+def release_task(widget, task):
+    """任务完成后释放引用。"""
+    try:
+        widget._pending_tasks.remove(task)
+    except ValueError:
+        pass
+
+
+def connect_tracked(widget, signals, signal_name, slot, task):
+    """连接信号并追踪任务引用，回调执行后自动释放。"""
+    def _wrapper(*args, t=task, s=slot):
+        s(*args)
+        release_task(widget, t)
+
+    getattr(signals, signal_name).connect(_wrapper)
+    track_task(widget, task)
 
 
 class LoadListTask(QRunnable):
@@ -29,6 +75,339 @@ class LoadListTask(QRunnable):
             self.signals.finished.emit(file_items, "")
         except Exception as e:
             self.signals.finished.emit([], str(e))
+
+
+class LoadStorageInfoTask(QRunnable):
+    """后台加载云盘空间信息，避免主线程网络请求阻塞 GUI。"""
+
+    def __init__(self, pan, signals: _StorageInfoSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_user_info()
+            if result.code != 0 or result.data is None:
+                self.signals.finished.emit(None, "获取用户信息失败")
+            else:
+                self.signals.finished.emit(result.data, "")
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class LoadTrashListTask(QRunnable):
+    """后台加载回收站列表，避免主线程网络请求阻塞 GUI。"""
+
+    def __init__(self, pan, signals: _TrashListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            items = self.pan._file.recycle()
+            self.signals.finished.emit(items, "")
+        except Exception as e:
+            logger.error("获取回收站列表失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class LoadShareListsTask(QRunnable):
+    """后台加载免费/付费分享列表。"""
+
+    def __init__(self, pan, signals: _ShareListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            free_resp = self.pan.get_free_share_list()
+            pay_resp = self.pan.get_pay_share_list()
+
+            if free_resp.code == 0 and free_resp.data is not None:
+                free_data, free_err = free_resp.data.data, ""
+            else:
+                free_data, free_err = None, free_resp.msg or "获取免费分享列表失败"
+
+            if pay_resp.code == 0 and pay_resp.data is not None:
+                pay_data, pay_err = pay_resp.data.data, ""
+            else:
+                pay_data, pay_err = None, pay_resp.msg or "获取付费分享列表失败"
+
+            self.signals.finished.emit(free_data, free_err, pay_data, pay_err)
+        except Exception as e:
+            logger.error("获取分享列表失败: %s", e)
+            self.signals.finished.emit(None, str(e), None, str(e))
+
+
+class LoadUserInfoTask(QRunnable):
+    """后台加载云盘用户信息。"""
+
+    def __init__(self, pan, signals: _UserInfoSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_user_info()
+            if result.code == 0 and result.data is not None:
+                self.signals.finished.emit(result.data, "")
+            else:
+                self.signals.finished.emit(None, result.msg or "获取用户信息失败")
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class LoadDeviceListTask(QRunnable):
+    """后台加载登录设备列表。"""
+
+    def __init__(self, pan, signals: _DeviceListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_device_list()
+            if result.code == 0 and result.data is not None:
+                self.signals.finished.emit(result.data, "")
+            else:
+                self.signals.finished.emit(None, result.msg or "获取设备列表失败")
+        except Exception as e:
+            logger.error("获取设备列表失败: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class LoadFolderListTask(QRunnable):
+    """后台加载指定目录下的子文件夹列表（懒加载目录树用）。"""
+
+    def __init__(self, pan, dir_id, signals: _FolderListSignals):
+        super().__init__()
+        self.pan = pan
+        self.dir_id = dir_id
+        self.signals = signals
+
+    def run(self):
+        try:
+            cached_state = (
+                self.pan.file_page,
+                self.pan.total,
+                self.pan.all_file,
+            )
+            self.pan.file_page = 0
+            try:
+                code, items = self.pan.get_dir_by_id(
+                    self.dir_id, save=False, all=True, limit=100
+                )
+                if code != 0:
+                    self.signals.finished.emit(self.dir_id, [], "获取目录失败")
+                    return
+                folders = [
+                    i for i in items if int(i.get("Type", 0)) == 1
+                ]
+                self.signals.finished.emit(self.dir_id, folders, "")
+            finally:
+                self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+        except Exception as e:
+            logger.error("加载目录失败: dir_id=%s, err=%s", self.dir_id, e)
+            self.signals.finished.emit(self.dir_id, [], str(e))
+
+
+class AutoLoginTask(QRunnable):
+    """后台自动登录：构造 Pan123 并校验 get_dir，避免启动时阻塞主线程。
+
+    Pan123 构造器内部会进行网络请求（get_dir / login），
+    在后台线程完成后再通过信号回到主线程继续登录流程。
+    """
+
+    def __init__(self, signals: _AutoLoginSignals):
+        super().__init__()
+        self.signals = signals
+
+    def run(self):
+        pan = None
+        try:
+            pan = Pan123(readfile=True, input_pwd=False)
+            res_code = pan.get_dir(save=False)[0]
+            if res_code == 0:
+                self.signals.finished.emit(pan, "")
+            else:
+                logger.warning("自动登录失败: get_dir 返回 code=%s", res_code)
+                pan.close()
+                self.signals.finished.emit(None, f"get_dir 返回 code={res_code}")
+        except Exception as e:
+            if pan is not None:
+                pan.close()
+            logger.warning("自动登录异常: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class CheckVersionTask(QRunnable):
+    """后台检查 GitHub 最新版本。"""
+
+    def __init__(self, signals: _CheckVersionSignals):
+        super().__init__()
+        self.signals = signals
+
+    def run(self):
+        try:
+            from ..common.api import check_version
+
+            self.signals.finished.emit(check_version())
+        except Exception as e:
+            logger.error("检查版本失败: %s", e)
+            self.signals.finished.emit(False)
+
+
+class PasswordLoginTask(QRunnable):
+    """后台执行密码登录（构造 Pan123 + login），避免阻塞登录对话框。"""
+
+    def __init__(self, user_name, password, signals: _PasswordLoginSignals):
+        super().__init__()
+        self.user_name = user_name
+        self.password = password
+        self.signals = signals
+
+    def run(self):
+        pan = None
+        try:
+            account = ConfigManager.get_account(self.user_name)
+            if account:
+                logger.debug("使用已保存账号信息登录: %s", self.user_name)
+                pan = Pan123(readfile=True, user_name=self.user_name, password=self.password)
+            else:
+                logger.debug("新账号登录: %s", self.user_name)
+                pan = Pan123(readfile=False, user_name=self.user_name, password=self.password)
+
+            code = pan.login()
+            self.signals.finished.emit(pan, code, "")
+        except Exception as e:
+            if pan is not None:
+                pan.close()
+            logger.error("登录异常: %s", e)
+            self.signals.finished.emit(None, -1, str(e))
+
+
+class DeleteSharesTask(QRunnable):
+    """后台批量删除分享链接。"""
+
+    def __init__(self, pan, share_ids, signals: _DeleteSharesSignals):
+        super().__init__()
+        self.pan = pan
+        self.share_ids = share_ids
+        self.signals = signals
+
+    def run(self):
+        success_count = 0
+        fail_count = 0
+        last_error = ""
+        for share_id in self.share_ids:
+            try:
+                result = self.pan.delete_share(share_id)
+                if result.code == 0:
+                    success_count += 1
+                else:
+                    fail_count += 1
+                    last_error = result.msg
+                    logger.warning(
+                        "分享删除失败 (shareId=%s), msg=%s", share_id, result.msg
+                    )
+            except Exception as e:
+                fail_count += 1
+                last_error = str(e)
+                logger.error("分享删除异常 (shareId=%s): %s", share_id, e)
+        logger.info("分享删除完成: 成功 %d, 失败 %d", success_count, fail_count)
+        self.signals.finished.emit(success_count, fail_count, last_error)
+
+
+class RestoreTrashTask(QRunnable):
+    """后台恢复回收站文件。"""
+
+    def __init__(self, pan, trash_items, selected, signals: _TrashOpSignals):
+        super().__init__()
+        self.pan = pan
+        self.trash_items = trash_items
+        self.selected = selected
+        self.signals = signals
+
+    def run(self):
+        try:
+            for file_info in self.selected:
+                self.pan._file.delete_file(
+                    self.trash_items, file_info, by_num=False, operation=False
+                )
+            self.signals.finished.emit(True, "")
+        except Exception as e:
+            logger.error("恢复文件失败: %s", e)
+            self.signals.finished.emit(False, str(e))
+
+
+class PermDeleteTrashTask(QRunnable):
+    """后台永久删除回收站文件。"""
+
+    def __init__(self, pan, file_ids, signals: _TrashOpSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_ids = file_ids
+        self.signals = signals
+
+    def run(self):
+        try:
+            success, msg = self.pan._file.permanent_delete_files(self.file_ids)
+            self.signals.finished.emit(success, msg)
+        except Exception as e:
+            logger.error("永久删除失败: %s", e)
+            self.signals.finished.emit(False, str(e))
+
+
+class GetDownloadLinkTask(QRunnable):
+    """后台获取文件下载链接。"""
+
+    def __init__(self, pan, file_detail, signals: _DownloadLinkSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_detail = file_detail
+        self.signals = signals
+
+    def run(self):
+        try:
+            url = self.pan.link_by_fileDetail(self.file_detail, showlink=False)
+            if isinstance(url, str) and url:
+                self.signals.finished.emit(url, "")
+            else:
+                self.signals.finished.emit("", f"获取下载链接失败 (code={url})")
+        except Exception as e:
+            logger.error("获取下载链接失败: %s", e)
+            self.signals.finished.emit("", str(e))
+
+
+class CreateShareTask(QRunnable):
+    """后台创建分享链接。"""
+
+    def __init__(self, pan, file_id, share_pwd, signals: _ShareCreateSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_id = file_id
+        self.share_pwd = share_pwd
+        self.signals = signals
+
+    def run(self):
+        try:
+            share_url = self.pan.share(
+                [self.file_id], share_pwd=self.share_pwd or ""
+            )
+            if isinstance(share_url, str) and share_url:
+                self.signals.finished.emit(share_url, "")
+            else:
+                self.signals.finished.emit("", "生成分享链接失败")
+        except Exception as e:
+            logger.error("生成分享链接失败: %s", e)
+            self.signals.finished.emit("", str(e))
 
 
 class CreateFolderTask(QRunnable):

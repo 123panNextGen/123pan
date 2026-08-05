@@ -19,7 +19,7 @@ class ApiCode(Enum):
     fail = auto()
 
 
-@dataclass
+@dataclass(slots=True)
 class ApiReturnModel:
     code: int
     api_code: int
@@ -28,13 +28,13 @@ class ApiReturnModel:
     data: Any = None
 
 
-@dataclass
+@dataclass(slots=True)
 class DeviceModel:
     os: str
     type: str
 
 
-@dataclass
+@dataclass(slots=True)
 class UserInfoModel:
     user_name: str
     password: str
@@ -43,7 +43,7 @@ class UserInfoModel:
     device: DeviceModel
 
 
-@dataclass
+@dataclass(slots=True)
 class FileItemModel:
     file_id: int
     file_name: str
@@ -118,7 +118,7 @@ class FileItemModel:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class FileListData:
     next: str
     len: int
@@ -138,7 +138,7 @@ class FileListData:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class FileListResponse:
     code: int
     message: str
@@ -153,7 +153,7 @@ class FileListResponse:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class CloudUserInfoModel:
     """云盘用户信息（来自 /b/api/user/info）。"""
     uid: int
@@ -202,7 +202,7 @@ class CloudUserInfoModel:
         return _format_bytes(self.direct_traffic)
 
 
-@dataclass
+@dataclass(slots=True)
 class ShareItemModel:
     """分享链接条目模型。"""
     share_id: int
@@ -261,7 +261,7 @@ class ShareItemModel:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class ShareListData:
     """分享列表分页数据。"""
     next: str
@@ -282,7 +282,7 @@ class ShareListData:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class ShareListResponse:
     """分享列表 API 响应。"""
     code: int
@@ -307,7 +307,7 @@ def _format_bytes(size):
     return f"{size:.1f} PB"
 
 
-@dataclass
+@dataclass(slots=True)
 class DeviceItemModel:
     """登录设备条目模型。"""
     device_name: str
@@ -337,7 +337,7 @@ class DeviceItemModel:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class DeviceListResponse:
     """设备列表 API 响应。"""
     device_list: list[DeviceItemModel] = field(default_factory=list)
