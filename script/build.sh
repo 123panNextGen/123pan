@@ -53,10 +53,8 @@ NOFOLLOW=(
   IPython jupyter profile cProfile curses
   readline PyQt6.uic PyQt6.QtWebEngine
   PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
-  PyQt6.QtWebChannel PyQt6.QtMultimedia
-  PyQt6.QtMultimediaWidgets PyQt6.QtBluetooth
+  PyQt6.QtWebChannel PyQt6.QtMultimedia PyQt6.QtBluetooth
   # 注意：PyQt6.QtPdf/QtPdfWidgets 有意不排除 —— PDF 预览是打包版
-  # 保留功能（音视频预览因 QtMultimedia 在打包版禁用，PDF 预览不受影响）
   PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
   PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
@@ -67,10 +65,6 @@ NOFOLLOW=(
 (
   cd "$project"
 
-  # 使用 --standalone 目录产物（不用 --onefile），由 CI 打包为 zip：
-  # 目录形式避免 onefile 的自解压开销，配合 zip -9 获得更高压缩比。
-  # Qt 插件裁剪：应用与 qfluentwidgets 不使用 QtNetwork/打印/多媒体，
-  # 排除对应插件族（tls/printsupport/mediaservice）减小体积。
   uv run -m nuitka src/123pan.py \
     --lto=yes \
     --standalone \
