@@ -121,6 +121,35 @@ class TestNetSessionHttp:
         assert session.authorization == "Bearer test_token"
 
     @responses.activate
+    def test_login_falls_back_after_network_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/user/sign_in",
+            body=requests.exceptions.SSLError("wrong version number"),
+        )
+        responses.post(
+            "https://api.123278.com/b/api/user/sign_in",
+            json={"code": 200, "data": {"token": "test_token"}},
+            status=200,
+        )
+        responses.get(
+            "https://api.123278.com/api/ping",
+            json={"ok": True},
+            status=200,
+        )
+
+        session = NetSession()
+        result = session.login("test_user", "test_pass")
+        follow_up = session.http.get("https://www.123pan.cn/api/ping")
+
+        assert result.code == 200
+        assert follow_up.json() == {"ok": True}
+        assert [call.request.url for call in responses.calls] == [
+            "https://www.123pan.cn/b/api/user/sign_in",
+            "https://api.123278.com/b/api/user/sign_in",
+            "https://api.123278.com/api/ping",
+        ]
+
+    @responses.activate
     def test_login_invalid_credentials(self):
         responses.post(
             "https://www.123pan.cn/b/api/user/sign_in",
@@ -136,6 +165,10 @@ class TestNetSessionHttp:
     def test_login_network_error(self):
         responses.post(
             "https://www.123pan.cn/b/api/user/sign_in",
+            body=requests.exceptions.ConnectionError("connection refused"),
+        )
+        responses.post(
+            "https://api.123278.com/b/api/user/sign_in",
             body=requests.exceptions.ConnectionError("connection refused"),
         )
         session = NetSession()
@@ -375,6 +408,10 @@ class TestNetSessionModPid:
     def test_mod_pid_network_error(self):
         responses.post(
             "https://www.123pan.cn/b/api/file/mod_pid",
+            body=requests.exceptions.ConnectionError("connection refused"),
+        )
+        responses.post(
+            "https://api.123278.com/b/api/file/mod_pid",
             body=requests.exceptions.ConnectionError("connection refused"),
         )
         session = NetSession()
