@@ -44,8 +44,8 @@ else
   )
 fi
 
+#不要随便动NOFOLLOW和nuitka参数，会引发非常多的问题
 NOFOLLOW=(
-  # 注意：不要随便修改排除列表
   pytest unittest pdb doctest test
   tests tkinter turtle idlelib setuptools
   wheel pip distutils ensurepip venv zipapp
@@ -54,7 +54,8 @@ NOFOLLOW=(
   IPython jupyter profile cProfile curses
   readline PyQt6.uic PyQt6.QtWebEngine
   PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
-  PyQt6.QtWebChannel PyQt6.QtMultimedia PyQt6.QtBluetooth
+  PyQt6.QtWebChannel PyQt6.QtMultimedia
+  PyQt6.QtMultimediaWidgets PyQt6.QtBluetooth
   PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
   PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
@@ -75,11 +76,7 @@ NOFOLLOW=(
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
     --python-flag=no_site \
-    --python-flag=no_warnings \
     --noinclude-setuptools-mode=nofollow \
-    --noinclude-qt-plugins=tls \
-    --noinclude-qt-plugins=printsupport \
-    --noinclude-qt-plugins=mediaservice \
     --remove-output \
     "${EXTRA_ARGS[@]}" \
     --output-filename="$OUT_NAME" \
