@@ -24,6 +24,31 @@ class _StorageInfoSignals(QObject):
     finished = pyqtSignal(object, str)  # (user_info, error)
 
 
+class _TrashListSignals(QObject):
+    """回收站列表加载完成信号。"""
+    finished = pyqtSignal(list, str)  # (items, error)
+
+
+class _ShareListSignals(QObject):
+    """分享列表加载完成信号（免费/付费两组）。"""
+    finished = pyqtSignal(object, str, object, str)  # (free_data, free_err, pay_data, pay_err)
+
+
+class _UserInfoSignals(QObject):
+    """云盘用户信息加载完成信号。"""
+    finished = pyqtSignal(object, str)  # (user_info, error)
+
+
+class _DeviceListSignals(QObject):
+    """登录设备列表加载完成信号。"""
+    finished = pyqtSignal(object, str)  # (device_data, error)
+
+
+class _FolderListSignals(QObject):
+    """目录树子文件夹列表加载完成信号。"""
+    finished = pyqtSignal(int, list, str)  # (dir_id, folder_items, error)
+
+
 class _QRGenerateSignals(QObject):
     finished = pyqtSignal(dict)  # 二维码生成成功（uniID/url/_pan_temp）
     error = pyqtSignal(str)      # 失败原因

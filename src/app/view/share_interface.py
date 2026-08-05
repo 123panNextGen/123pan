@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThreadPool
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -32,6 +32,8 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import LoadShareListsTask
+from ..tasks.signals import _ShareListSignals
 
 logger = get_logger(__name__)
 
@@ -180,61 +182,40 @@ class ShareInterface(QWidget):
         return self._pay_shares
 
     def __refreshAll(self):
-        """刷新所有分享列表"""
-        self.__refreshFreeShares()
-        self.__refreshPayShares()
-
-    def __refreshFreeShares(self):
-        """刷新免费分享列表"""
+        """刷新所有分享列表（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
-            logger.warning("免费分享刷新: pan 未设置")
+            logger.warning("分享刷新: pan 未设置")
             return
-        try:
-            result = self.pan.get_free_share_list()
-            if result.code != 0:
-                InfoBar.error(
-                    title=tr("share.msg_refresh_failed", "刷新失败"),
-                    content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(result.msg),
-                    parent=self,
-                )
-                return
-            share_data = result.data
-            self._free_shares = share_data.data.info_list
+
+        signals = _ShareListSignals()
+        signals.finished.connect(self.__onShareListsLoaded)
+        QThreadPool.globalInstance().start(
+            LoadShareListsTask(self.pan, signals)
+        )
+
+    def __onShareListsLoaded(self, free_data, free_err, pay_data, pay_err):
+        """分享列表加载完成回调（主线程）。"""
+        if free_err:
+            InfoBar.error(
+                title=tr("share.msg_refresh_failed", "刷新失败"),
+                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(free_err),
+                parent=self,
+            )
+        elif free_data is not None:
+            self._free_shares = free_data.info_list
             self.__updateTableUI(self.freeTab.findChild(TableWidget), self._free_shares)
             logger.info("免费分享列表已刷新: %d 条", len(self._free_shares))
-        except Exception as e:
-            logger.error("免费分享刷新失败: %s", e)
+
+        if pay_err:
             InfoBar.error(
                 title=tr("share.msg_refresh_failed", "刷新失败"),
-                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(e),
+                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(pay_err),
                 parent=self,
             )
-
-    def __refreshPayShares(self):
-        """刷新付费分享列表"""
-        if not self.pan:
-            logger.warning("付费分享刷新: pan 未设置")
-            return
-        try:
-            result = self.pan.get_pay_share_list()
-            if result.code != 0:
-                InfoBar.error(
-                    title=tr("share.msg_refresh_failed", "刷新失败"),
-                    content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(result.msg),
-                    parent=self,
-                )
-                return
-            share_data = result.data
-            self._pay_shares = share_data.data.info_list
+        elif pay_data is not None:
+            self._pay_shares = pay_data.info_list
             self.__updateTableUI(self.payTab.findChild(TableWidget), self._pay_shares)
             logger.info("付费分享列表已刷新: %d 条", len(self._pay_shares))
-        except Exception as e:
-            logger.error("付费分享刷新失败: %s", e)
-            InfoBar.error(
-                title=tr("share.msg_refresh_failed", "刷新失败"),
-                content=tr("share.msg_get_list_error", "获取分享列表失败: {}").format(e),
-                parent=self,
-            )
 
     def __updateTableUI(self, table, share_list):
         """更新分享表格"""

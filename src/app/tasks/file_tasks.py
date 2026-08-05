@@ -11,7 +11,15 @@ the Free Software Foundation, either version 3 of the License, or
 from PyQt6.QtCore import QRunnable
 
 from ..common.log import get_logger
-from .signals import _LoadListSignals, _StorageInfoSignals
+from .signals import (
+    _DeviceListSignals,
+    _FolderListSignals,
+    _LoadListSignals,
+    _ShareListSignals,
+    _StorageInfoSignals,
+    _TrashListSignals,
+    _UserInfoSignals,
+)
 
 logger = get_logger(__name__)
 
@@ -49,6 +57,127 @@ class LoadStorageInfoTask(QRunnable):
         except Exception as e:
             logger.error("获取用户信息失败: %s", e)
             self.signals.finished.emit(None, str(e))
+
+
+class LoadTrashListTask(QRunnable):
+    """后台加载回收站列表，避免主线程网络请求阻塞 GUI。"""
+
+    def __init__(self, pan, signals: _TrashListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            items = self.pan._file.recycle()
+            self.signals.finished.emit(items, "")
+        except Exception as e:
+            logger.error("获取回收站列表失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class LoadShareListsTask(QRunnable):
+    """后台加载免费/付费分享列表。"""
+
+    def __init__(self, pan, signals: _ShareListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            free_resp = self.pan.get_free_share_list()
+            pay_resp = self.pan.get_pay_share_list()
+
+            if free_resp.code == 0 and free_resp.data is not None:
+                free_data, free_err = free_resp.data.data, ""
+            else:
+                free_data, free_err = None, free_resp.msg or "获取免费分享列表失败"
+
+            if pay_resp.code == 0 and pay_resp.data is not None:
+                pay_data, pay_err = pay_resp.data.data, ""
+            else:
+                pay_data, pay_err = None, pay_resp.msg or "获取付费分享列表失败"
+
+            self.signals.finished.emit(free_data, free_err, pay_data, pay_err)
+        except Exception as e:
+            logger.error("获取分享列表失败: %s", e)
+            self.signals.finished.emit(None, str(e), None, str(e))
+
+
+class LoadUserInfoTask(QRunnable):
+    """后台加载云盘用户信息。"""
+
+    def __init__(self, pan, signals: _UserInfoSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_user_info()
+            if result.code == 0 and result.data is not None:
+                self.signals.finished.emit(result.data, "")
+            else:
+                self.signals.finished.emit(None, result.msg or "获取用户信息失败")
+        except Exception as e:
+            logger.error("获取用户信息失败: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class LoadDeviceListTask(QRunnable):
+    """后台加载登录设备列表。"""
+
+    def __init__(self, pan, signals: _DeviceListSignals):
+        super().__init__()
+        self.pan = pan
+        self.signals = signals
+
+    def run(self):
+        try:
+            result = self.pan.get_device_list()
+            if result.code == 0 and result.data is not None:
+                self.signals.finished.emit(result.data, "")
+            else:
+                self.signals.finished.emit(None, result.msg or "获取设备列表失败")
+        except Exception as e:
+            logger.error("获取设备列表失败: %s", e)
+            self.signals.finished.emit(None, str(e))
+
+
+class LoadFolderListTask(QRunnable):
+    """后台加载指定目录下的子文件夹列表（懒加载目录树用）。"""
+
+    def __init__(self, pan, dir_id, signals: _FolderListSignals):
+        super().__init__()
+        self.pan = pan
+        self.dir_id = dir_id
+        self.signals = signals
+
+    def run(self):
+        try:
+            cached_state = (
+                self.pan.file_page,
+                self.pan.total,
+                self.pan.all_file,
+            )
+            self.pan.file_page = 0
+            try:
+                code, items = self.pan.get_dir_by_id(
+                    self.dir_id, save=False, all=True, limit=100
+                )
+                if code != 0:
+                    self.signals.finished.emit(self.dir_id, [], "获取目录失败")
+                    return
+                folders = [
+                    i for i in items if int(i.get("Type", 0)) == 1
+                ]
+                self.signals.finished.emit(self.dir_id, folders, "")
+            finally:
+                self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+        except Exception as e:
+            logger.error("加载目录失败: dir_id=%s, err=%s", self.dir_id, e)
+            self.signals.finished.emit(self.dir_id, [], str(e))
 
 
 class CreateFolderTask(QRunnable):

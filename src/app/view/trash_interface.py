@@ -25,12 +25,28 @@ from qfluentwidgets import (
     InfoBar,
 )
 
+from PyQt6.QtCore import QThreadPool
+
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..tasks.file_tasks import LoadTrashListTask
+from ..tasks.signals import _TrashListSignals
 
 logger = get_logger(__name__)
+
+# 图标缓存：避免每行重复解码 SVG 图标
+_ICON_FOLDER = None
+_ICON_FILE = None
+
+
+def _cached_icons():
+    global _ICON_FOLDER, _ICON_FILE
+    if _ICON_FOLDER is None:
+        _ICON_FOLDER = FIF.FOLDER.icon()
+        _ICON_FILE = FIF.DOCUMENT.icon()
+    return _ICON_FOLDER, _ICON_FILE
 
 
 class TrashInterface(QWidget):
@@ -129,45 +145,55 @@ class TrashInterface(QWidget):
         self.deleteButton.clicked.connect(self.__permanentlyDeleteSelected)
 
     def __refreshTrashList(self):
-        """刷新回收站列表"""
+        """刷新回收站列表（后台线程，避免阻塞 GUI）。"""
         if not self.pan:
             logger.warning("回收站刷新: pan 未设置")
             return
 
-        try:
-            items = self.pan._file.recycle()
-            self._trash_items = items
-            self.__updateTrashTableUI()
-            logger.info("回收站列表已刷新: %d 个文件", len(items))
-        except Exception as e:
-            logger.error("回收站刷新失败: %s", e)
+        signals = _TrashListSignals()
+        signals.finished.connect(self.__onTrashListLoaded)
+        QThreadPool.globalInstance().start(
+            LoadTrashListTask(self.pan, signals)
+        )
+
+    def __onTrashListLoaded(self, items, error):
+        """回收站列表加载完成回调（主线程）。"""
+        if error:
+            logger.error("回收站刷新失败: %s", error)
             InfoBar.error(
                 title=tr("trash.msg_refresh_failed", "刷新失败"),
-                content=tr("trash.msg_trash_list_error", "获取回收站列表失败: {}").format(e),
+                content=tr("trash.msg_trash_list_error", "获取回收站列表失败: {}").format(error),
                 parent=self,
             )
+            return
+        self._trash_items = items
+        self.__updateTrashTableUI()
+        logger.info("回收站列表已刷新: %d 个文件", len(items))
 
     def __updateTrashTableUI(self):
         """更新回收站表格"""
         self.trashTable.setRowCount(len(self._trash_items))
-        for row, item in enumerate(self._trash_items):
-            file_name = item.get("FileName", "")
-            file_type = int(item.get("Type", 0))
-            file_size = int(item.get("Size", 0) or 0)
+        folder_icon, file_icon = _cached_icons()
+        self.trashTable.setUpdatesEnabled(False)
+        try:
+            for row, item in enumerate(self._trash_items):
+                file_name = item.get("FileName", "")
+                file_type = int(item.get("Type", 0))
+                file_size = int(item.get("Size", 0) or 0)
 
-            type_text = tr("trash.type_folder", "文件夹") if file_type == 1 else tr("trash.type_file", "文件")
-            size_text = format_file_size(file_size)
+                type_text = tr("trash.type_folder", "文件夹") if file_type == 1 else tr("trash.type_file", "文件")
+                size_text = format_file_size(file_size)
 
-            name_item = QTableWidgetItem(file_name)
-            name_item.setIcon(
-                FIF.FOLDER.icon() if file_type == 1 else FIF.DOCUMENT.icon()
-            )
-            type_item = QTableWidgetItem(type_text)
-            size_item = QTableWidgetItem(size_text)
+                name_item = QTableWidgetItem(file_name)
+                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
+                type_item = QTableWidgetItem(type_text)
+                size_item = QTableWidgetItem(size_text)
 
-            self.trashTable.setItem(row, 0, name_item)
-            self.trashTable.setItem(row, 1, type_item)
-            self.trashTable.setItem(row, 2, size_item)
+                self.trashTable.setItem(row, 0, name_item)
+                self.trashTable.setItem(row, 1, type_item)
+                self.trashTable.setItem(row, 2, size_item)
+        finally:
+            self.trashTable.setUpdatesEnabled(True)
 
     def __getSelectedItems(self):
         """获取选中的回收站条目信息"""
