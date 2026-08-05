@@ -81,15 +81,18 @@ jobs:
         shell: pwsh
         run: |
           $suffix = "${{ matrix.arch }}"
+          # 打包 Nuitka standalone 目录（123pan.dist），而非单一 exe
           Compress-Archive `
-            -Path 123pan.exe `
+            -Path "123pan.dist" `
             -DestinationPath "123pan-windows-$suffix.zip" `
+            -CompressionLevel Optimal `
             -Force
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         run: |
-          zip -9 "123pan-linux-${{ matrix.arch }}.zip" 123pan
+          # 打包 Nuitka standalone 目录（123pan.dist），zip -9 最高压缩比
+          zip -9 -r "123pan-linux-${{ matrix.arch }}.zip" 123pan.dist
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
@@ -149,7 +152,6 @@ jobs:
           files: |
             ./artifacts/windows-x64/123pan-windows-x64.zip
             ./artifacts/linux-x64/123pan-linux-x64.zip
-            ./artifacts/windows-arm64/123pan-windows-arm64.zip
             ./artifacts/linux-arm64/123pan-linux-arm64.zip
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: false
