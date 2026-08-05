@@ -55,9 +55,8 @@ NOFOLLOW=(
   PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
   PyQt6.QtWebChannel PyQt6.QtMultimedia
   PyQt6.QtMultimediaWidgets PyQt6.QtBluetooth
-  # 预览模块在 try/except 中导入 QtPdf，排除后 PDF 预览与音视频预览
-  # 在打包产物中一致禁用（运行时可回退提示），显著减小体积
-  PyQt6.QtPdf PyQt6.QtPdfWidgets
+  # 注意：PyQt6.QtPdf/QtPdfWidgets 有意不排除 —— PDF 预览是打包版
+  # 保留功能（音视频预览因 QtMultimedia 在打包版禁用，PDF 预览不受影响）
   PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
   PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
   PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
