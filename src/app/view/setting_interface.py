@@ -39,7 +39,7 @@ from ..common.i18n import tr
 from ..common.log import get_logger, open_log_file, set_log_level, get_level_names
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
-from ..tasks.file_tasks import CheckVersionTask
+from ..tasks.file_tasks import CheckVersionTask, connect_tracked
 from ..tasks.signals import _CheckVersionSignals
 
 logger = get_logger(__name__)
@@ -189,6 +189,8 @@ class SettingInterface(ScrollArea):
         super().__init__(parent=parent)
         self.scrollWidget = QWidget()
         self.expandLayout = ExpandLayout(self.scrollWidget)
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.settingLabel = QLabel(tr("settings.title", "设置"), self.scrollWidget)
 
@@ -591,8 +593,9 @@ class SettingInterface(ScrollArea):
     def check(self):
         """后台检查版本更新，避免主线程网络请求阻塞。"""
         signals = _CheckVersionSignals()
-        signals.finished.connect(self.__onCheckVersionFinished)
-        QThreadPool.globalInstance().start(CheckVersionTask(signals))
+        task = CheckVersionTask(signals)
+        connect_tracked(self, signals, "finished", self.__onCheckVersionFinished, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onCheckVersionFinished(self, is_latest):
         if is_latest:

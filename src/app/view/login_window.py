@@ -33,7 +33,7 @@ from qfluentwidgets import (
 from ..common.config import ConfigManager
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.file_tasks import PasswordLoginTask
+from ..tasks.file_tasks import PasswordLoginTask, connect_tracked
 from ..tasks.signals import _PasswordLoginSignals
 from .qr_login_page import QRLoginPage
 
@@ -166,6 +166,8 @@ class LoginDialog(QDialog):
 
         self.pan = None
         self.login_error = None
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         # 从配置文件中加载已保存账户
         account_names = ConfigManager.get_account_names()
@@ -214,10 +216,9 @@ class LoginDialog(QDialog):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
         signals = _PasswordLoginSignals()
-        signals.finished.connect(self.__onLoginFinished)
-        QThreadPool.globalInstance().start(
-            PasswordLoginTask(user, pwd, signals)
-        )
+        task = PasswordLoginTask(user, pwd, signals)
+        connect_tracked(self, signals, "finished", self.__onLoginFinished, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onLoginFinished(self, pan, code, error):
         """后台登录完成回调（主线程）。"""

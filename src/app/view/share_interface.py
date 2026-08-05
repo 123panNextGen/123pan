@@ -32,7 +32,11 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger
 from ..common.i18n import tr
-from ..tasks.file_tasks import DeleteSharesTask, LoadShareListsTask
+from ..tasks.file_tasks import (
+    DeleteSharesTask,
+    LoadShareListsTask,
+    connect_tracked,
+)
 from ..tasks.signals import _DeleteSharesSignals, _ShareListSignals
 
 logger = get_logger(__name__)
@@ -48,6 +52,8 @@ class ShareInterface(QWidget):
         self.pan = None
         self._free_shares = []
         self._pay_shares = []
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
@@ -191,10 +197,9 @@ class ShareInterface(QWidget):
             return
 
         signals = _ShareListSignals()
-        signals.finished.connect(self.__onShareListsLoaded)
-        QThreadPool.globalInstance().start(
-            LoadShareListsTask(self.pan, signals)
-        )
+        task = LoadShareListsTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onShareListsLoaded, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onShareListsLoaded(self, free_data, free_err, pay_data, pay_err):
         """分享列表加载完成回调（主线程）。"""
@@ -398,12 +403,11 @@ class ShareInterface(QWidget):
 
         # 后台批量删除，避免逐个网络请求阻塞主线程
         signals = _DeleteSharesSignals()
-        signals.finished.connect(self.__onSharesDeleted)
-        QThreadPool.globalInstance().start(
-            DeleteSharesTask(
-                self.pan, [item.share_id for item in selected], signals
-            )
+        task = DeleteSharesTask(
+            self.pan, [item.share_id for item in selected], signals
         )
+        connect_tracked(self, signals, "finished", self.__onSharesDeleted, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onSharesDeleted(self, success_count, fail_count, last_error):
         """批量删除分享完成回调（主线程）。"""

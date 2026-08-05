@@ -21,7 +21,7 @@ from qfluentwidgets import (
 
 from ..common.i18n import tr
 from ..common.log import get_logger
-from ..tasks.file_tasks import LoadFolderListTask
+from ..tasks.file_tasks import LoadFolderListTask, connect_tracked
 from ..tasks.signals import _FolderListSignals
 
 logger = get_logger(__name__)
@@ -48,6 +48,8 @@ class FolderSelectDialog(QDialog):
         self._pan = pan
         self._exclude_dir_ids = set(int(x) for x in exclude_dir_ids)
         self._selected_dir_id = None
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.setWindowTitle(tr("file.move_title", "选择目标文件夹"))
         self.resize(380, 460)
@@ -120,14 +122,15 @@ class FolderSelectDialog(QDialog):
         item.takeChildren()
 
         signals = _FolderListSignals()
-        signals.finished.connect(
+        task = LoadFolderListTask(self._pan, int(dir_id), signals)
+        connect_tracked(
+            self, signals, "finished",
             lambda did, folders, err, it=item: self.__onFolderLoaded(
                 it, did, folders, err
-            )
+            ),
+            task,
         )
-        QThreadPool.globalInstance().start(
-            LoadFolderListTask(self._pan, int(dir_id), signals)
-        )
+        QThreadPool.globalInstance().start(task)
 
     def __onFolderLoaded(self, item, dir_id, folders, error):
         """子文件夹加载完成回调（主线程）。"""

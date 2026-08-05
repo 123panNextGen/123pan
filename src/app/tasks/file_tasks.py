@@ -33,6 +33,35 @@ from .signals import (
 logger = get_logger(__name__)
 
 
+def track_task(widget, task):
+    """持有后台任务引用，防止任务/信号在工作线程运行期间被 GC 回收。
+
+    背景：QRunnable 若不被 Python 侧持有引用，GC 可能在 worker 线程
+    仍运行 run() 时回收其包装对象（连带回收信号对象），导致
+    'wrapped C/C++ object has been deleted' 的 RuntimeError。
+    界面需在 __init__ 中初始化 `self._pending_tasks = []`。
+    """
+    widget._pending_tasks.append(task)
+
+
+def release_task(widget, task):
+    """任务完成后释放引用。"""
+    try:
+        widget._pending_tasks.remove(task)
+    except ValueError:
+        pass
+
+
+def connect_tracked(widget, signals, signal_name, slot, task):
+    """连接信号并追踪任务引用，回调执行后自动释放。"""
+    def _wrapper(*args, t=task, s=slot):
+        s(*args)
+        release_task(widget, t)
+
+    getattr(signals, signal_name).connect(_wrapper)
+    track_task(widget, task)
+
+
 class LoadListTask(QRunnable):
     def __init__(self, fetch_method, dir_id, signals: _LoadListSignals):
         super().__init__()

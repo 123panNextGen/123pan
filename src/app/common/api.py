@@ -60,6 +60,8 @@ class Pan123:
         self.all_file = False
         self.file_page = 0
         self.parent_file_id = 0
+        # pan.list 当前所属目录 ID（切换目录时重置，防止内存无限增长）
+        self._list_dir_id = None
 
         if anonymous:
             # 匿名会话：不加载配置、不自动登录，仅用于扫码登录流程
@@ -194,6 +196,13 @@ class Pan123:
         self.all_file = all_file
         self.file_page += 1
         if save:
+            # 切换目录时重置累积列表，避免长期浏览导致内存无限增长
+            if self._list_dir_id != file_id:
+                self.list.clear()
+                self._list_dir_id = file_id
+            elif len(self.list) > 5000:
+                # 防御性上限：同一目录被反复获取（如多次 mkdir 刷新）时
+                self.list.clear()
             # 原地追加，避免 list + list 整体复制（大目录分页时 O(n²) -> O(n)）
             self.list.extend(items)
 

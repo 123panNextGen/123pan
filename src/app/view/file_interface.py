@@ -63,6 +63,7 @@ from ..tasks.file_tasks import (
     LoadStorageInfoTask,
     MoveFileTask,
     RenameFileTask,
+    connect_tracked,
 )
 from ..tasks.signals import (
     _DownloadLinkSignals,
@@ -88,10 +89,7 @@ def _icon(enum_member):
     if icon is None:
         icon = enum_member.icon()
         _ICONS[enum_member] = icon
-    return icon
-
-
-# noinspection PyUnresolvedReferences
+    return icon# noinspection PyUnresolvedReferences
 class FileInterface(QWidget):
     """文件页面（仅浏览）"""
 
@@ -111,6 +109,8 @@ class FileInterface(QWidget):
         self._file_index_by_id = {}
         # 目录 ID -> 树节点 缓存（避免每次全树迭代查找）
         self._tree_item_cache = {}
+        # 持有后台任务引用，防止任务/信号被 GC 回收导致 RuntimeError
+        self._pending_tasks = []
 
         # 排序模式: 0=按名称, 2=按大小, 3=按日期
         self.sort_mode = 0
@@ -382,14 +382,15 @@ class FileInterface(QWidget):
         item.takeChildren()
 
         signals = _FolderListSignals()
-        signals.finished.connect(
+        task = LoadFolderListTask(self.pan, int(dir_id), signals)
+        connect_tracked(
+            self, signals, "finished",
             lambda did, folders, err, it=item: self.__onTreeFolderLoaded(
                 it, did, folders, err
-            )
+            ),
+            task,
         )
-        QThreadPool.globalInstance().start(
-            LoadFolderListTask(self.pan, int(dir_id), signals)
-        )
+        QThreadPool.globalInstance().start(task)
 
     def __onTreeFolderLoaded(self, item, dir_id, folders, error):
         """目录树子文件夹加载完成回调（主线程）。"""
@@ -491,11 +492,11 @@ class FileInterface(QWidget):
         self.fileTable.setRowCount(0)
 
         signals = _LoadListSignals()
-        signals.finished.connect(self.__onLoadListFinished)
         task = LoadListTask(
             lambda dir_id: self.__fetchDirList(dir_id, force_refresh),
             self.current_dir_id, signals,
         )
+        connect_tracked(self, signals, "finished", self.__onLoadListFinished, task)
 
         QThreadPool.globalInstance().start(task)
 
@@ -629,10 +630,10 @@ class FileInterface(QWidget):
 
             # 在主线程创建信号
             signals = _OpFinishedSignals()
-            signals.finished.connect(self.__onCreateFolderFinished)
             task = CreateFolderTask(
                 self.pan, folder_name, self.current_dir_id, signals, self
             )
+            connect_tracked(self, signals, "finished", self.__onCreateFolderFinished, task)
 
             # 提交任务到线程池
             QThreadPool.globalInstance().start(task)
@@ -1039,10 +1040,10 @@ class FileInterface(QWidget):
 
         # 单文件删除
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onDeleteFileFinished)
         task = DeleteFileTask(
             self.pan, file_id, file_name, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onDeleteFileFinished, task)
         QThreadPool.globalInstance().start(task)
 
     def __batchDeleteFiles(self, selected_rows):
@@ -1056,13 +1057,15 @@ class FileInterface(QWidget):
 
         # 在主线程创建信号
         signals = _OpFinishedSignals()
-        signals.finished.connect(
-            lambda success, name, new_name, error, items, folders: self.__onBatchDeleteFinished(
-                success, name, new_name, error, items, folders
-            )
-        )
         task = BatchDeleteTask(
             self.pan, file_infos, self.current_dir_id, signals, self
+        )
+        connect_tracked(
+            self, signals, "finished",
+            lambda success, name, new_name, error, items, folders: self.__onBatchDeleteFinished(
+                success, name, new_name, error, items, folders
+            ),
+            task,
         )
         QThreadPool.globalInstance().start(task)
 
@@ -1174,10 +1177,10 @@ class FileInterface(QWidget):
 
         # 在主线程创建信号
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onRenameFileFinished)
         task = RenameFileTask(
             self.pan, file_id, old_name, new_name, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onRenameFileFinished, task)
 
         # 提交任务到线程池
         QThreadPool.globalInstance().start(task)
@@ -1257,10 +1260,10 @@ class FileInterface(QWidget):
             return
 
         signals = _OpFinishedSignals()
-        signals.finished.connect(self.__onMoveFileFinished)
         task = MoveFileTask(
             self.pan, file_infos, target, self.current_dir_id, signals, self
         )
+        connect_tracked(self, signals, "finished", self.__onMoveFileFinished, task)
         QThreadPool.globalInstance().start(task)
 
     def __onMoveFileFinished(
@@ -1357,10 +1360,9 @@ class FileInterface(QWidget):
         # 后台获取下载链接，避免主线程网络请求阻塞
         self.__last_copy_name = file_name
         signals = _DownloadLinkSignals()
-        signals.finished.connect(self.__onDownloadLinkReady)
-        QThreadPool.globalInstance().start(
-            GetDownloadLinkTask(self.pan, file_detail, signals)
-        )
+        task = GetDownloadLinkTask(self.pan, file_detail, signals)
+        connect_tracked(self, signals, "finished", self.__onDownloadLinkReady, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onDownloadLinkReady(self, url, error):
         """下载链接获取完成回调（主线程）。"""
@@ -1407,10 +1409,9 @@ class FileInterface(QWidget):
         # 后台创建分享链接，避免主线程网络请求阻塞
         self.__last_share_name = file_name
         signals = _ShareCreateSignals()
-        signals.finished.connect(self.__onShareCreated)
-        QThreadPool.globalInstance().start(
-            CreateShareTask(self.pan, int(file_id), pwd or "", signals)
-        )
+        task = CreateShareTask(self.pan, int(file_id), pwd or "", signals)
+        connect_tracked(self, signals, "finished", self.__onShareCreated, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onShareCreated(self, share_url, error):
         """分享链接创建完成回调（主线程）。"""
@@ -1529,10 +1530,9 @@ class FileInterface(QWidget):
             return
 
         signals = _StorageInfoSignals()
-        signals.finished.connect(self.__onStorageInfoFinished)
-        QThreadPool.globalInstance().start(
-            LoadStorageInfoTask(self.pan, signals)
-        )
+        task = LoadStorageInfoTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onStorageInfoFinished, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onStorageInfoFinished(self, user_info, error):
         """云盘空间信息加载完成回调（主线程）。"""

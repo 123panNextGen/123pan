@@ -23,7 +23,11 @@ from qfluentwidgets import (
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..common.style_sheet import StyleSheet
-from ..tasks.file_tasks import LoadDeviceListTask, LoadUserInfoTask
+from ..tasks.file_tasks import (
+    LoadDeviceListTask,
+    LoadUserInfoTask,
+    connect_tracked,
+)
 from ..tasks.signals import _DeviceListSignals, _UserInfoSignals
 
 logger = get_logger(__name__)
@@ -53,6 +57,8 @@ class CloudInterface(ScrollArea):
         self.pan = None
         self._user_info = None
         self.setObjectName("CloudInterface")
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         # 滚动区域内部容器
         self.scrollWidget = QWidget()
@@ -217,16 +223,14 @@ class CloudInterface(ScrollArea):
 
         # 异步获取用户云盘信息与设备列表（后台线程，不阻塞 GUI）
         user_signals = _UserInfoSignals()
-        user_signals.finished.connect(self.__onUserInfoLoaded)
-        QThreadPool.globalInstance().start(
-            LoadUserInfoTask(self.pan, user_signals)
-        )
+        user_task = LoadUserInfoTask(self.pan, user_signals)
+        connect_tracked(self, user_signals, "finished", self.__onUserInfoLoaded, user_task)
+        QThreadPool.globalInstance().start(user_task)
 
         device_signals = _DeviceListSignals()
-        device_signals.finished.connect(self.__onDeviceListLoaded)
-        QThreadPool.globalInstance().start(
-            LoadDeviceListTask(self.pan, device_signals)
-        )
+        device_task = LoadDeviceListTask(self.pan, device_signals)
+        connect_tracked(self, device_signals, "finished", self.__onDeviceListLoaded, device_task)
+        QThreadPool.globalInstance().start(device_task)
 
     def __onUserInfoLoaded(self, user_info, error):
         """用户信息加载完成回调（主线程）。"""

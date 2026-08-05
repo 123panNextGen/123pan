@@ -53,6 +53,13 @@ def main():
     )
     app = QtWidgets.QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
+
+    # 限制 Qt 全局像素图缓存（图标/图片缩放等），降低内存占用
+    # 默认 20MB，图标通常很小，10MB 足够且可避免缓存无限膨胀
+    from PyQt6.QtGui import QPixmapCache
+
+    QPixmapCache.setCacheLimit(10 * 1024)  # 单位 KB
+    logger.debug("QPixmapCache 限制为 10MB")
     logger.debug("QApplication 初始化完成")
 
     translator = FluentTranslator()

@@ -35,6 +35,7 @@ from ..tasks.file_tasks import (
     LoadTrashListTask,
     PermDeleteTrashTask,
     RestoreTrashTask,
+    connect_tracked,
 )
 from ..tasks.signals import _TrashListSignals, _TrashOpSignals
 
@@ -62,6 +63,8 @@ class TrashInterface(QWidget):
 
         self.pan = None
         self._trash_items = []
+        # 持有后台任务引用，防止任务/信号被 GC 回收
+        self._pending_tasks = []
 
         self.mainLayout = QVBoxLayout(self)
         self.mainLayout.setContentsMargins(24, 20, 24, 24)
@@ -158,10 +161,9 @@ class TrashInterface(QWidget):
             return
 
         signals = _TrashListSignals()
-        signals.finished.connect(self.__onTrashListLoaded)
-        QThreadPool.globalInstance().start(
-            LoadTrashListTask(self.pan, signals)
-        )
+        task = LoadTrashListTask(self.pan, signals)
+        connect_tracked(self, signals, "finished", self.__onTrashListLoaded, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onTrashListLoaded(self, items, error):
         """回收站列表加载完成回调（主线程）。"""
@@ -230,10 +232,9 @@ class TrashInterface(QWidget):
         self._last_op_count = len(selected)
         self._last_op_names = [item.get("FileName", "") for item in selected]
         signals = _TrashOpSignals()
-        signals.finished.connect(self.__onRestoreFinished)
-        QThreadPool.globalInstance().start(
-            RestoreTrashTask(self.pan, trash_items, list(selected), signals)
-        )
+        task = RestoreTrashTask(self.pan, trash_items, list(selected), signals)
+        connect_tracked(self, signals, "finished", self.__onRestoreFinished, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onRestoreFinished(self, success, error):
         """恢复完成回调（主线程）。"""
@@ -270,10 +271,9 @@ class TrashInterface(QWidget):
         self._last_op_count = len(selected)
         self._last_op_names = [item.get("FileName", "") for item in selected]
         signals = _TrashOpSignals()
-        signals.finished.connect(self.__onPermDeleteFinished)
-        QThreadPool.globalInstance().start(
-            PermDeleteTrashTask(self.pan, file_ids, signals)
-        )
+        task = PermDeleteTrashTask(self.pan, file_ids, signals)
+        connect_tracked(self, signals, "finished", self.__onPermDeleteFinished, task)
+        QThreadPool.globalInstance().start(task)
 
     def __onPermDeleteFinished(self, success, msg):
         """永久删除完成回调（主线程）。"""

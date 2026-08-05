@@ -28,7 +28,7 @@ CURRENT_CACHE_VERSION = 2
 DEFAULT_CACHE_TTL_SECONDS = 30 * 60  # 30 分钟
 
 # 内存缓存条目上限：防止浏览目录过多时内存无限增长
-_CACHE_MAX_ENTRIES = 50
+_CACHE_MAX_ENTRIES = 20
 
 
 class FileListDB:
