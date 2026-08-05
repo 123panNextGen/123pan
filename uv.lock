@@ -47,7 +47,7 @@ requires-dist = [
     { name = "pyqt6", specifier = ">=6.10.2" },
     { name = "pyqt6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "pyqt6-sip", specifier = ">=13.11.1" },
-    { name = "qrcode", extras = ["pil"], specifier = ">=8.0" },
+    { name = "qrcode", extras = ["pil"], specifier = ">=8.2" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
