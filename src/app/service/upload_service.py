@@ -26,13 +26,19 @@ class UploadService:
 
     def __init__(self, session):
         self._session = session
+        # 上传限速器由本服务持有并消费（下载限速器由 session 持有）
+        self._limiter = None
 
     def set_upload_speed_limit(self, kbps: int):
-        """设置上传速度限制（KB/s），0 为不限速。"""
+        """设置上传速度限制（KB/s），0 为不限速。
+
+        限速器属于上传服务自身：上传分片循环在
+        up_load 中对每个分片消费令牌，0 表示不限制。
+        """
         if kbps > 0:
-            self._session.set_speed_limiter(SpeedLimiter(kbps), is_upload=True)
+            self._limiter = SpeedLimiter(kbps)
         else:
-            self._session.set_speed_limiter(None, is_upload=True)
+            self._limiter = None
 
     @staticmethod
     def compute_file_md5(file_path):
@@ -220,6 +226,20 @@ class UploadService:
                 data = f.read(block_size)
                 if not data:
                     break
+
+                # 暂停：阻塞等待恢复；取消：立即中止（保留已上传分片供续传）
+                if task:
+                    waiter = getattr(task, "wait_if_paused", None)
+                    if waiter is not None:
+                        waiter()
+                    if getattr(task, "is_cancelled", False):
+                        return "已取消"
+
+                # 上传限速：消费当前分片的令牌并等待
+                if self._limiter:
+                    wait = self._limiter.consume(len(data))
+                    if wait > 0:
+                        time.sleep(wait)
 
                 get_link_data = {
                     "bucket": bucket,

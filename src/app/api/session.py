@@ -44,6 +44,14 @@ LOGIN_BASE_URL = "https://login.123pan.com"
 _HREF_URL_RE = re.compile(r"href='(https?://[^']+)'")
 
 
+class DownloadCancelledError(Exception):
+    """下载被用户取消。
+
+    与普通异常的区别：取消时不删除临时文件（保留断点续传数据），
+    由 download_file_multithread 捕获后返回 False 表示未完成。
+    """
+
+
 class _ApiSession(requests.Session):
     def __init__(self):
         super().__init__()
@@ -238,6 +246,7 @@ class NetSession:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         resume_offset: int = 0,
+        cancel_event: Optional[threading.Event] = None,
     ) -> bool:
         """多线程分片下载文件。
 
@@ -250,6 +259,7 @@ class NetSession:
             file_size: 文件总大小（字节）。
             progress_callback: 进度回调 (downloaded, total)。
             resume_offset: 已下载字节数（断点续传），>0 时走单线程续传。
+            cancel_event: 取消事件，置位时中止下载并返回 False（保留临时文件）。
 
         Returns:
             是否下载成功。
@@ -263,46 +273,63 @@ class NetSession:
             resume_offset,
         )
 
-        if file_size == 0:
-            logger.info("空文件，跳过下载: %s", file_path.name)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_bytes(b"")
-            if progress_callback:
-                progress_callback(0, 0)
-            return True
+        try:
+            if file_size == 0:
+                logger.info("空文件，跳过下载: %s", file_path.name)
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_bytes(b"")
+                if progress_callback:
+                    progress_callback(0, 0)
+                return True
 
-        # 断点续传时走单线程续传（保证 Range + 追加模式的正确性）
-        if resume_offset > 0:
-            logger.debug("存在续传偏移，使用单线程续传")
-            return self._download_single(
+            # 断点续传时走单线程续传（保证 Range + 追加模式的正确性）
+            if resume_offset > 0:
+                logger.debug("存在续传偏移，使用单线程续传")
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    resume_offset=resume_offset,
+                    cancel_event=cancel_event,
+                )
+
+            # 单线程路径：_download_single 已内联处理 JSON 重定向，无需预检。
+            # 跳过不必要的 HTTP 请求，避免消耗一次性下载链接（如文件夹 zip）。
+            if not self._multi_thread_enabled or self._num_threads <= 1:
+                logger.debug("多线程已禁用，使用单线程")
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
+
+            if file_size < 5 * 1024 * 1024:
+                logger.debug("文件小于 5MB，回退单线程")
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
+
+            # ---- 以下为多线程路径，需要预检 ----
+
+            # 预检 JSON 重定向：CDN 可能返回 redirect_url 而非文件内容
+            resolved = self._resolve_json_redirect_url(url)
+            if resolved:
+                url = resolved
+
+            supports_range = self._check_range_support(url)
+            if not supports_range:
+                logger.debug("服务器不支持 Range，回退单线程")
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
+
+            logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
+            return self._download_chunked(
                 url, file_path, file_size, progress_callback,
-                resume_offset=resume_offset,
+                cancel_event=cancel_event,
             )
-
-        # 单线程路径：_download_single 已内联处理 JSON 重定向，无需预检。
-        # 跳过不必要的 HTTP 请求，避免消耗一次性下载链接（如文件夹 zip）。
-        if not self._multi_thread_enabled or self._num_threads <= 1:
-            logger.debug("多线程已禁用，使用单线程")
-            return self._download_single(url, file_path, file_size, progress_callback)
-
-        if file_size < 5 * 1024 * 1024:
-            logger.debug("文件小于 5MB，回退单线程")
-            return self._download_single(url, file_path, file_size, progress_callback)
-
-        # ---- 以下为多线程路径，需要预检 ----
-
-        # 预检 JSON 重定向：CDN 可能返回 redirect_url 而非文件内容
-        resolved = self._resolve_json_redirect_url(url)
-        if resolved:
-            url = resolved
-
-        supports_range = self._check_range_support(url)
-        if not supports_range:
-            logger.debug("服务器不支持 Range，回退单线程")
-            return self._download_single(url, file_path, file_size, progress_callback)
-
-        logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
-        return self._download_chunked(url, file_path, file_size, progress_callback)
+        except DownloadCancelledError:
+            logger.info("下载已取消: %s", file_path.name)
+            return False
 
     def _check_range_support(self, url: str) -> bool:
         """检查 URL 是否支持 Range 请求。"""
@@ -373,12 +400,15 @@ class NetSession:
         progress_callback: Optional[Callable[[int, int], None]] = None,
         _redirect_count: int = 0,
         resume_offset: int = 0,
+        cancel_event: Optional[threading.Event] = None,
     ) -> bool:
         """单线程流式下载（支持断点续传）。
 
         Args:
             _redirect_count: 内部参数，跟踪 JSON 重定向次数，防止无限循环。
             resume_offset: 已下载字节数，>0 时从该偏移续传（追加模式 + Range）。
+            cancel_event: 取消事件，置位时抛出 DownloadCancelledError
+                （保留临时文件供续传，由上层捕获返回 False）。
         """
         if _redirect_count >= 3:
             logger.error("JSON 重定向次数过多，放弃下载: %s", file_path.name)
@@ -434,7 +464,7 @@ class NetSession:
                             return self._download_single(
                                 redirect_url, file_path, file_size,
                                 progress_callback, _redirect_count + 1,
-                                current_offset,
+                                current_offset, cancel_event,
                             )
                         # JSON 响应但不是有效重定向，视为错误
                         msg = body.get("message", body.get("msg", "未知错误"))
@@ -447,6 +477,8 @@ class NetSession:
                     last_report_ts = 0.0
                     with open(temp_path, mode) as f:
                         for chunk in resp.iter_content(chunk_size=8192):
+                            if cancel_event and cancel_event.is_set():
+                                raise DownloadCancelledError()
                             if chunk:
                                 f.write(chunk)
                                 downloaded += len(chunk)
@@ -472,6 +504,11 @@ class NetSession:
                         file_path.unlink()
                     temp_path.rename(file_path)
                 return True
+
+            except DownloadCancelledError:
+                # 取消：保留临时文件，供下次断点续传
+                logger.info("下载取消: %s (已下载 %d 字节)", file_path.name, current_offset)
+                raise
 
             except (
                 requests.exceptions.ConnectionError,
@@ -521,6 +558,7 @@ class NetSession:
         file_path: Path,
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> bool:
         """多线程分片下载（每分片直接写入磁盘 .partN 文件，避免内存爆炸）。"""
         num_threads = self._num_threads
@@ -555,6 +593,8 @@ class NetSession:
                         resp.raise_for_status()
                         with open(part_path, "wb") as pf:
                             for data in resp.iter_content(chunk_size=8192):
+                                if cancel_event and cancel_event.is_set():
+                                    raise DownloadCancelledError()
                                 if data:
                                     pf.write(data)
                                     if self._download_limiter:
@@ -569,6 +609,8 @@ class NetSession:
                                             _report_progress()
                                             last_report[0] = now
                     return True
+                except DownloadCancelledError:
+                    raise
                 except Exception as e:
                     if part_path.exists():
                         try:
@@ -609,7 +651,15 @@ class NetSession:
                 }
 
                 for future in concurrent.futures.as_completed(futures):
-                    if not future.result():
+                    try:
+                        result = future.result()
+                    except DownloadCancelledError:
+                        # 仅取消未启动的任务；分片清理推迟到外层 handler 完成：
+                        # 此时 executor 已全部退出，文件句柄全部关闭，
+                        # 避免 Windows 上对打开中的文件 unlink 失败留下残留
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    if not result:
                         executor.shutdown(wait=False, cancel_futures=True)
                         for i in range(len(ranges)):
                             p = Path(str(temp_path) + f".part{i}")
@@ -641,6 +691,16 @@ class NetSession:
                     file_path.unlink()
                 temp_path.rename(file_path)
             return True
+        except DownloadCancelledError:
+            # 取消：等待 executor 全部退出后清理分片临时文件，再上抛
+            for i in range(len(ranges)):
+                p = Path(str(temp_path) + f".part{i}")
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+            raise
         except Exception:
             if temp_path.exists():
                 try:
