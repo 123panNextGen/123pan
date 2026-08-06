@@ -185,13 +185,14 @@ class TransferInterface(QWidget):
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
 
-        # 设置列宽
+        # 设置列宽：文件名/进度为弹性列吸收宽度变化，其余按内容自适应，
+        # 避免窗口较窄时固定列总和超出可视宽度导致列被横向滚动条截断。
         header = self.uploadTable.horizontalHeader()
         if header:
             header.setSectionResizeMode(0, header.ResizeMode.Stretch)
             header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, header.ResizeMode.Stretch)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
@@ -213,13 +214,14 @@ class TransferInterface(QWidget):
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
 
-        # 设置列宽
+        # 设置列宽：文件名/进度为弹性列吸收宽度变化，其余按内容自适应，
+        # 避免窗口较窄时固定列总和超出可视宽度导致列被横向滚动条截断。
         header = self.downloadTable.horizontalHeader()
         if header:
             header.setSectionResizeMode(0, header.ResizeMode.Stretch)
             header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, header.ResizeMode.Stretch)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
