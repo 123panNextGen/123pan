@@ -20,4 +20,4 @@ jobs:
       - name: Push to Codeberg
         run: |
           git remote add codeberg https://x-access-token:${{ secrets.CODEBERG_TOKEN }}@codeberg.org/123pannextgen/123pan.git
-          git push --mirror codeberg
+          git push codeberg
