@@ -79,6 +79,15 @@ class UploadThread(QThread):
         self._pause_event.set()  # 初始状态：不暂停
         self._cancelled = False
 
+    @property
+    def is_cancelled(self):
+        """供上传服务轮询的取消标志。"""
+        return self._cancelled
+
+    def wait_if_paused(self):
+        """暂停时阻塞（由上传分片循环调用）。"""
+        self._pause_event.wait()
+
     def pause(self):
         """暂停传输"""
         self._pause_event.clear()
@@ -138,6 +147,7 @@ class UploadThread(QThread):
                 self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
             self.pan.up_load(
                 self.task.local_path,
+                task=self,
                 resume_info=resume_info,
                 session_callback=_on_session,
             )
@@ -174,6 +184,7 @@ class DownloadThread(QThread):
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._cancelled = False
+        self._cancel_event = threading.Event()
 
     def pause(self):
         """暂停传输"""
@@ -188,6 +199,7 @@ class DownloadThread(QThread):
     def cancel(self):
         """取消传输"""
         self._cancelled = True
+        self._cancel_event.set()  # 通知下载循环立即中止
         self._pause_event.set()
 
     def run(self):
@@ -284,15 +296,17 @@ class DownloadThread(QThread):
                 file_size,
                 progress_callback=_on_progress,
                 resume_offset=resume_offset,
+                cancel_event=self._cancel_event,
             )
             elapsed = time.monotonic() - t0
 
-            if not success:
-                raise RuntimeError("下载失败")
-
+            # 取消优先于失败处理：已取消时不报错，临时文件保留供续传
             if self._cancelled:
                 self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
+
+            if not success:
+                raise RuntimeError("下载失败")
 
             self.progress_updated.emit(100)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
