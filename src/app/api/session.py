@@ -654,14 +654,10 @@ class NetSession:
                     try:
                         result = future.result()
                     except DownloadCancelledError:
+                        # 仅取消未启动的任务；分片清理推迟到外层 handler 完成：
+                        # 此时 executor 已全部退出，文件句柄全部关闭，
+                        # 避免 Windows 上对打开中的文件 unlink 失败留下残留
                         executor.shutdown(wait=False, cancel_futures=True)
-                        for i in range(len(ranges)):
-                            p = Path(str(temp_path) + f".part{i}")
-                            if p.exists():
-                                try:
-                                    p.unlink()
-                                except OSError:
-                                    pass
                         raise
                     if not result:
                         executor.shutdown(wait=False, cancel_futures=True)
@@ -696,7 +692,14 @@ class NetSession:
                 temp_path.rename(file_path)
             return True
         except DownloadCancelledError:
-            # 取消：分片临时文件已在 as_completed 中清理，直接上抛
+            # 取消：等待 executor 全部退出后清理分片临时文件，再上抛
+            for i in range(len(ranges)):
+                p = Path(str(temp_path) + f".part{i}")
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
             raise
         except Exception:
             if temp_path.exists():

@@ -110,10 +110,15 @@ class DownloadService:
         file_size: int,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         resume_offset: int = 0,
+        cancel_event: Optional[threading.Event] = None,
     ) -> bool:
-        """多线程分片下载文件（支持断点续传）。"""
+        """多线程分片下载文件（支持断点续传）。
+
+        Args:
+            cancel_event: 取消事件，置位时中止下载并返回 False（保留临时文件）。
+        """
         return self._session.download_file_multithread(
-            url, file_path, file_size, progress_callback, resume_offset
+            url, file_path, file_size, progress_callback, resume_offset, cancel_event
         )
 
 
