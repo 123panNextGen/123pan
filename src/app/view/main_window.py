@@ -102,12 +102,14 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.file_interface, FIF.FOLDER, tr("nav.file", "文件"))
 
         # 懒加载页面：仅注册导航项，首次点击才创建界面
+        # NavigationWidget.clicked 是 pyqtSignal(bool)，onClick 会被传入 True，
+        # 因此 lambda 需接收该参数（checked），避免覆盖 rk=route_key 默认值。
         for route_key, (icon, text, position) in self._lazy_specs.items():
             self.navigationInterface.addItem(
                 routeKey=route_key,
                 icon=icon,
                 text=text,
-                onClick=lambda rk=route_key: self._open_interface(rk),
+                onClick=lambda checked=False, rk=route_key: self._open_interface(rk),
                 position=position,
                 tooltip=text,
             )
