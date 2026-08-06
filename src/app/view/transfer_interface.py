@@ -520,7 +520,7 @@ class TransferInterface(QWidget):
 
     def __clearCompletedTasks(self):
         """清除所有已完成/已取消/失败的任务"""
-        route = self.segmentedWidget.currentItem().routeKey()
+        route = self.segmentedWidget.currentRouteKey()
         if route == "upload":
             tasks = self.upload_tasks
             threads = self.upload_threads
