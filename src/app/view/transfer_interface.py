@@ -521,6 +521,16 @@ class TransferInterface(QWidget):
     def __clearCompletedTasks(self):
         """清除所有已完成/已取消/失败的任务"""
         route = self.segmentedWidget.currentRouteKey()
+        if route == "history":
+            # 历史记录页：直接清空历史
+            self._store.clear_history()
+            self.__refresh_history()
+            InfoBar.success(
+                title=tr("transfer.msg_history_cleared", "已清空"),
+                content=tr("transfer.msg_history_cleared_desc", "传输历史已清空"),
+                parent=self,
+            )
+            return
         if route == "upload":
             tasks = self.upload_tasks
             threads = self.upload_threads
