@@ -53,8 +53,10 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("login.title", "登录123云盘"))
         # 使用最小尺寸替代固定尺寸，兼容高 DPI 显示器
-        self.setMinimumSize(420, 300)
-        self.resize(480, 360)
+        # 高度需容纳二维码页面（200px 二维码 + 状态 + 复选框），
+        # 过小会导致布局压缩时二维码与下方状态文字重叠。
+        self.setMinimumSize(420, 480)
+        self.resize(480, 500)
         logger.debug("LoginDialog 初始化")
 
         layout = QVBoxLayout(self)
