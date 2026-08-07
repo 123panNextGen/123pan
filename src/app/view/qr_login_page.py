@@ -11,7 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 import io
 
 import qrcode
-from PySide6 import shiboken6
+import shiboken6
 from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget

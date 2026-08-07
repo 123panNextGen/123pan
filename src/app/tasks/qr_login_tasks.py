@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PySide6 import shiboken6
+import shiboken6
 from PySide6.QtCore import QRunnable
 
 from ..common.api import Pan123
