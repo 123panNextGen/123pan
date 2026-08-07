@@ -51,14 +51,14 @@ NOFOLLOW=(
   pydoc pydoc_data http.server wsgiref cgi
   cgitb numpy pandas scipy sklearn matplotlib
   IPython jupyter profile cProfile curses
-  readline PyQt6.uic PyQt6.QtWebEngine
-  PyQt6.QtWebEngineCore PyQt6.QtWebEngineWidgets
-  PyQt6.QtWebChannel PyQt6.QtMultimedia
-  PyQt6.QtMultimediaWidgets PyQt6.QtBluetooth
-  PyQt6.QtNfc PyQt6.QtSensors PyQt6.QtPositioning
-  PyQt6.QtSerialPort PyQt6.Qt3DCore PyQt6.Qt3DRender
-  PyQt6.Qt3DInput PyQt6.Qt3DLogic PyQt6.QtCharts
-  PyQt6.QtDataVisualization PyQt6.QtHelp
+  readline PySide6.QtUiTools PySide6.QtWebEngineCore
+  PySide6.QtWebEngineWidgets PySide6.QtWebEngineQuick
+  PySide6.QtWebChannel PySide6.QtMultimedia
+  PySide6.QtMultimediaWidgets PySide6.QtBluetooth
+  PySide6.QtNfc PySide6.QtSensors PySide6.QtPositioning
+  PySide6.QtSerialPort PySide6.Qt3DCore PySide6.Qt3DRender
+  PySide6.Qt3DInput PySide6.Qt3DLogic PySide6.QtCharts
+  PySide6.QtDataVisualization PySide6.QtHelp
   urllib3.contrib cryptography.x509 zstandard.tests
 )
 
@@ -68,7 +68,7 @@ NOFOLLOW=(
   uv run -m nuitka src/123pan.py \
     --lto=yes \
     --standalone \
-    --enable-plugin=pyqt6 \
+    --enable-plugin=pyside6 \
     --jobs="$JOBS" \
     --nofollow-import-to="$(IFS=,; echo "${NOFOLLOW[*]}")" \
     --assume-yes-for-downloads \
