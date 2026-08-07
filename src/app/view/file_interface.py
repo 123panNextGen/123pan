@@ -9,7 +9,6 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 from pathlib import Path
-from datetime import datetime
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QThreadPool
@@ -20,11 +19,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
-    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
-    QTreeWidgetItemIterator,
-    QTableWidgetItem,
     QFileDialog,
     QMenu,
     QApplication,
@@ -75,21 +71,13 @@ from ..tasks.signals import (
 )
 from ..tasks.file_tasks import LoadStorageInfoTask
 from .dialogs import InputDialog
+from .file_table import FileTableManager
+from .file_tree import FileTreeManager
 from .folder_select_dialog import FolderSelectDialog
+from .icons import icon as _icon
 
 logger = get_logger(__name__)
-
-# 图标缓存：避免每行/每次右键都重新解码 SVG 图标
-_ICONS = {}
-
-
-def _icon(enum_member):
-    """懒加载并缓存 FluentIcon 对应的 QIcon（线程安全由 GIL 保证）。"""
-    icon = _ICONS.get(enum_member)
-    if icon is None:
-        icon = enum_member.icon()
-        _ICONS[enum_member] = icon
-    return icon# noinspection PyUnresolvedReferences
+# noinspection PyUnresolvedReferences
 class FileInterface(QWidget):
     """文件页面（仅浏览）"""
 
@@ -100,27 +88,15 @@ class FileInterface(QWidget):
         self.pan = None
         self.current_dir_id = 0
         self.path_stack = [(0, tr("file.root_dir", "根目录"))]
-        self.is_loading_tree = False
         self.is_updating_breadcrumb = False
         self.transfer_interface = None
-        # 当前目录的文件列表（用于下载/预览/分享等操作的文件查找）
-        self._current_file_items = []
-        # 文件 ID -> 文件详情 索引（避免线性扫描）
-        self._file_index_by_id = {}
-        # 目录 ID -> 树节点 缓存（避免每次全树迭代查找）
-        self._tree_item_cache = {}
-        # 持有后台任务引用，防止任务/信号被 GC 回收导致 RuntimeError
-        self._pending_tasks = []
-
-        # 排序模式: 0=按名称, 2=按大小, 3=按日期
-        self.sort_mode = 0
-        # 排序方向: True=升序, False=降序
-        self.sort_ascending = True
-
-        # 搜索文本
-        self._search_text = ""
+        # 表格/目录树管理器（在 __createContent 中创建，持有渲染与缓存状态）
+        self._table_mgr = None
+        self._tree_mgr = None
         # 目录列表是否正在加载（用于空状态/加载提示）
         self._loading = False
+        # 持有后台任务引用，防止任务/信号被 GC 回收导致 RuntimeError
+        self._pending_tasks = []
 
         # 搜索防抖：300ms 内无新输入才执行过滤，避免每键都重建表格
         self._search_timer = QTimer(self)
@@ -190,6 +166,7 @@ class FileInterface(QWidget):
         self.folderTree = TreeWidget(self.treeFrame)
         self.folderTree.setHeaderHidden(True)
         self.folderTree.setUniformRowHeights(True)
+        self._tree_mgr = FileTreeManager(self.folderTree)
         self.treeLayout.addWidget(self.folderTree)
 
         # 添加云盘占用大小卡片
@@ -266,6 +243,9 @@ class FileInterface(QWidget):
             header.setSortIndicatorShown(True)
             header.sortIndicatorChanged.connect(self.__onHeaderSortIndicatorChanged)
         self.listLayout.addWidget(self.fileTable)
+
+        # 表格管理器（渲染/排序/过滤/空状态）
+        self._table_mgr = FileTableManager(self.fileTable, self.listStateLabel)
 
         self.contentLayout.addWidget(self.treeFrame, 2)
         self.contentLayout.addWidget(self.listFrame, 5)
@@ -351,45 +331,20 @@ class FileInterface(QWidget):
             self.backButton.setEnabled(False)
 
     def __initTree(self):
-        self.folderTree.clear()
-        self._tree_item_cache.clear()
-
-        root_item = QTreeWidgetItem([tr("file.root_dir", "根目录")])
-        root_item.setIcon(0, _icon(FIF.FOLDER))
-        root_item.setData(0, Qt.ItemDataRole.UserRole, 0)
-        root_item.setData(0, Qt.ItemDataRole.UserRole + 1, False)
-        self.folderTree.addTopLevelItem(root_item)
-        self._tree_item_cache[0] = root_item
-
-        self.__addPlaceholder(root_item)
-        self.folderTree.expandItem(root_item)
-        self.folderTree.setCurrentItem(root_item)
-
-    @staticmethod
-    def __addPlaceholder(parent_item):
-        placeholder = QTreeWidgetItem([""])
-        placeholder.setData(0, Qt.ItemDataRole.UserRole, None)
-        parent_item.addChild(placeholder)
+        """重建目录树（委托 FileTreeManager）。"""
+        self._tree_mgr.init_tree()
 
     def __onTreeItemExpanded(self, item):
         self.__ensureTreeChildrenLoaded(item)
 
     def __ensureTreeChildrenLoaded(self, item):
-        if self.is_loading_tree:
-            return
+        """确保节点子文件夹已加载（懒加载，后台线程）。"""
+        self._tree_mgr.ensure_loaded(item, self.__loadTreeChildren)
 
-        loaded = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        dir_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if loaded or dir_id is None:
-            return
-
-        # 标记加载中并清空占位，后台加载子文件夹（避免主线程网络阻塞）
-        self.is_loading_tree = True
-        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
-        item.takeChildren()
-
+    def __loadTreeChildren(self, dir_id, item):
+        """发起后台加载指定目录的子文件夹列表。"""
         signals = _FolderListSignals()
-        task = LoadFolderListTask(self.pan, int(dir_id), signals)
+        task = LoadFolderListTask(self.pan, dir_id, signals)
         connect_tracked(
             self, signals, "finished",
             lambda did, folders, err, it=item: self.__onTreeFolderLoaded(
@@ -401,28 +356,7 @@ class FileInterface(QWidget):
 
     def __onTreeFolderLoaded(self, item, dir_id, folders, error):
         """目录树子文件夹加载完成回调（主线程）。"""
-        self.is_loading_tree = False
-        try:
-            if error or not item.treeWidget():
-                return
-            if item.data(0, Qt.ItemDataRole.UserRole) != dir_id:
-                return  # 用户已切换目录，丢弃过期结果
-        except RuntimeError:
-            return  # 控件已销毁
-
-        for folder in folders:
-            if int(folder.get("Type", 0)) != 1:
-                continue
-
-            child = QTreeWidgetItem([folder.get("FileName", "")])
-            child.setIcon(0, _icon(FIF.FOLDER))
-            child_id = int(folder.get("FileId", 0))
-            child.setData(0, Qt.ItemDataRole.UserRole, child_id)
-            child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
-            item.addChild(child)
-            self._tree_item_cache[child_id] = child
-
-            self.__addPlaceholder(child)
+        self._tree_mgr.on_folder_loaded(item, dir_id, folders, error)
 
     def __onTreeItemClicked(self, item):
         dir_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -432,23 +366,10 @@ class FileInterface(QWidget):
         self.__ensureTreeChildrenLoaded(item)
 
         self.current_dir_id = int(dir_id)
-        self.path_stack = self.__buildPathStackFromTree(item)
+        self.path_stack = self._tree_mgr.build_path_stack(item)
         self.__loadCurrentList()
         self.__updateBreadcrumb()
         self.__updateBackButtonState()
-
-    @staticmethod
-    def __buildPathStackFromTree(item):
-        stack = []
-        current = item
-        while current is not None:
-            name = current.text(0)
-            dir_id = int(current.data(0, Qt.ItemDataRole.UserRole) or 0)
-            stack.append((dir_id, name))
-            current = current.parent()
-
-        stack.reverse()
-        return stack if stack else [(0, tr("file.root_dir", "根目录"))]
 
     def __goParentDir(self):
         if len(self.path_stack) <= 1:
@@ -558,25 +479,8 @@ class FileInterface(QWidget):
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
     def __findTreeItemById(self, dir_id):
-        """按目录 ID 查找树节点（优先使用缓存，失效时全树扫描兜底）。"""
-        cached = self._tree_item_cache.get(dir_id)
-        if cached is not None:
-            try:
-                if cached.treeWidget() is self.folderTree:
-                    return cached
-            except RuntimeError:
-                # 节点已被销毁，缓存失效
-                self._tree_item_cache.pop(dir_id, None)
-
-        iterator = QTreeWidgetItemIterator(self.folderTree)
-        while iterator.value():
-            item = iterator.value()
-            if item is not None and item.data(0, Qt.ItemDataRole.UserRole) == dir_id:
-                self._tree_item_cache[dir_id] = item
-                return item
-            iterator += 1
-
-        return None
+        """按目录 ID 查找树节点（委托 FileTreeManager）。"""
+        return self._tree_mgr.find_item(dir_id)
 
     def __setErrorBreadcrumb(self, message):
         self.is_updating_breadcrumb = True
@@ -679,77 +583,11 @@ class FileInterface(QWidget):
                 InfoBar.error(title=tr("file.msg_create_failed", "创建失败"), content=tr("file.msg_create_folder_failed", "创建文件夹失败"), parent=self)
 
     def __updateFileListUI(self, file_items, update_cache=True):
-        """更新文件列表UI - 批量操作，避免大量文件时逐行重绘卡死
+        """更新文件列表UI（委托 FileTableManager）。
 
-        update_cache=False 时不会覆盖 _current_file_items，
-        用于搜索过滤场景，避免过滤结果覆盖完整列表缓存。
+        update_cache=False 时不覆盖完整列表缓存，用于搜索过滤场景。
         """
-        if update_cache:
-            self._current_file_items = file_items
-            # 构建 file_id -> 文件详情 索引，供下载/预览/分享 O(1) 查找
-            self._file_index_by_id = {
-                str(item.get("FileId")): item for item in file_items
-            }
-
-        # 暂停重绘和信号，批量更新完成后再一次性刷新
-        self.fileTable.setUpdatesEnabled(False)
-        self.fileTable.blockSignals(True)
-        try:
-            count = len(file_items)
-            self.fileTable.setRowCount(count)
-
-            folder_icon = _icon(FIF.FOLDER)
-            file_icon = _icon(FIF.DOCUMENT)
-
-            for row, file_item in enumerate(file_items):
-                file_name = file_item.get("FileName", "")
-                file_type = int(file_item.get("Type", 0))
-                file_size = int(file_item.get("Size", 0) or 0)
-                file_id = int(file_item.get("FileId", 0) or 0)
-
-                type_text = tr("file.type_folder", "文件夹") if file_type == 1 else tr("file.type_file", "文件")
-                size_text = format_file_size(file_size)
-
-                # 复用已有的 QTableWidgetItem，没有才新建
-                name_item = self.fileTable.item(row, 0)
-                if name_item is None:
-                    name_item = QTableWidgetItem()
-                    self.fileTable.setItem(row, 0, name_item)
-                name_item.setText(file_name)
-                name_item.setData(Qt.ItemDataRole.UserRole, file_id)
-                name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
-                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
-
-                type_item = self.fileTable.item(row, 1)
-                if type_item is None:
-                    type_item = QTableWidgetItem()
-                    self.fileTable.setItem(row, 1, type_item)
-                type_item.setText(type_text)
-
-                size_item = self.fileTable.item(row, 2)
-                if size_item is None:
-                    size_item = QTableWidgetItem()
-                    self.fileTable.setItem(row, 2, size_item)
-                size_item.setText(size_text)
-
-                # 日期列：优先使用 UpdateAt，回退到 CreateAt
-                update_at = file_item.get("UpdateAt", file_item.get("updateAt", 0))
-                create_at = file_item.get("CreateAt", file_item.get("createAt", 0))
-                ts = update_at or create_at or 0
-                date_text = ""
-                if ts:
-                    try:
-                        date_text = datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
-                    except (ValueError, OSError):
-                        date_text = ""
-                date_item = self.fileTable.item(row, 3)
-                if date_item is None:
-                    date_item = QTableWidgetItem()
-                    self.fileTable.setItem(row, 3, date_item)
-                date_item.setText(date_text)
-        finally:
-            self.fileTable.blockSignals(False)
-            self.fileTable.setUpdatesEnabled(True)
+        self._table_mgr.set_items(file_items, update_cache=update_cache)
 
     def __onLoadListFinished(self, file_items, error):
         """加载文件列表完成后的回调 - 只负责UI更新"""
@@ -769,18 +607,8 @@ class FileInterface(QWidget):
             self.__updateListState(len(sorted_items))
 
     def __updateListState(self, count):
-        """更新表格空状态/加载提示（覆盖层）。"""
-        if count > 0:
-            self.listStateLabel.hide()
-            return
-        if self._search_text:
-            self.listStateLabel.setText(tr("file.state_no_result", "没有匹配的文件"))
-        elif self._loading:
-            self.listStateLabel.setText(tr("file.state_loading", "加载中..."))
-        else:
-            self.listStateLabel.setText(tr("file.state_empty", "此文件夹为空"))
-        self.listStateLabel.setGeometry(self.listFrame.rect())
-        self.listStateLabel.show()
+        """更新表格空状态/加载提示（委托 FileTableManager）。"""
+        self._table_mgr.update_state(count, self._loading)
 
     def resizeEvent(self, event):
         """保持表格状态提示覆盖层与列表区域同步。"""
@@ -791,125 +619,48 @@ class FileInterface(QWidget):
 
     def __onSearchTextChanged(self, text):
         """搜索文本变化时启动防抖，清空时立即恢复"""
-        self._search_text = text.strip().lower()
-        if not self._search_text:
+        self._table_mgr.search_text = text.strip().lower()
+        if not self._table_mgr.search_text:
             self._search_timer.stop()
             self.__applySearchFilter()
         else:
             self._search_timer.start()
 
     def __applySearchFilter(self):
-        """根据搜索文本过滤当前文件列表"""
-        if not hasattr(self, "_current_file_items") or not self._current_file_items:
+        """根据搜索文本过滤当前文件列表（委托 FileTableManager）。"""
+        if not self._table_mgr.current_items:
             return
-
-        if not self._search_text:
-            # 无搜索条件，恢复完整列表
-            sorted_items = self.__sortFileList(self._current_file_items)
-            self.__updateFileListUI(sorted_items)
-            self.__updateListState(len(sorted_items))
-            return
-
-        # 按搜索文本过滤（不覆盖 _current_file_items 缓存，确保清空搜索后能恢复完整列表）
-        filtered = [
-            item for item in self._current_file_items
-            if self._search_text in item.get("FileName", "").lower()
-        ]
-        sorted_items = self.__sortFileList(filtered)
-        self.__updateFileListUI(sorted_items, update_cache=False)
-        self.__updateListState(len(sorted_items))
+        self._table_mgr.apply_search(self._loading)
 
     def __sortFileList(self, file_items):
-        """对文件列表进行排序，文件夹始终在前"""
-        folders = []
-        files = []
-
-        for item in file_items:
-            file_type = int(item.get("Type", 0))
-            if file_type == 1:
-                folders.append(item)
-            else:
-                files.append(item)
-
-        if self.sort_mode == 0:  # 按名称排序
-            key_func = lambda x: x.get("FileName", "").lower()
-            folders.sort(key=key_func, reverse=not self.sort_ascending)
-            files.sort(key=key_func, reverse=not self.sort_ascending)
-        elif self.sort_mode == 2:  # 按大小排序
-            reverse = not self.sort_ascending
-            folders.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
-            files.sort(key=lambda x: int(x.get("Size", 0) or 0), reverse=reverse)
-        elif self.sort_mode == 3:  # 按日期排序
-            reverse = not self.sort_ascending
-            def _date_key(item):
-                ts = item.get("UpdateAt", item.get("updateAt", 0)) or item.get("CreateAt", item.get("createAt", 0)) or 0
-                return int(ts)
-            folders.sort(key=_date_key, reverse=reverse)
-            files.sort(key=_date_key, reverse=reverse)
-
-        return folders + files
+        """对文件列表进行排序，文件夹始终在前（委托 FileTableManager）。"""
+        return self._table_mgr.sort(file_items)
 
     def __onHeaderSortIndicatorChanged(self, logicalIndex, order):
         """列头排序指示器改变时的处理（纯客户端排序，不请求服务器）。"""
         if logicalIndex not in [0, 2, 3]:
             return
 
-        clicked_same_column = logicalIndex == self.sort_mode
-        self.sort_mode = logicalIndex
+        mgr = self._table_mgr
+        clicked_same_column = logicalIndex == mgr.sort_mode
+        mgr.sort_mode = logicalIndex
 
         if clicked_same_column:
             # 点击同一列：切换方向
-            self.sort_ascending = not self.sort_ascending
+            mgr.sort_ascending = not mgr.sort_ascending
         else:
             # 切换到新列：名称默认升序，大小/日期默认降序
-            self.sort_ascending = logicalIndex == 0
+            mgr.sort_ascending = logicalIndex == 0
 
         # 客户端重新排序，不重新请求服务器
-        if self._search_text:
-            self.__applySearchFilter()
+        if mgr.search_text:
+            mgr.apply_search(self._loading)
         else:
-            sorted_items = self.__sortFileList(self._current_file_items)
-            self.__updateFileListUI(sorted_items)
+            mgr.set_items(mgr.sort(mgr.current_items))
 
     def __updateTreeUI(self, folder_items):
-        """更新树结构UI - 轻量级操作"""
-        # 简单刷新当前目录下的子节点
-        current_item = self.__findTreeItemById(self.current_dir_id)
-        if current_item:
-            # 移除占位符
-            for i in range(current_item.childCount()):
-                child = current_item.child(i)
-                if child.data(0, Qt.ItemDataRole.UserRole) is None:
-                    current_item.removeChild(child)
-                    break
-
-            # 更新子节点
-            existing_items = {}
-            for i in range(current_item.childCount()):
-                child = current_item.child(i)
-                file_id = child.data(0, Qt.ItemDataRole.UserRole)
-                if file_id:
-                    existing_items[file_id] = child
-                    self._tree_item_cache[file_id] = child
-
-            # 添加新的文件夹
-            for folder in folder_items:
-                file_id = int(folder.get("FileId", 0))
-                file_name = folder.get("FileName", "")
-
-                if file_id in existing_items:
-                    # 已存在，不需要添加
-                    continue
-
-                child = QTreeWidgetItem([file_name])
-                child.setIcon(0, _icon(FIF.FOLDER))
-                child.setData(0, Qt.ItemDataRole.UserRole, file_id)
-                child.setData(0, Qt.ItemDataRole.UserRole + 1, False)
-                current_item.addChild(child)
-                self._tree_item_cache[file_id] = child
-
-                # 添加占位符
-                self.__addPlaceholder(child)
+        """更新树结构UI（委托 FileTreeManager，轻量级操作）。"""
+        self._tree_mgr.update_folders(self.current_dir_id, folder_items)
 
     def __uploadFile(self):
         """上传文件"""
@@ -1038,7 +789,7 @@ class FileInterface(QWidget):
             force: 是否强制从服务器获取（跳过缓存）
         """
         self.searchBox.clear()
-        self._search_text = ""
+        self._table_mgr.search_text = ""
         self.__loadCurrentList(force_refresh=force)
         self.load_and_update_storage_info()
 
@@ -1476,7 +1227,7 @@ class FileInterface(QWidget):
         优先使用 O(1) 索引（当前目录），
         回退到 pan.list（历史缓存）。
         """
-        item = self._file_index_by_id.get(str(file_id))
+        item = self._table_mgr.find_by_id(file_id)
         if item is not None:
             return item
         # 回退到 pan.list
