@@ -438,20 +438,40 @@ class TransferInterface(QWidget):
         )
 
     def __update_task_progress(self, task, progress):
-        """更新任务进度"""
+        """更新任务进度（只刷新变更行，避免遍历整表）。"""
         task.progress = progress
-        if isinstance(task, UploadTask):
-            self.__update_upload_table()
-        elif isinstance(task, DownloadTask):
-            self.__update_download_table()
+        self.__update_single_task_row(task)
 
     def __update_task_status(self, task, status):
-        """更新任务状态"""
+        """更新任务状态（只刷新变更行）。"""
         task.status = status
+        self.__update_single_task_row(task)
+
+    def __update_single_task_row(self, task):
+        """仅更新任务所在行。
+
+        进度/状态信号高频触发（约 10 次/秒/任务），若每次遍历全部任务
+        并逐行比对状态，任务数量多时会放大 UI 开销。这里直接定位
+        任务在列表中的行号，只重绘该行。
+        """
         if isinstance(task, UploadTask):
-            self.__update_upload_table()
+            table = self.uploadTable
+            tasks = self.upload_tasks
+            task_type = "upload"
         elif isinstance(task, DownloadTask):
-            self.__update_download_table()
+            table = self.downloadTable
+            tasks = self.download_tasks
+            task_type = "download"
+        else:
+            return
+
+        try:
+            row = tasks.index(task)
+        except ValueError:
+            return
+        if row < 0 or row >= table.rowCount():
+            return
+        self.__update_row(table, task, row, task_type)
 
     def __on_thread_finished(self, task, thread, task_type):
         """线程完成回调：更新 UI、清理线程资源、启动下一个等待任务。"""
@@ -755,145 +775,151 @@ class TransferInterface(QWidget):
     def __update_table(self, table, tasks, task_type):
         """更新传输表格（上传/下载共用）。
 
-        只在行数变化时增删行；逐行对比上次渲染状态，
+        只在行数变化时增删行；逐行调用 __update_row，
         未变化的行完全跳过，避免高频进度信号下重复 setText/setValue。
         """
         if table.rowCount() != len(tasks):
             table.setRowCount(len(tasks))
 
         for row, task in enumerate(tasks):
-            status_item = table.item(row, 5)
-            last_state = (
-                status_item.data(Qt.ItemDataRole.UserRole) if status_item else None
+            self.__update_row(table, task, row, task_type)
+
+    def __update_row(self, table, task, row, task_type):
+        """更新表格中单行任务的状态展示。
+
+        渲染状态 = (状态, 进度, 大小, 名称)，任一变化才更新该行。
+        """
+        status_item = table.item(row, 5)
+        last_state = (
+            status_item.data(Qt.ItemDataRole.UserRole) if status_item else None
+        )
+        state = (task.status, task.progress, task.file_size, task.file_name)
+
+        if state == last_state:
+            return
+
+        # ---- 文件名 ----
+        name_item = table.item(row, 0)
+        if not name_item:
+            name_item = QTableWidgetItem(task.file_name)
+            table.setItem(row, 0, name_item)
+        else:
+            name_item.setText(task.file_name)
+
+        # ---- 优先级下拉 ----
+        priority_combo = table.cellWidget(row, 1)
+        if not priority_combo:
+            priority_combo = QComboBox()
+            priority_combo.addItems(
+                [
+                    tr("transfer.priority_low", "低"),
+                    tr("transfer.priority_normal", "普通"),
+                    tr("transfer.priority_high", "高"),
+                ]
             )
-            # 渲染状态 = (状态, 进度, 大小, 名称)，任一变化才更新该行
-            state = (task.status, task.progress, task.file_size, task.file_name)
-
-            if state == last_state:
-                continue
-
-            # ---- 文件名 ----
-            name_item = table.item(row, 0)
-            if not name_item:
-                name_item = QTableWidgetItem(task.file_name)
-                table.setItem(row, 0, name_item)
-            else:
-                name_item.setText(task.file_name)
-
-            # ---- 优先级下拉 ----
-            priority_combo = table.cellWidget(row, 1)
-            if not priority_combo:
-                priority_combo = QComboBox()
-                priority_combo.addItems(
-                    [
-                        tr("transfer.priority_low", "低"),
-                        tr("transfer.priority_normal", "普通"),
-                        tr("transfer.priority_high", "高"),
-                    ]
+            priority_combo.setFixedWidth(72)
+            priority_combo.setToolTip(
+                tr("transfer.priority_tip", "设置任务优先级（高优先级先执行）")
+            )
+            priority_combo.currentIndexChanged.connect(
+                lambda idx, t=task, tt=task_type: self.__change_priority(
+                    t, tt, idx
                 )
-                priority_combo.setFixedWidth(72)
-                priority_combo.setToolTip(
-                    tr("transfer.priority_tip", "设置任务优先级（高优先级先执行）")
+            )
+            table.setCellWidget(row, 1, priority_combo)
+        priority_combo.blockSignals(True)
+        priority_combo.setCurrentIndex(task.priority)
+        priority_combo.blockSignals(False)
+
+        # ---- 文件大小 ----
+        size_item = table.item(row, 2)
+        if not size_item:
+            size_item = QTableWidgetItem(format_file_size(task.file_size))
+            table.setItem(row, 2, size_item)
+        else:
+            size_item.setText(format_file_size(task.file_size))
+
+        # ---- 进度条 ----
+        progress_bar = table.cellWidget(row, 3)
+        if not progress_bar:
+            progress_bar = ProgressBar()
+            progress_bar.setTextVisible(False)
+            table.setCellWidget(row, 3, progress_bar)
+        progress_bar.setValue(task.progress)
+
+        # ---- 百分比 ----
+        percent_item = table.item(row, 4)
+        if not percent_item:
+            percent_item = QTableWidgetItem(f"{task.progress}%")
+            percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(row, 4, percent_item)
+        else:
+            percent_item.setText(f"{task.progress}%")
+
+        # ---- 状态 ----
+        if not status_item:
+            status_item = QTableWidgetItem(task.status)
+            table.setItem(row, 5, status_item)
+        else:
+            status_item.setText(task.status)
+
+        # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
+        old_action = table.cellWidget(row, 6)
+        prev_status = last_state[0] if last_state else None
+        status_item.setData(Qt.ItemDataRole.UserRole, state)
+
+        if old_action is None or prev_status != task.status:
+            if old_action is not None:
+                table.removeCellWidget(row, 6)
+                old_action.deleteLater()
+
+            action_layout = QHBoxLayout()
+            action_layout.setContentsMargins(0, 0, 0, 0)
+
+            # 暂停/恢复按钮
+            if task.status in (
+                tr("transfer.status_uploading", "上传中"),
+                tr("transfer.status_downloading", "下载中"),
+            ):
+                pause_btn = PushButton(
+                    FIF.PAUSE.icon(), tr("transfer.btn_pause", "暂停"), table
                 )
-                priority_combo.currentIndexChanged.connect(
-                    lambda idx, t=task, tt=task_type: self.__change_priority(
-                        t, tt, idx
-                    )
+                pause_btn.setFixedSize(64, 24)
+                pause_btn.clicked.connect(
+                    lambda _, t=task, tt=task_type: self.__pause_task(t, tt)
                 )
-                table.setCellWidget(row, 1, priority_combo)
-            priority_combo.blockSignals(True)
-            priority_combo.setCurrentIndex(task.priority)
-            priority_combo.blockSignals(False)
-
-            # ---- 文件大小 ----
-            size_item = table.item(row, 2)
-            if not size_item:
-                size_item = QTableWidgetItem(format_file_size(task.file_size))
-                table.setItem(row, 2, size_item)
-            else:
-                size_item.setText(format_file_size(task.file_size))
-
-            # ---- 进度条 ----
-            progress_bar = table.cellWidget(row, 3)
-            if not progress_bar:
-                progress_bar = ProgressBar()
-                progress_bar.setTextVisible(False)
-                table.setCellWidget(row, 3, progress_bar)
-            progress_bar.setValue(task.progress)
-
-            # ---- 百分比 ----
-            percent_item = table.item(row, 4)
-            if not percent_item:
-                percent_item = QTableWidgetItem(f"{task.progress}%")
-                percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(row, 4, percent_item)
-            else:
-                percent_item.setText(f"{task.progress}%")
-
-            # ---- 状态 ----
-            if not status_item:
-                status_item = QTableWidgetItem(task.status)
-                table.setItem(row, 5, status_item)
-            else:
-                status_item.setText(task.status)
-
-            # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
-            old_action = table.cellWidget(row, 6)
-            prev_status = last_state[0] if last_state else None
-            status_item.setData(Qt.ItemDataRole.UserRole, state)
-
-            if old_action is None or prev_status != task.status:
-                if old_action is not None:
-                    table.removeCellWidget(row, 6)
-                    old_action.deleteLater()
-
-                action_layout = QHBoxLayout()
-                action_layout.setContentsMargins(0, 0, 0, 0)
-
-                # 暂停/恢复按钮
-                if task.status in (
-                    tr("transfer.status_uploading", "上传中"),
-                    tr("transfer.status_downloading", "下载中"),
-                ):
-                    pause_btn = PushButton(
-                        FIF.PAUSE.icon(), tr("transfer.btn_pause", "暂停"), table
-                    )
-                    pause_btn.setFixedSize(64, 24)
-                    pause_btn.clicked.connect(
-                        lambda _, t=task, tt=task_type: self.__pause_task(t, tt)
-                    )
-                    action_layout.addWidget(pause_btn)
-                elif task.status == tr("transfer.status_paused", "已暂停"):
-                    resume_btn = PushButton(
-                        FIF.PLAY.icon(), tr("transfer.btn_resume", "继续"), table
-                    )
-                    resume_btn.setFixedSize(64, 24)
-                    resume_btn.clicked.connect(
-                        lambda _, t=task, tt=task_type: self.__resume_task(t, tt)
-                    )
-                    action_layout.addWidget(resume_btn)
-                elif task.status == tr("transfer.status_failed", "失败"):
-                    # 失败任务支持重试（上传/下载均走断点续传）
-                    retry_btn = PushButton(
-                        FIF.SYNC.icon(), tr("transfer.btn_retry", "重试"), table
-                    )
-                    retry_btn.setFixedSize(64, 24)
-                    retry_btn.clicked.connect(
-                        lambda _, t=task, tt=task_type: self.__retry_task(t, tt)
-                    )
-                    action_layout.addWidget(retry_btn)
-
-                delete_button = PushButton(
-                    FIF.DELETE.icon(), tr("transfer.btn_delete", "删除"), table
+                action_layout.addWidget(pause_btn)
+            elif task.status == tr("transfer.status_paused", "已暂停"):
+                resume_btn = PushButton(
+                    FIF.PLAY.icon(), tr("transfer.btn_resume", "继续"), table
                 )
-                delete_button.setFixedSize(64, 24)
-                delete_button.clicked.connect(
-                    lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
+                resume_btn.setFixedSize(64, 24)
+                resume_btn.clicked.connect(
+                    lambda _, t=task, tt=task_type: self.__resume_task(t, tt)
                 )
-                action_layout.addWidget(delete_button)
-                action_widget = QWidget()
-                action_widget.setLayout(action_layout)
-                table.setCellWidget(row, 6, action_widget)
+                action_layout.addWidget(resume_btn)
+            elif task.status == tr("transfer.status_failed", "失败"):
+                # 失败任务支持重试（上传/下载均走断点续传）
+                retry_btn = PushButton(
+                    FIF.SYNC.icon(), tr("transfer.btn_retry", "重试"), table
+                )
+                retry_btn.setFixedSize(64, 24)
+                retry_btn.clicked.connect(
+                    lambda _, t=task, tt=task_type: self.__retry_task(t, tt)
+                )
+                action_layout.addWidget(retry_btn)
+
+            delete_button = PushButton(
+                FIF.DELETE.icon(), tr("transfer.btn_delete", "删除"), table
+            )
+            delete_button.setFixedSize(64, 24)
+            delete_button.clicked.connect(
+                lambda _, t=task, tt=task_type: self.__remove_task(t, tt)
+            )
+            action_layout.addWidget(delete_button)
+            action_widget = QWidget()
+            action_widget.setLayout(action_layout)
+            table.setCellWidget(row, 6, action_widget)
 
     def __update_upload_table(self):
         self.__update_table(self.uploadTable, self.upload_tasks, "upload")
