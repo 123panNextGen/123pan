@@ -13,7 +13,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.app.api.session import DownloadCancelledError, NetSession
 from src.app.service.upload_service import UploadService

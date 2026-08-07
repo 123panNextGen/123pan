@@ -13,8 +13,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -38,9 +38,9 @@ logger = get_logger(__name__)
 class _DownloadPreviewThread(QThread):
     """后台线程：下载文件到临时目录。"""
 
-    progress = pyqtSignal(int)  # 0-100
-    finished = pyqtSignal(str, str)  # (local_path, error_message)
-    status = pyqtSignal(str)
+    progress = Signal(int)  # 0-100
+    finished = Signal(str, str)  # (local_path, error_message)
+    status = Signal(str)
 
     def __init__(self, pan, file_info):
         super().__init__()
@@ -256,7 +256,7 @@ class PreviewDialog(QDialog):
 
     def _auto_resize(self):
         """根据屏幕大小自动调整窗口。"""
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
             screen_size = screen.availableSize()

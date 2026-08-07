@@ -11,10 +11,10 @@ the Free Software Foundation, either version 3 of the License, or
 import io
 
 import qrcode
-from PyQt6 import sip
-from PyQt6.QtCore import Qt, QThreadPool, QTimer, pyqtSignal
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6 import shiboken6
+from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox
 
 from ..common.i18n import tr
@@ -32,7 +32,7 @@ _MAX_QR_REFRESH = 5
 def _widget_alive(widget) -> bool:
     """检查 Qt 控件是否仍有效（回调可能在控件销毁后触发）。"""
     try:
-        return not sip.isdeleted(widget)
+        return shiboken6.isValid(widget)
     except Exception:
         return False
 
@@ -40,7 +40,7 @@ def _widget_alive(widget) -> bool:
 class QRLoginPage(QWidget):
     """二维码登录页面，展示二维码、轮询状态、处理登录成功。"""
 
-    loginSuccess = pyqtSignal(object)  # 发射 Pan123 对象
+    loginSuccess = Signal(object)  # 发射 Pan123 对象
 
     def __init__(self, parent=None):
         super().__init__(parent)

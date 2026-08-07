@@ -9,7 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import pytest
-from PyQt6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication
 
 from src.app.tasks.sync_manager import SyncManager
 

@@ -13,8 +13,8 @@ the Free Software Foundation, either version 3 of the License, or
 import platform
 import sys
 
-from PyQt6 import QtWidgets
-from PyQt6.QtCore import Qt
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
 from qfluentwidgets import (
     FluentTranslator,
     Theme,
@@ -56,7 +56,7 @@ def main():
 
     # 限制 Qt 全局像素图缓存（图标/图片缩放等），降低内存占用
     # 默认 20MB，图标通常很小，10MB 足够且可避免缓存无限膨胀
-    from PyQt6.QtGui import QPixmapCache
+    from PySide6.QtGui import QPixmapCache
 
     QPixmapCache.setCacheLimit(10 * 1024)  # 单位 KB
     logger.debug("QPixmapCache 限制为 10MB")

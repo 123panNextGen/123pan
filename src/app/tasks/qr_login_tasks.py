@@ -8,8 +8,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6 import sip
-from PyQt6.QtCore import QRunnable
+from PySide6 import shiboken6
+from PySide6.QtCore import QRunnable
 
 from ..common.api import Pan123
 from ..common.i18n import tr
@@ -26,7 +26,7 @@ def _emit_safe(signals, signal_name, *args):
     避免在工作线程中抛出 "wrapped C/C++ object ... deleted"。
     """
     try:
-        if not sip.isdeleted(signals):
+        if shiboken6.isValid(signals):
             getattr(signals, signal_name).emit(*args)
     except RuntimeError:
         pass

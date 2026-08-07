@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import QRunnable
+from PySide6.QtCore import QRunnable
 
 from ..common.api import Pan123
 from ..common.config import ConfigManager

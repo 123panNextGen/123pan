@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from datetime import datetime, timezone
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..common.log import get_logger
 from ..common.sync_store import SyncStore
@@ -37,11 +37,11 @@ class SyncManager(QObject):
         jobFinished        -- 某任务运行结束
     """
 
-    jobsChanged = pyqtSignal()
-    jobStatusChanged = pyqtSignal(int, str)
-    jobFileProgress = pyqtSignal(int, str, int, int)
-    jobFileDone = pyqtSignal(int, str, bool, str)
-    jobFinished = pyqtSignal(int, bool, str, dict)
+    jobsChanged = Signal()
+    jobStatusChanged = Signal(int, str)
+    jobFileProgress = Signal(int, str, int, int)
+    jobFileDone = Signal(int, str, bool, str)
+    jobFinished = Signal(int, bool, str, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)

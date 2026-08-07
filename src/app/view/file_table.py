@@ -10,8 +10,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from datetime import datetime
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QTableWidgetItem
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QTableWidgetItem
 
 from qfluentwidgets import FluentIcon as FIF
 

@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
@@ -26,7 +26,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from PyQt6.QtCore import QThreadPool, Qt
+from PySide6.QtCore import QThreadPool, Qt
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size

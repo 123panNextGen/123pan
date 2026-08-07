@@ -8,8 +8,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, QThreadPool
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,

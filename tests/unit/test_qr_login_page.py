@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.app.view.qr_login_page import QRLoginPage, _MAX_QR_REFRESH
 

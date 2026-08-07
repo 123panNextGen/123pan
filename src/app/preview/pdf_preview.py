@@ -11,8 +11,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -26,13 +26,13 @@ logger = get_logger(__name__)
 
 # 尝试导入 QtPdfWidgets 模块
 try:
-    from PyQt6.QtPdfWidgets import QPdfView
-    from PyQt6.QtPdf import QPdfDocument
+    from PySide6.QtPdfWidgets import QPdfView
+    from PySide6.QtPdf import QPdfDocument
 
     _HAS_PDF = True
 except ImportError:
     _HAS_PDF = False
-    logger.warning("PyQt6.QtPdfWidgets 不可用，PDF 预览将被禁用")
+    logger.warning("PySide6.QtPdfWidgets 不可用，PDF 预览将被禁用")
 
 
 class PdfPreviewWidget(QWidget):
@@ -48,7 +48,7 @@ class PdfPreviewWidget(QWidget):
         self._pdf_view = None
 
         if not _HAS_PDF:
-            self._show_error("PyQt6 PDF 模块不可用，无法预览 PDF。")
+            self._show_error("PySide6 PDF 模块不可用，无法预览 PDF。")
             return
 
         self._setup_ui()

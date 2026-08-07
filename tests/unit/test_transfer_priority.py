@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.app.common.i18n import tr
 from src.app.tasks.transfer_tasks import TransferTask, UploadTask

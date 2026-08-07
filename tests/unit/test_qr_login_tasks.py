@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from unittest.mock import MagicMock, patch
 
-from PyQt6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication
 
 from src.app.api.model import ApiCode, ApiReturnModel, CloudUserInfoModel
 from src.app.tasks.qr_login_tasks import (

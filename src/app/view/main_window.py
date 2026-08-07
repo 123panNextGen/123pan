@@ -8,8 +8,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import QThreadPool, QTimer
-from PyQt6.QtWidgets import QDialog, QMenu, QSystemTrayIcon
+from PySide6.QtCore import QThreadPool, QTimer
+from PySide6.QtWidgets import QDialog, QMenu, QSystemTrayIcon
 
 import sys
 
@@ -119,7 +119,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.file_interface, FIF.FOLDER, tr("nav.file", "文件"))
 
         # 懒加载页面：仅注册导航项，首次点击才创建界面
-        # NavigationWidget.clicked 是 pyqtSignal(bool)，onClick 会被传入 True，
+        # NavigationWidget.clicked 是 Signal(bool)，onClick 会被传入 True，
         # 因此 lambda 需接收该参数（checked），避免覆盖 rk=route_key 默认值。
         for route_key, (icon, text, position) in self._lazy_specs.items():
             self.navigationInterface.addItem(
