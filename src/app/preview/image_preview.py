@@ -11,8 +11,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QRectF, QSize, QTimer
-from PyQt6.QtGui import (
+from PySide6.QtCore import Qt, QRectF, QSize, QTimer
+from PySide6.QtGui import (
     QPixmap,
     QImageReader,
     QMovie,
@@ -20,7 +20,7 @@ from PyQt6.QtGui import (
     QResizeEvent,
     QWheelEvent,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,

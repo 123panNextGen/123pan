@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from datetime import datetime, timezone
 
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread
 
 from ..common.log import get_logger
 from ..common.sync_store import SyncStore

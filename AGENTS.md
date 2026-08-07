@@ -2,9 +2,9 @@
 
 ## 项目概览
 
-123pan 是一款基于 PyQt6 的 123 云盘第三方客户端，通过模拟安卓协议绕过官方 PC 端的下载流量限制。
+123pan 是一款基于 PySide6 的 123 云盘第三方客户端，通过模拟安卓协议绕过官方 PC 端的下载流量限制。
 
-- Python ≥3.12，PyQt6 + qfluentwidgets
+- Python ≥3.12，PySide6 + qfluentwidgets
 - 构建/依赖管理：[uv](https://github.com/astral-sh/uv)
 - 分支策略：功能开发 → `feature/xxx` → 合并到 `fluent-dev`
 
@@ -53,7 +53,7 @@ tests/
 | **Service** | `service/`             | 业务逻辑编排。无 UI 依赖            |
 | **Facade**  | `common/api.py:Pan123` | 向后兼容门面，转发到 Service        |
 | **Tasks**   | `tasks/`               | QRunnable 后台任务 + Qt 信号        |
-| **View**    | `view/`                | PyQt6 界面。不直接访问 `NetSession` |
+| **View**    | `view/`                | PySide6 界面。不直接访问 `NetSession` |
 
 ### 关键约束
 

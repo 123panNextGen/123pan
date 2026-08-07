@@ -10,9 +10,9 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThreadPool, QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThreadPool, QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
     QWidget,
     QLabel,
     QFileDialog,
@@ -107,7 +107,7 @@ class _OpacityCard(SettingCard):
 
     def __init__(self, icon, title, content, value=100, parent=None):
         super().__init__(icon, title, content, parent)
-        from PyQt6.QtWidgets import QSlider
+        from PySide6.QtWidgets import QSlider
 
         self.slider = QSlider(Qt.Orientation.Horizontal, self)
         self.slider.setRange(30, 100)

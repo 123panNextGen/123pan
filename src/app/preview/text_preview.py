@@ -10,8 +10,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import (
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QPlainTextEdit,
@@ -142,7 +142,7 @@ class TextPreviewWidget(QWidget):
                 while chunk:
                     self._editor.insertPlainText(chunk)
                     # 让 Qt 处理事件循环
-                    from PyQt6.QtWidgets import QApplication
+                    from PySide6.QtWidgets import QApplication
                     QApplication.processEvents()
                     chunk = f.read(_CHUNK_SIZE)
         except Exception as e:

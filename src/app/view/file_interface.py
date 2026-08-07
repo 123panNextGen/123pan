@@ -10,11 +10,11 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtCore import QThreadPool
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QShortcut, QKeySequence
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QShortcut, QKeySequence
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QDialog,
 )
-from PyQt6.QtGui import QAction
+from PySide6.QtGui import QAction
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (

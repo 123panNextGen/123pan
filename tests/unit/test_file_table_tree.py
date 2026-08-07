@@ -9,7 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QLabel, QTreeWidget
+from PySide6.QtWidgets import QApplication, QLabel, QTreeWidget
 
 from qfluentwidgets import TableWidget
 

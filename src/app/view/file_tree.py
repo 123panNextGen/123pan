@@ -8,8 +8,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QTreeWidgetItem, QTreeWidgetItemIterator
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QTreeWidgetItem, QTreeWidgetItemIterator
 
 from qfluentwidgets import FluentIcon as FIF
 

@@ -8,7 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QLabel,
@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
 )
 
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (
@@ -294,7 +294,7 @@ class TransferInterface(QWidget):
     @staticmethod
     def __make_empty_label(text, parent):
         """创建表格空状态提示标签。"""
-        from PyQt6.QtWidgets import QLabel
+        from PySide6.QtWidgets import QLabel
 
         label = QLabel(text, parent)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)

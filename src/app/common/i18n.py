@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class TranslationManager(QObject):
     语言切换时发出 language_changed 信号，视图刷新 UI。
     """
 
-    language_changed = pyqtSignal(str)
+    language_changed = Signal(str)
 
     _instance: Optional["TranslationManager"] = None
 

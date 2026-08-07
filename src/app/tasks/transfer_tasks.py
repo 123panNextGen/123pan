@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from ..common.config import ConfigManager
 from ..common.log import get_logger
@@ -66,10 +66,10 @@ class DownloadTask(TransferTask):
 class UploadThread(QThread):
     """上传线程（支持速度限制、暂停/恢复）"""
 
-    progress_updated = pyqtSignal(int)
-    status_updated = pyqtSignal(str)
-    finished = pyqtSignal()
-    error = pyqtSignal(str)
+    progress_updated = Signal(int)
+    status_updated = Signal(str)
+    finished = Signal()
+    error = Signal(str)
 
     def __init__(self, task, pan):
         super().__init__()
@@ -172,10 +172,10 @@ class UploadThread(QThread):
 class DownloadThread(QThread):
     """下载线程（支持多线程分片、速度限制、暂停/恢复）"""
 
-    progress_updated = pyqtSignal(int)
-    status_updated = pyqtSignal(str)
-    finished = pyqtSignal()
-    error = pyqtSignal(str)
+    progress_updated = Signal(int)
+    status_updated = Signal(str)
+    finished = Signal()
+    error = Signal(str)
 
     def __init__(self, task, pan):
         super().__init__()

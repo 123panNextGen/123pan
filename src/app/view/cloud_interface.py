@@ -8,9 +8,9 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, QThreadPool, pyqtSignal
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt, QThreadPool, Signal
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 from qfluentwidgets import (
     FluentIcon as FIF,
@@ -50,8 +50,8 @@ class CloudInterface(ScrollArea):
     """云盘页面"""
 
     # 定义退出登录信号
-    logoutRequested = pyqtSignal()
-    switchAccountRequested = pyqtSignal()
+    logoutRequested = Signal()
+    switchAccountRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
