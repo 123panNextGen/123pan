@@ -15,7 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from src.app.api.session import DownloadCancelledError, NetSession
+from src.app.api.download_engine import DownloadCancelledError
+from src.app.api.session import NetSession
 from src.app.service.upload_service import UploadService
 from src.app.tasks.transfer_tasks import DownloadThread, UploadThread
 
