@@ -26,7 +26,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QThreadPool, Qt
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
