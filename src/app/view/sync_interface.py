@@ -186,10 +186,8 @@ class SyncJobDialog(QDialog):
         if dir_id is None:
             return
         self._remote_dir_id = int(dir_id)
-        self._remote_dir_name = tr("file.root_dir", "根目录") if dir_id == 0 else self._remote_dir_name
-        self.remoteEdit.setText(
-            tr("file.root_dir", "根目录") if dir_id == 0 else f"#{dir_id}"
-        )
+        self._remote_dir_name = dialog.selected_dir_name()
+        self.remoteEdit.setText(self._remote_dir_name)
 
     def _on_ok(self):
         local = self.localEdit.text().strip()

@@ -48,6 +48,7 @@ class FolderSelectDialog(QDialog):
         self._pan = pan
         self._exclude_dir_ids = set(int(x) for x in exclude_dir_ids)
         self._selected_dir_id = None
+        self._selected_dir_name = ""
         # 持有后台任务引用，防止任务/信号被 GC 回收
         self._pending_tasks = []
 
@@ -109,6 +110,7 @@ class FolderSelectDialog(QDialog):
             return
         self.__ensure_loaded(item)
         self._selected_dir_id = int(dir_id)
+        self._selected_dir_name = item.text(0)
         self.btn_ok.setEnabled(True)
 
     def __ensure_loaded(self, item):
@@ -161,3 +163,9 @@ class FolderSelectDialog(QDialog):
     def selected_dir_id(self):
         """返回所选目标目录 ID（0 表示根目录）。"""
         return self._selected_dir_id
+
+    def selected_dir_name(self):
+        """返回所选目录名称（根目录为「根目录」）。"""
+        if self._selected_dir_id == 0:
+            return tr("file.root_dir", "根目录")
+        return self._selected_dir_name or f"#{self._selected_dir_id}"

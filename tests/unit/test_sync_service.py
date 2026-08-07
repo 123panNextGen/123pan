@@ -287,3 +287,42 @@ class TestRunSync:
         cancel = SimpleNamespace(is_cancelled=True)
         ok, stats = svc.run_sync(job, cancel=cancel)
         assert ok is False
+
+    def test_run_sync_remote_failure_aborts(self, tmp_db, tmp_path, mocker):
+        """云端列表获取失败时必须中止，防止误传/误删。"""
+        root = _local_root(tmp_path)
+        (root / "a.txt").write_bytes(b"hello")
+        svc = _make_svc()
+        job = _make_job(local_path=str(root), delete_remote=1)
+
+        # get_dir_by_id 返回失败码（如 token 过期）
+        mocker.patch.object(
+            svc._file, "get_dir_by_id", return_value=(2, [], 0, False, 0)
+        )
+        upload = mocker.patch.object(svc._upload, "up_load", return_value=99)
+        trash = mocker.patch.object(
+            svc._session, "trash_file",
+            return_value=SimpleNamespace(code=0),
+        )
+
+        ok, stats = svc.run_sync(job)
+        assert ok is False
+        upload.assert_not_called()
+        trash.assert_not_called()
+
+    def test_run_sync_invalid_local_dir_aborts(self, tmp_db, tmp_path, mocker):
+        """本地目录不存在时中止，避免 delete_remote 误删云端。"""
+        svc = _make_svc()
+        job = _make_job(local_path=str(tmp_path / "missing"), delete_remote=1)
+
+        mocker.patch.object(svc._file, "get_dir_by_id", return_value=(0, [], 0, True, 1))
+        upload = mocker.patch.object(svc._upload, "up_load", return_value=99)
+        trash = mocker.patch.object(
+            svc._session, "trash_file",
+            return_value=SimpleNamespace(code=0),
+        )
+
+        ok, stats = svc.run_sync(job)
+        assert ok is False
+        upload.assert_not_called()
+        trash.assert_not_called()

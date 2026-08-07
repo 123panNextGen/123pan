@@ -103,11 +103,12 @@ class SyncService:
 
         Returns:
             {rel_path: 云端文件/目录 item dict}，rel_path 以 '/' 分隔。
-            失败（如 token 过期）返回空 dict。
+            获取失败（网络/token 过期等）返回 None，调用方必须中止同步
+            ——否则会把远端误判为空目录，导致误传/误删。
         """
         index = {}
         ok = self._build_remote_recursive(int(remote_dir_id), "", index)
-        return index if ok else {}
+        return index if ok else None
 
     def _build_remote_recursive(self, dir_id, rel_dir, index):
         code, items, *_ = self._file.get_dir_by_id(
@@ -215,15 +216,23 @@ class SyncService:
         if _cancelled():
             return False, stats
 
+        # 安全校验：本地目录必须存在，避免误删云端数据
+        if not os.path.isdir(local_root):
+            logger.error("同步本地目录不存在或不可访问: %s", local_root)
+            return False, stats
+
         # 1. 本地索引
         if progress_callback:
             progress_callback(None, 0, 0, PHASE_SCAN_LOCAL)
         local_index = self.build_local_index(local_root)
 
-        # 2. 云端索引
+        # 2. 云端索引（失败必须中止，防止误传/误删）
         if progress_callback:
             progress_callback(None, 0, 0, PHASE_SCAN_REMOTE)
         remote_index = self.build_remote_index(remote_root)
+        if remote_index is None:
+            logger.error("获取云端目录失败，中止同步: dir_id=%s", remote_root)
+            return False, stats
 
         # 3. 变更计划
         uploads, dirs_to_create, deletes = self.compute_changes(
