@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import json
 import sys
+import threading
 from pathlib import Path
 
 from .const import CONFIG_DIR
@@ -35,6 +36,12 @@ _LEGACY_TOP_KEYS = (
     "osVersion",
     "loginuuid",
 )
+
+# 迁移守卫：按配置文件路径记录已检查/已迁移状态。
+# 生产环境只 stat 一次，避免每次 get_setting 都做文件系统检查；
+# 测试切换 CONFIG_FILE 路径后仍能正常触发新路径的迁移。
+_MIGRATION_LOCK = threading.Lock()
+_migrated_paths = set()
 
 
 def _get_default_settings():
@@ -74,52 +81,69 @@ class ConfigManager:
         return db
 
     @staticmethod
+    def _settings_cache():
+        """获取设置项内存缓存（dict）。
+
+        缓存绑定在当前 Database 实例上：连接被重置（Database.reset）
+        或路径切换时会创建新实例，缓存随之清空，避免跨测试/跨配置污染。
+        """
+        return Database()._settings_cache
+
+    @staticmethod
     def _migrate_legacy_json():
-        """将旧版 config.json 迁移到 SQLite（迁移后改名备份）。"""
-        if not CONFIG_FILE.exists():
-            return
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            db = Database()
+        """将旧版 config.json 迁移到 SQLite（迁移后改名备份）。
 
-            # settings
-            for key, value in (config.get("settings") or {}).items():
-                db.execute(
-                    "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
-                    (key, json.dumps(value, ensure_ascii=False)),
-                )
+        每个配置文件路径只处理一次（生产环境仅首次调用做文件系统检查）。
+        """
+        global _migrated_paths
+        with _MIGRATION_LOCK:
+            if CONFIG_FILE in _migrated_paths:
+                return
+            _migrated_paths.add(CONFIG_FILE)
+            if not CONFIG_FILE.exists():
+                return
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                db = Database()
 
-            # accounts（兼容旧格式：顶层 userName 归入 accounts 区块）
-            accounts = dict(config.get("accounts") or {})
-            old_user = config.get("userName", "")
-            if old_user and old_user not in accounts:
-                accounts[old_user] = {
-                    "userName": old_user,
-                    "passWord": config.get("passWord", ""),
-                    "authorization": config.get("authorization", ""),
-                    "deviceType": config.get("deviceType", ""),
-                    "osVersion": config.get("osVersion", ""),
-                    "loginuuid": config.get("loginuuid", ""),
-                }
-            for name, info in accounts.items():
-                ConfigManager._save_account_row(name, info)
+                # settings
+                for key, value in (config.get("settings") or {}).items():
+                    db.execute(
+                        "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                        (key, json.dumps(value, ensure_ascii=False)),
+                    )
 
-            # currentAccount
-            current = config.get("currentAccount", "") or old_user
-            if not current and accounts:
-                current = next(iter(accounts))
-            if current:
-                db.execute(
-                    "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
-                    ("currentAccount", json.dumps(current, ensure_ascii=False)),
-                )
+                # accounts（兼容旧格式：顶层 userName 归入 accounts 区块）
+                accounts = dict(config.get("accounts") or {})
+                old_user = config.get("userName", "")
+                if old_user and old_user not in accounts:
+                    accounts[old_user] = {
+                        "userName": old_user,
+                        "passWord": config.get("passWord", ""),
+                        "authorization": config.get("authorization", ""),
+                        "deviceType": config.get("deviceType", ""),
+                        "osVersion": config.get("osVersion", ""),
+                        "loginuuid": config.get("loginuuid", ""),
+                    }
+                for name, info in accounts.items():
+                    ConfigManager._save_account_row(name, info)
 
-            backup = CONFIG_FILE.with_suffix(".json.bak")
-            CONFIG_FILE.rename(backup)
-            logger.info("配置已从 JSON 迁移到 SQLite")
-        except Exception as e:
-            logger.error("迁移配置失败: %s", e)
+                # currentAccount
+                current = config.get("currentAccount", "") or old_user
+                if not current and accounts:
+                    current = next(iter(accounts))
+                if current:
+                    db.execute(
+                        "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                        ("currentAccount", json.dumps(current, ensure_ascii=False)),
+                    )
+
+                backup = CONFIG_FILE.with_suffix(".json.bak")
+                CONFIG_FILE.rename(backup)
+                logger.info("配置已从 JSON 迁移到 SQLite")
+            except Exception as e:
+                logger.error("迁移配置失败: %s", e)
 
     @staticmethod
     def _save_account_row(user_name, info):
@@ -177,6 +201,10 @@ class ConfigManager:
 
         merged = _get_default_settings()
         merged.update(settings)
+
+        # 同步到内存缓存，后续 get_setting 直接命中缓存
+        cache = ConfigManager._settings_cache()
+        cache.update(merged)
 
         return {
             "currentAccount": current,
@@ -286,6 +314,11 @@ class ConfigManager:
 
     @staticmethod
     def get_setting(key, default=None):
+        """读取设置项（优先内存缓存，避免高频读取时的 SQLite 查询）。"""
+        cache = ConfigManager._settings_cache()
+        if key in cache:
+            return cache[key]
+
         row = ConfigManager._get_db().query_one(
             "SELECT value FROM config WHERE key = ?", (key,)
         )
@@ -294,14 +327,15 @@ class ConfigManager:
                 val = json.loads(row["value"])
             except (ValueError, TypeError):
                 val = row["value"]
-            logger.debug("读取设置 %s = %s", key, val)
+            cache[key] = val
+            logger.debug("读取设置 %s = %s (DB)", key, val)
             return val
         # 未存储时回退到默认设置，再回退到调用方默认值
         defaults = _get_default_settings()
         if key in defaults:
-            logger.debug("读取设置 %s = %s (默认)", key, defaults[key])
+            cache[key] = defaults[key]
             return defaults[key]
-        logger.debug("读取设置 %s = %s (默认)", key, default)
+        cache[key] = default
         return default
 
     @staticmethod
@@ -310,5 +344,7 @@ class ConfigManager:
             "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
             (key, json.dumps(value, ensure_ascii=False)),
         )
+        # 同步更新内存缓存，保证读写一致
+        ConfigManager._settings_cache()[key] = value
         logger.info("设置变更: %s = %s", key, value)
         return True

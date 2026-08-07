@@ -79,6 +79,8 @@ class Database:
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # 供 ConfigManager 存放设置项内存缓存；连接重置时随实例一起重建
+            self._settings_cache = {}
             self._create_tables()
 
     def _create_tables(self):
