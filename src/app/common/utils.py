@@ -8,10 +8,6 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-
-from pathlib import Path
-
-
 def format_file_size(size):
     """将字节数格式化为人类可读的文件大小字符串。
 

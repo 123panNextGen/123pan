@@ -16,13 +16,12 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from .constants import BASE_URL, FALLBACK_BASE_URL, LOGIN_BASE_URL
-from .download_engine import DownloadCancelledError, DownloadEngine
+from .download_engine import  DownloadEngine
 from .session_file import FileSessionMixin
 from .model import (
     ApiCode,
     ApiReturnModel,
     CloudUserInfoModel,
-    DeviceItemModel,
     DeviceListResponse,
     DeviceModel,
     UserInfoModel,

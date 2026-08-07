@@ -8,7 +8,6 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from src.app.service.upload_service import UploadService
