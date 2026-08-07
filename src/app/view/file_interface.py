@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QApplication,
     QInputDialog,
-    QLineEdit,
+    QLabel,
     QDialog,
 )
 from PyQt6.QtGui import QAction
@@ -45,6 +45,7 @@ from qfluentwidgets import (
     BodyLabel,
     IconWidget,
     ProgressBar,
+    SearchLineEdit,
 )
 
 from ..common.style_sheet import StyleSheet
@@ -118,6 +119,8 @@ class FileInterface(QWidget):
 
         # 搜索文本
         self._search_text = ""
+        # 目录列表是否正在加载（用于空状态/加载提示）
+        self._loading = False
 
         # 搜索防抖：300ms 内无新输入才执行过滤，避免每键都重建表格
         self._search_timer = QTimer(self)
@@ -147,7 +150,7 @@ class FileInterface(QWidget):
         self.breadcrumbBar = BreadcrumbBar(self.topBarFrame)
 
         # 搜索框
-        self.searchBox = QLineEdit(self.topBarFrame)
+        self.searchBox = SearchLineEdit(self.topBarFrame)
         self.searchBox.setPlaceholderText(tr("file.search_placeholder", "搜索文件名..."))
         self.searchBox.setClearButtonEnabled(True)
         self.searchBox.setMaximumWidth(200)
@@ -229,6 +232,14 @@ class FileInterface(QWidget):
         self.listLayout = QVBoxLayout(self.listFrame)
         self.listLayout.setContentsMargins(0, 8, 0, 0)
         self.listLayout.setSpacing(0)
+
+        # 空目录/加载中/无匹配 状态提示（覆盖在表格上）
+        self.listStateLabel = QLabel(
+            tr("file.state_loading", "加载中..."), self.listFrame
+        )
+        self.listStateLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.listStateLabel.setStyleSheet("color: gray; font-size: 14px;")
+        self.listStateLabel.hide()
 
         self.fileTable = TableWidget(self.listFrame)
         self.fileTable.setAlternatingRowColors(True)
@@ -485,7 +496,9 @@ class FileInterface(QWidget):
             return
 
         logger.debug("加载文件列表: dir_id=%s, force=%s", self.current_dir_id, force_refresh)
+        self._loading = True
         self.fileTable.setRowCount(0)
+        self.__updateListState(0)
 
         signals = _LoadListSignals()
         task = LoadListTask(
@@ -740,17 +753,41 @@ class FileInterface(QWidget):
 
     def __onLoadListFinished(self, file_items, error):
         """加载文件列表完成后的回调 - 只负责UI更新"""
+        self._loading = False
         if error:
             InfoBar.error(
                 title=tr("file.msg_load_failed", "加载失败"),
                 content=tr("file.msg_load_error", "加载文件列表时发生错误: {}").format(error),
                 parent=self,
             )
+            self.__updateListState(0)
         else:
             # 对文件列表进行排序
             sorted_items = self.__sortFileList(file_items)
             # 更新文件列表（轻量级UI操作）
             self.__updateFileListUI(sorted_items)
+            self.__updateListState(len(sorted_items))
+
+    def __updateListState(self, count):
+        """更新表格空状态/加载提示（覆盖层）。"""
+        if count > 0:
+            self.listStateLabel.hide()
+            return
+        if self._search_text:
+            self.listStateLabel.setText(tr("file.state_no_result", "没有匹配的文件"))
+        elif self._loading:
+            self.listStateLabel.setText(tr("file.state_loading", "加载中..."))
+        else:
+            self.listStateLabel.setText(tr("file.state_empty", "此文件夹为空"))
+        self.listStateLabel.setGeometry(self.listFrame.rect())
+        self.listStateLabel.show()
+
+    def resizeEvent(self, event):
+        """保持表格状态提示覆盖层与列表区域同步。"""
+        super().resizeEvent(event)
+        state_label = getattr(self, "listStateLabel", None)
+        if state_label is not None and self.listFrame is not None:
+            state_label.setGeometry(self.listFrame.rect())
 
     def __onSearchTextChanged(self, text):
         """搜索文本变化时启动防抖，清空时立即恢复"""
@@ -770,6 +807,7 @@ class FileInterface(QWidget):
             # 无搜索条件，恢复完整列表
             sorted_items = self.__sortFileList(self._current_file_items)
             self.__updateFileListUI(sorted_items)
+            self.__updateListState(len(sorted_items))
             return
 
         # 按搜索文本过滤（不覆盖 _current_file_items 缓存，确保清空搜索后能恢复完整列表）
@@ -779,6 +817,7 @@ class FileInterface(QWidget):
         ]
         sorted_items = self.__sortFileList(filtered)
         self.__updateFileListUI(sorted_items, update_cache=False)
+        self.__updateListState(len(sorted_items))
 
     def __sortFileList(self, file_items):
         """对文件列表进行排序，文件夹始终在前"""
@@ -1294,8 +1333,11 @@ class FileInterface(QWidget):
         if not index.isValid():
             return
 
-        # 选择右键点击的行
-        self.fileTable.selectRow(index.row())
+        # 右键点击的行未选中时选中它（保留已有多选）
+        if not self.fileTable.selectionModel().isRowSelected(
+            index.row(), index.parent()
+        ):
+            self.fileTable.selectRow(index.row())
 
         # 创建右键菜单
         menu = QMenu(self)

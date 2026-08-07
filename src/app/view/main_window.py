@@ -51,6 +51,8 @@ class MainWindow(FluentWindow):
         super().__init__()
         self.setWindowTitle("123pan")
         self.resize(900, 600)
+        self.setMinimumSize(760, 520)
+        self.setWindowIcon(FIF.CLOUD.icon())
         logger.info("MainWindow 初始化")
 
         # Linux 下禁用 Mica 效果，避免 "This plugin does not support setting window opacity" 错误
