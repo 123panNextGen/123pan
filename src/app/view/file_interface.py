@@ -49,7 +49,6 @@ from qfluentwidgets import (
 
 from ..common.style_sheet import StyleSheet
 from ..common.utils import format_file_size
-from ..common.api import Pan123
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import (
@@ -322,16 +321,13 @@ class FileInterface(QWidget):
     def __loadPanAndData(self):
         """加载 Pan123 实例并初始化数据。
 
-        优先使用外部传入的 pan（由 MainWindow 在登录流程中设置），
-        如果未设置则尝试从配置文件加载。
+        只由外部传入的 pan 驱动（MainWindow 在登录流程中设置 pan 后
+        调用 load_pan_and_data）。pan 未就绪时不在此处同步构造
+        Pan123（其构造器含网络请求），避免阻塞主线程导致启动白屏。
         """
         if self.pan is None:
-            try:
-                self.pan = Pan123(readfile=True)
-            except Exception as e:
-                self.__setErrorBreadcrumb(tr("file.init_error", "初始化失败: {}").format(e))
-                self.backButton.setEnabled(False)
-                return
+            logger.debug("__loadPanAndData: pan 未设置，等待登录流程注入")
+            return
 
         try:
             self.__initTree()
