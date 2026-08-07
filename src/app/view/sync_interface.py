@@ -28,6 +28,7 @@ from qfluentwidgets import (
     SegmentedWidget,
     TableWidget,
     PushButton,
+    ToolButton,
     InfoBar,
     LineEdit,
     PrimaryPushButton,
@@ -314,7 +315,10 @@ class SyncInterface(QWidget):
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
+            # 操作列：ResizeToContents 不计算 cellWidget 宽度，固定宽度保证按钮完整显示。
+            # 4 个紧凑图标按钮最小约 192px，取 200 留余量。
+            header.setSectionResizeMode(6, header.ResizeMode.Fixed)
+            self.jobsTable.setColumnWidth(6, 200)
         self.jobsLayout.addWidget(self.jobsTable)
 
         # ---- 历史表格 ----
@@ -579,7 +583,7 @@ class SyncInterface(QWidget):
             self.jobsTable.setUpdatesEnabled(True)
 
     def __set_job_actions(self, row, job, is_running):
-        """构建任务行操作按钮。"""
+        """构建任务行操作按钮（紧凑图标按钮，带悬停提示）。"""
         old = self.jobsTable.cellWidget(row, 6)
         if old is not None:
             self.jobsTable.removeCellWidget(row, 6)
@@ -587,37 +591,37 @@ class SyncInterface(QWidget):
 
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(2)
+
+        def _tool_button(icon_enum, tooltip, slot):
+            btn = ToolButton(icon_enum, self.jobsTable)
+            btn.setFixedSize(30, 30)
+            btn.setToolTip(tooltip)
+            btn.clicked.connect(lambda _=False, j=job: slot(j))
+            action_layout.addWidget(btn)
+            return btn
 
         if is_running:
-            cancel_btn = PushButton(
-                FIF.CANCEL.icon(), tr("sync.btn_cancel", "取消"), self.jobsTable
+            _tool_button(
+                FIF.CLOSE, tr("sync.btn_cancel", "取消"), self.__cancel_job
             )
-            cancel_btn.setFixedSize(64, 24)
-            cancel_btn.clicked.connect(lambda _, j=job: self.__cancel_job(j))
-            action_layout.addWidget(cancel_btn)
         else:
-            sync_btn = PushButton(
-                FIF.PLAY.icon(), tr("sync.btn_sync", "同步"), self.jobsTable
+            _tool_button(
+                FIF.SYNC, tr("sync.btn_sync", "同步"), self.__run_job
             )
-            sync_btn.setFixedSize(64, 24)
-            sync_btn.clicked.connect(lambda _, j=job: self.__run_job(j))
-            action_layout.addWidget(sync_btn)
 
-        edit_btn = PushButton(FIF.EDIT.icon(), tr("sync.btn_edit", "编辑"), self.jobsTable)
-        edit_btn.setFixedSize(64, 24)
-        edit_btn.clicked.connect(lambda _, j=job: self.__edit_job(j))
-        action_layout.addWidget(edit_btn)
+        _tool_button(FIF.EDIT, tr("sync.btn_edit", "编辑"), self.__edit_job)
 
-        toggle_btn = PushButton(
-            FIF.PLAY if bool(job.get("enabled")) else FIF.CANCEL,
-            tr("sync.btn_disable", "停用")
-            if bool(job.get("enabled"))
-            else tr("sync.btn_enable", "启用"),
-            self.jobsTable,
-        )
-        toggle_btn.setFixedSize(64, 24)
-        toggle_btn.clicked.connect(lambda _, j=job: self.__toggle_job(j))
-        action_layout.addWidget(toggle_btn)
+        if bool(job.get("enabled")):
+            _tool_button(
+                FIF.CANCEL, tr("sync.btn_disable", "停用"), self.__toggle_job
+            )
+        else:
+            _tool_button(
+                FIF.ACCEPT, tr("sync.btn_enable", "启用"), self.__toggle_job
+            )
+
+        _tool_button(FIF.DELETE, tr("sync.btn_delete", "删除"), self.__delete_job)
 
         del_btn = PushButton(FIF.DELETE.icon(), tr("sync.btn_delete", "删除"), self.jobsTable)
         del_btn.setFixedSize(64, 24)
