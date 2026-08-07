@@ -32,15 +32,16 @@ logger = logging.getLogger(__name__)
 
 
 class _ApiSession(requests.Session):
+    # 主 API 域名的 netloc（预计算，避免每个请求重复 urlparse）
+    _PRIMARY_NETLOC = urlparse(BASE_URL).netloc
+
     def __init__(self):
         super().__init__()
         self._use_fallback = False
 
     def request(self, method, url, **kwargs):
         parsed = urlparse(url)
-        is_primary_api = (
-            parsed.netloc == urlparse(BASE_URL).netloc and "/api/" in parsed.path
-        )
+        is_primary_api = parsed.netloc == self._PRIMARY_NETLOC and "/api/" in parsed.path
         if not is_primary_api:
             return super().request(method, url, **kwargs)
 
