@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import os
+import threading
 from pathlib import Path
 from typing import Optional, Callable
 

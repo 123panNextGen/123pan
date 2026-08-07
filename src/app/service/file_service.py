@@ -16,6 +16,11 @@ from ..common.log import get_logger
 
 logger = get_logger(__name__)
 
+# 全量分页加载时的节流间隔（秒）。
+# 仅当 all=True（一次性拉取全部页）时生效，防止大目录瞬时打爆服务器；
+# 值越小加载越快，0 表示不节流。普通分页（all=False）不受影响。
+_PAGE_THROTTLE_SECONDS = 0.5
+
 
 class FileService:
     """文件与目录管理服务。
@@ -116,10 +121,13 @@ class FileService:
                 "分页加载: page=%s, got=%s, total=%s, accumulated=%s",
                 start_page - 1, len(lists_page), total, lenth_now,
             )
-            if times % 5 == 0:
-                logger.warning("文件夹内文件过多：%s/%s", lenth_now, total)
-                logger.info("暂停3秒防止对服务器造成影响")
-                time.sleep(3)
+            # 仅全量加载时做短节流，避免大目录一次性请求过多页
+            if all and _PAGE_THROTTLE_SECONDS > 0 and times % 5 == 0:
+                logger.debug(
+                    "文件夹内文件较多（%s/%s），节流 %.1fs",
+                    lenth_now, total, _PAGE_THROTTLE_SECONDS,
+                )
+                time.sleep(_PAGE_THROTTLE_SECONDS)
 
         elapsed = time.monotonic() - t0
         logger.info(
