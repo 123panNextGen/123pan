@@ -9,7 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 from PyQt6.QtCore import QThreadPool, QTimer
-from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialog, QMenu, QSystemTrayIcon
 
 import sys
 
@@ -27,6 +27,7 @@ from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import AutoLoginTask, connect_tracked
 from ..tasks.signals import _AutoLoginSignals
+from ..tasks.sync_manager import SyncManager
 
 logger = get_logger(__name__)
 
@@ -64,7 +65,18 @@ class MainWindow(FluentWindow):
         # 持有后台任务引用，防止任务/信号被 GC 回收
         self._pending_tasks = []
 
-        # 仅创建文件页（默认页）；传输/设置/云盘/回收站/分享页懒加载，
+        # 全局同步调度器：独立于界面存在，托盘/后台运行期间仍按频率同步
+        self._sync_manager = SyncManager(self)
+        # 是否已登录（控制关闭窗口时是否最小化到托盘）
+        self._logged_in = False
+        # 强制退出标记（托盘菜单「退出」绕过最小化到托盘）
+        self._force_quit = False
+        # 系统托盘
+        self._tray = None
+        # 启动最小化到托盘的检查标记（仅首次登录时生效）
+        self._tray_checked_start_min = False
+
+        # 仅创建文件页（默认页）；传输/设置/云盘/回收站/分享/同步页懒加载，
         # 首次点击导航时才构建，显著降低启动内存峰值。
         self.file_interface = FileInterface(self)
 
@@ -77,6 +89,9 @@ class MainWindow(FluentWindow):
         self._lazy_specs = {
             "TransferInterface": (
                 FIF.SYNC, tr("nav.transfer", "传输"), NavigationItemPosition.TOP,
+            ),
+            "SyncInterface": (
+                FIF.UPDATE, tr("nav.sync", "同步"), NavigationItemPosition.TOP,
             ),
             "TrashInterface": (
                 FIF.DELETE, tr("nav.trash", "回收站"), NavigationItemPosition.TOP,
@@ -159,6 +174,9 @@ class MainWindow(FluentWindow):
                 interface.set_pan(self.pan)
             interface.logoutRequested.connect(self.handle_logout)
             interface.switchAccountRequested.connect(self.handle_switch_account)
+        elif route_key == "SyncInterface":
+            from .sync_interface import SyncInterface
+            interface = SyncInterface(self._sync_manager, pan=self.pan, parent=self)
         elif route_key == "settingInterface":
             from .setting_interface import SettingInterface
             interface = SettingInterface(self)
@@ -220,8 +238,16 @@ class MainWindow(FluentWindow):
 
     def __finish_login_flow(self):
         """登录成功后同步 pan 到各子界面。"""
+        self._logged_in = True
+        self._sync_manager.set_pan(self.pan)
         self.file_interface.pan = self.pan
         self._sync_pan_to_interfaces()
+        self.__ensure_tray()
+        # 启动时最小化到托盘（后台同步）
+        if not self._tray_checked_start_min:
+            self._tray_checked_start_min = True
+            if ConfigManager.get_setting("startMinimized", False):
+                self.hide_to_tray()
 
     def clear_login_config(self):
         """清除当前登录状态，但保留已保存账户"""
@@ -261,6 +287,8 @@ class MainWindow(FluentWindow):
         )
         if msg.exec():
             logger.debug("确认退出登录")
+            self._logged_in = False
+            self._sync_manager.clear_pan()
             self.clear_login_config()
             dlg = LoginDialog(self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -272,6 +300,7 @@ class MainWindow(FluentWindow):
                 self._sync_pan_to_interfaces()
             else:
                 logger.info("用户取消重新登录，退出程序")
+                self._force_quit = True
                 self.close()
         else:
             logger.debug("用户取消退出登录")
@@ -281,11 +310,106 @@ class MainWindow(FluentWindow):
         logger.info("用户请求切换账号")
         dlg = LoginDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._sync_manager.clear_pan()
             self.pan = dlg.get_pan()
             logger.info(
                 "切换账号成功: %s",
                 self.pan.user_name if hasattr(self.pan, "user_name") else "?",
             )
+            self._sync_manager.set_pan(self.pan)
             self._sync_pan_to_interfaces()
         else:
             logger.debug("用户取消切换账号")
+
+    # ---- 系统托盘 ----
+
+    @property
+    def sync_manager(self):
+        """全局同步调度器（设置页/托盘使用）。"""
+        return self._sync_manager
+
+    def __ensure_tray(self):
+        """创建系统托盘（登录后创建，未登录时不拦截关闭）。"""
+        if self._tray is not None:
+            return
+
+        self._tray = QSystemTrayIcon(self)
+        self._tray.setIcon(FIF.CLOUD.icon())
+        self._tray.setToolTip("123pan")
+
+        menu = QMenu()
+        show_action = menu.addAction(
+            FIF.PLAY.icon(), tr("tray.show", "显示主窗口")
+        )
+        sync_action = menu.addAction(
+            FIF.SYNC.icon(), tr("tray.sync_now", "立即同步全部")
+        )
+        open_sync_action = menu.addAction(
+            FIF.UPDATE.icon(), tr("tray.open_sync", "打开同步页面")
+        )
+        menu.addSeparator()
+        quit_action = menu.addAction(
+            FIF.CLOSE.icon(), tr("tray.quit", "退出")
+        )
+
+        show_action.triggered.connect(self.show_from_tray)
+        sync_action.triggered.connect(
+            lambda: self._sync_manager.run_all_enabled()
+        )
+        open_sync_action.triggered.connect(
+            lambda: self._open_interface("SyncInterface")
+        )
+        quit_action.triggered.connect(self.quit_from_tray)
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_tray_activated)
+        self._tray.show()
+        logger.info("系统托盘已启用")
+
+    def _on_tray_activated(self, reason):
+        """单击/双击托盘图标恢复主窗口。"""
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.show_from_tray()
+
+    def show_from_tray(self):
+        """从托盘恢复主窗口。"""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def hide_to_tray(self):
+        """最小化到系统托盘（后台继续同步）。"""
+        if self._tray is None:
+            self.__ensure_tray()
+        self.hide()
+        if self._tray is not None:
+            self._tray.showMessage(
+                "123pan",
+                tr("tray.minimized_msg", "已最小化到系统托盘，同步任务将继续在后台运行"),
+                QSystemTrayIcon.MessageIcon.Information,
+                3000,
+            )
+
+    def quit_from_tray(self):
+        """托盘菜单退出：绕过最小化到托盘直接退出。"""
+        self._force_quit = True
+        self.close()
+
+    def closeEvent(self, event):
+        """关闭窗口：开启「关闭时最小化到托盘」且已登录时隐藏而非退出。"""
+        if (
+            not self._force_quit
+            and self._logged_in
+            and self._tray is not None
+            and ConfigManager.get_setting("closeToTray", False)
+        ):
+            self.hide_to_tray()
+            event.ignore()
+            return
+        # 正常退出：停止同步调度、隐藏托盘
+        self._sync_manager.shutdown()
+        if self._tray is not None:
+            self._tray.hide()
+        super().closeEvent(event)

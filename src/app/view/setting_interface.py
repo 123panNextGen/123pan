@@ -352,6 +352,29 @@ class SettingInterface(ScrollArea):
             parent=self.personalGroup,
         )
 
+        # ---- 系统托盘组 ----
+        self.trayGroup = SettingCardGroup(tr("系统托盘"), self.scrollWidget)
+
+        self.closeToTrayCard = SwitchSettingCard(
+            FIF.CLOSE,
+            tr("关闭窗口时最小化到托盘"),
+            tr("关闭窗口后应用在后台继续运行（同步任务不受影响）"),
+            parent=self.trayGroup,
+        )
+        self.closeToTrayCard.setChecked(
+            ConfigManager.get_setting("closeToTray", False)
+        )
+
+        self.startMinimizedCard = SwitchSettingCard(
+            FIF.MINIMIZE,
+            tr("启动时最小化到托盘"),
+            tr("登录后自动最小化到系统托盘，在后台执行同步任务"),
+            parent=self.trayGroup,
+        )
+        self.startMinimizedCard.setChecked(
+            ConfigManager.get_setting("startMinimized", False)
+        )
+
         # ---- 调试组 ----
         self.debugGroup = SettingCardGroup(tr("调试"), self.scrollWidget)
 
@@ -461,6 +484,10 @@ class SettingInterface(ScrollArea):
         self.personalGroup.addSettingCard(self.opacityCard)
         self.personalGroup.addSettingCard(self.languageCard)
 
+        # 系统托盘组
+        self.trayGroup.addSettingCard(self.closeToTrayCard)
+        self.trayGroup.addSettingCard(self.startMinimizedCard)
+
         # 调试组
         self.debugGroup.addSettingCard(self.logLevelCard)
         self.debugGroup.addSettingCard(self.openLogFolderCard)
@@ -476,6 +503,7 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.downloadGroup)
         self.expandLayout.addWidget(self.proxyGroup)
         self.expandLayout.addWidget(self.personalGroup)
+        self.expandLayout.addWidget(self.trayGroup)
         self.expandLayout.addWidget(self.debugGroup)
         self.expandLayout.addWidget(self.aboutGroup)
 
@@ -498,6 +526,16 @@ class SettingInterface(ScrollArea):
         if w and hasattr(w, "set_window_opacity"):
             w.set_window_opacity(val)
         logger.info("窗口透明度: %d%%", val)
+
+    def __onCloseToTrayChanged(self, checked):
+        """关闭窗口时是否最小化到托盘"""
+        ConfigManager.set_setting("closeToTray", checked)
+        logger.info("关闭时最小化到托盘: %s", "开启" if checked else "关闭")
+
+    def __onStartMinimizedChanged(self, checked):
+        """启动时是否最小化到托盘"""
+        ConfigManager.set_setting("startMinimized", checked)
+        logger.info("启动时最小化到托盘: %s", "开启" if checked else "关闭")
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
@@ -766,6 +804,14 @@ class SettingInterface(ScrollArea):
             self.__onLanguageChanged
         )
         self.opacityCard.slider.valueChanged.connect(self.__onOpacityChanged)
+
+        # 系统托盘
+        self.closeToTrayCard.checkedChanged.connect(
+            self.__onCloseToTrayChanged
+        )
+        self.startMinimizedCard.checkedChanged.connect(
+            self.__onStartMinimizedChanged
+        )
 
         # 关于
         self.aboutCard.clicked.connect(
