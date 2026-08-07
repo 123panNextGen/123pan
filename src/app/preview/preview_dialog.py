@@ -266,13 +266,19 @@ class PreviewDialog(QDialog):
             )
 
     def reject(self):
-        """关闭对话框时清理资源。"""
-        self._cleanup()
         super().reject()
 
     def closeEvent(self, event):
-        self._cleanup()
         super().closeEvent(event)
+
+    def done(self, result):
+        """所有关闭路径（accept/reject/close）统一清理预览资源。
+
+        避免下载线程在对话框销毁时仍在运行而触发
+        "QThread: Destroyed while thread is still running"。
+        """
+        self._cleanup()
+        super().done(result)
 
     def _cleanup(self):
         """清理预览资源。"""

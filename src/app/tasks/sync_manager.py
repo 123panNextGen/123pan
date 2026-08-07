@@ -168,7 +168,7 @@ class SyncManager(QObject):
         """任务结束：清理线程引用并通知界面。"""
         self._running.pop(job_id, None)
         if thread is not None and thread.isRunning():
-            thread.wait(3000)
+            thread.wait(5000)
         self.jobFinished.emit(job_id, ok, summary, stats)
         self.jobsChanged.emit()
         logger.info("同步任务结束: job_id=%s, ok=%s", job_id, ok)
@@ -177,7 +177,7 @@ class SyncManager(QObject):
         for job_id, thread in list(self._running.items()):
             thread.cancel()
             if thread.isRunning():
-                thread.wait(3000)
+                thread.wait(5000)
         self._running.clear()
         self.jobsChanged.emit()
 
