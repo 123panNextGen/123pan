@@ -307,10 +307,10 @@ class CloudInterface(ScrollArea):
         if not devices:
             return
 
-        for dev in devices:
+        for index, dev in enumerate(devices, start=1):
             cur = tr("cloud.device_current", "当前") if dev.cur_device else ""
             title = tr("cloud.device_item", "{}. {} ({}) {}").format(
-                devices.index(dev) + 1, dev.device_name, dev.device_type, cur
+                index, dev.device_name, dev.device_type, cur
             )
             content = tr("cloud.device_detail", "平台: {} | IP: {} | 登录: {} | 方式: {}").format(
                 dev.plat_form, dev.ip, dev.last_login_time, dev.login_type

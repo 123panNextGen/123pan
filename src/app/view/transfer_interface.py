@@ -198,6 +198,10 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
 
         self.uploadLayout.addWidget(self.uploadTable)
+        self.uploadEmptyLabel = self.__make_empty_label(
+            tr("transfer.state_empty", "暂无上传任务"), self.uploadFrame
+        )
+        self.uploadLayout.addWidget(self.uploadEmptyLabel)
 
         # 下载表格
         self.downloadFrame = QFrame(self)
@@ -227,6 +231,10 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
 
         self.downloadLayout.addWidget(self.downloadTable)
+        self.downloadEmptyLabel = self.__make_empty_label(
+            tr("transfer.state_empty_dl", "暂无下载任务"), self.downloadFrame
+        )
+        self.downloadLayout.addWidget(self.downloadEmptyLabel)
 
         # 历史记录表格
         self.historyFrame = QFrame(self)
@@ -266,6 +274,10 @@ class TransferInterface(QWidget):
             header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
         self.historyLayout.addWidget(self.historyTable)
+        self.historyEmptyLabel = self.__make_empty_label(
+            tr("transfer.state_empty_his", "暂无历史记录"), self.historyFrame
+        )
+        self.historyLayout.addWidget(self.historyEmptyLabel)
 
         # 默认显示上传表格
         self.downloadFrame.hide()
@@ -278,6 +290,17 @@ class TransferInterface(QWidget):
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
         self.__connectSignalToSlot()
+
+    @staticmethod
+    def __make_empty_label(text, parent):
+        """创建表格空状态提示标签。"""
+        from PyQt6.QtWidgets import QLabel
+
+        label = QLabel(text, parent)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("color: gray; font-size: 14px;")
+        label.hide()
+        return label
 
     def __connectSignalToSlot(self):
         self.segmentedWidget.currentItemChanged.connect(self.__onSegmentChanged)
@@ -923,9 +946,11 @@ class TransferInterface(QWidget):
 
     def __update_upload_table(self):
         self.__update_table(self.uploadTable, self.upload_tasks, "upload")
+        self.uploadEmptyLabel.setVisible(not bool(self.upload_tasks))
 
     def __update_download_table(self):
         self.__update_table(self.downloadTable, self.download_tasks, "download")
+        self.downloadEmptyLabel.setVisible(not bool(self.download_tasks))
 
     # ---- 历史记录 ----
 
@@ -957,6 +982,7 @@ class TransferInterface(QWidget):
         rows = self._store.get_history(limit=500)
         count = len(rows)
         self.historyTable.setRowCount(count)
+        self.historyEmptyLabel.setVisible(count == 0)
         self.historyTable.setUpdatesEnabled(False)
         try:
             for i, row in enumerate(rows):
