@@ -410,7 +410,10 @@ class MainWindow(FluentWindow):
             self.hide_to_tray()
             event.ignore()
             return
-        # 正常退出：停止同步调度、隐藏托盘
+        # 正常退出：停止传输线程、同步调度、隐藏托盘
+        transfer = self._lazy_built.get("TransferInterface")
+        if transfer is not None:
+            transfer.shutdown()
         self._sync_manager.shutdown()
         if self._tray is not None:
             self._tray.hide()

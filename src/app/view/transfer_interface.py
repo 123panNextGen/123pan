@@ -107,6 +107,32 @@ class TransferInterface(QWidget):
         # 更新限制后尝试处理待处理队列
         self._process_pending_queues()
 
+    def shutdown(self):
+        """应用退出：取消所有进行中的传输线程并等待其结束。
+
+        避免退出时 QThread 对象被销毁而线程仍在运行
+        （"QThread: Destroyed while thread is still running"）。
+        已取消/已排队任务由 TransferStore 持久化，下次启动可恢复。
+        """
+        threads = list(self.upload_threads) + list(self.download_threads)
+        if not threads:
+            return
+        # 1. 请求取消（上传/下载均会在分片边界退出）
+        for thread in threads:
+            thread.cancel()
+        # 2. 断开信号并从列表移除，避免退出过程中回调触发排队任务/UI 更新
+        for thread in threads:
+            self.__cleanup_thread(
+                thread,
+                "upload" if isinstance(thread, UploadThread) else "download",
+            )
+        # 3. 等待线程真正结束（超时兜底，避免卡死退出）
+        for thread in threads:
+            if thread.isRunning():
+                thread.wait(5000)
+        self.upload_threads.clear()
+        self.download_threads.clear()
+
     def _apply_proxy_settings(self):
         """从配置读取并应用代理设置。"""
         if not self.pan:
