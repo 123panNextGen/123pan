@@ -309,7 +309,10 @@ def _format_bytes(size):
 
 @dataclass(slots=True)
 class DeviceItemModel:
-    """登录设备条目模型。"""
+    """登录设备条目模型。
+
+    123pan 各端 API 字段命名不一致（驼峰/下划线），from_dict 均兼容。
+    """
     device_name: str
     plat_form: str
     ip: str
@@ -321,19 +324,35 @@ class DeviceItemModel:
     img: str
     login_uuid: str
 
+    @staticmethod
+    def _first(json, *keys):
+        """按顺序取第一个非空值，兼容驼峰/下划线字段名。"""
+        for key in keys:
+            value = json.get(key)
+            if value not in (None, ""):
+                return value
+        return ""
+
     @classmethod
     def from_dict(cls, json: dict[str, Any]) -> "DeviceItemModel":
+        last_login = cls._first(
+            json, "lastLoginTime", "last_login_time", "LastLoginTime"
+        )
         return cls(
-            device_name=str(json.get("device_name", "")),
-            plat_form=str(json.get("plat_form", "")),
-            ip=str(json.get("ip", "")),
-            last_login_time=str(json.get("last_login_time", "")),
-            device_type=str(json.get("device_type", "")),
-            key=str(json.get("key", "")),
-            cur_device=bool(json.get("cur_device", False)),
-            login_type=str(json.get("login_type", "")),
-            img=str(json.get("img", "")),
-            login_uuid=str(json.get("LoginUuid", json.get("loginUuid", ""))),
+            device_name=str(cls._first(json, "deviceName", "device_name")),
+            plat_form=str(cls._first(json, "platform", "platForm", "plat_form")),
+            ip=str(cls._first(json, "ip", "loginIp", "login_ip")),
+            last_login_time=format_device_time(last_login),
+            device_type=str(cls._first(json, "deviceType", "device_type")),
+            key=str(cls._first(json, "key", "deviceKey", "device_key")),
+            cur_device=bool(
+                cls._first(json, "curDevice", "currentDevice", "cur_device")
+            ),
+            login_type=str(cls._first(json, "loginType", "login_type")),
+            img=str(cls._first(json, "img", "headImage", "head_image")),
+            login_uuid=str(cls._first(
+                json, "LoginUuid", "loginUuid", "deviceUuid", "login_uuid"
+            )),
         )
 
 
@@ -347,10 +366,42 @@ class DeviceListResponse:
     @classmethod
     def from_dict(cls, json: dict[str, Any]) -> "DeviceListResponse":
         data = json.get("data", json) if "data" in json else json
-        devices = data.get("DeviceS", []) or []
-        master = data.get("masterDevice")
+        if not isinstance(data, dict):
+            data = {}
+        devices = (
+            data.get("DeviceS")
+            or data.get("deviceList")
+            or data.get("list")
+            or data.get("device_list")
+            or []
+        )
+        master = (
+            data.get("masterDevice")
+            or data.get("master_device")
+            or data.get("masterDeviceInfo")
+        )
         return cls(
             device_list=[DeviceItemModel.from_dict(d) for d in devices],
             del_device_power=bool(data.get("del_device_power", False)),
             master_device=DeviceItemModel.from_dict(master) if master else None,
         )
+
+
+def format_device_time(value) -> str:
+    """格式化设备最近登录时间：Unix 时间戳 → 'YYYY-MM-DD HH:MM'，字符串原样返回。"""
+    from datetime import datetime
+
+    if value in (None, ""):
+        return ""
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(int(value)).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, OSError, OverflowError):
+            return str(value)
+    text = str(value).strip()
+    if text.isdigit():
+        try:
+            return datetime.fromtimestamp(int(text)).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, OSError, OverflowError):
+            return text
+    return text

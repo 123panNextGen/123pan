@@ -87,7 +87,7 @@ class NetSession(FileSessionMixin, DownloadEngine):
             pool_connections=16, pool_maxsize=32
         )
         self._transfer.mount("https://", transfer_adapter)
-        self._transfer.mount("http://", transfer_adapter)
+        self._transfer.mount("https://", transfer_adapter)
 
         # 多线程下载配置
         self._multi_thread_enabled: bool = True
@@ -181,7 +181,7 @@ class NetSession(FileSessionMixin, DownloadEngine):
                     pool_connections=16, pool_maxsize=32
                 )
                 session.mount("https://", adapter)
-                session.mount("http://", adapter)
+                session.mount("https://", adapter)
         else:
             # 恢复无代理状态
             for session in (self._http, self._transfer):
@@ -189,7 +189,7 @@ class NetSession(FileSessionMixin, DownloadEngine):
                     pool_connections=16, pool_maxsize=32
                 )
                 session.mount("https://", adapter)
-                session.mount("http://", adapter)
+                session.mount("https://", adapter)
         self._http.proxies = proxies or {}
         self._transfer.proxies = proxies or {}
 

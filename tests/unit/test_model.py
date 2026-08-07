@@ -10,7 +10,15 @@ the Free Software Foundation, either version 3 of the License, or
 
 from datetime import datetime
 
-from src.app.api.model import ApiCode, ApiReturnModel, FileItemModel, FileListData
+from src.app.api.model import (
+    ApiCode,
+    ApiReturnModel,
+    DeviceItemModel,
+    DeviceListResponse,
+    FileItemModel,
+    FileListData,
+    format_device_time,
+)
 
 
 class TestApiReturnModel:
@@ -127,3 +135,101 @@ class TestFileListData:
         assert fld.next == "-1"
         assert fld.is_first is False
         assert fld.info_list == []
+
+
+class TestFormatDeviceTime:
+    def test_timestamp(self):
+        assert len(format_device_time(1700000000)) == 16
+
+    def test_string_time(self):
+        assert format_device_time("2024-01-01 10:00") == "2024-01-01 10:00"
+
+    def test_empty(self):
+        assert format_device_time(None) == ""
+        assert format_device_time("") == ""
+
+
+class TestDeviceItemModel:
+    def test_from_dict_pascal_camel(self):
+        """兼容 123pan 驼峰字段命名。"""
+        data = {
+            "deviceName": "Xiaomi 14",
+            "platform": "Android",
+            "ip": "1.2.3.4",
+            "lastLoginTime": 1700000000,
+            "deviceType": "phone",
+            "key": "abc",
+            "curDevice": True,
+            "loginType": "password",
+            "img": "http://img",
+            "loginUuid": "uuid-1",
+        }
+        dev = DeviceItemModel.from_dict(data)
+        assert dev.device_name == "Xiaomi 14"
+        assert dev.plat_form == "Android"
+        assert dev.ip == "1.2.3.4"
+        assert dev.device_type == "phone"
+        assert dev.cur_device is True
+        assert dev.login_type == "password"
+        assert dev.login_uuid == "uuid-1"
+        # 时间戳已格式化为可读时间
+        assert len(dev.last_login_time) == 16
+
+    def test_from_dict_snake_case(self):
+        data = {
+            "device_name": "Web",
+            "plat_form": "web",
+            "ip": "5.6.7.8",
+            "last_login_time": "2024-01-01 10:00",
+            "device_type": "browser",
+            "key": "k",
+            "cur_device": False,
+            "login_type": "",
+            "img": "",
+            "LoginUuid": "uuid-2",
+        }
+        dev = DeviceItemModel.from_dict(data)
+        assert dev.device_name == "Web"
+        assert dev.plat_form == "web"
+        assert dev.last_login_time == "2024-01-01 10:00"
+        assert dev.cur_device is False
+        assert dev.login_uuid == "uuid-2"
+
+    def test_from_dict_missing(self):
+        dev = DeviceItemModel.from_dict({})
+        assert dev.device_name == ""
+        assert dev.ip == ""
+        assert dev.cur_device is False
+
+
+class TestDeviceListResponse:
+    def test_from_dict_devices(self):
+        data = {
+            "code": 0,
+            "data": {
+                "DeviceS": [
+                    {"deviceName": "A", "deviceType": "phone", "curDevice": True},
+                    {"deviceName": "B", "deviceType": "web", "curDevice": False},
+                ],
+                "masterDevice": {"deviceName": "A", "deviceType": "phone"},
+            },
+        }
+        resp = DeviceListResponse.from_dict(data)
+        assert len(resp.device_list) == 2
+        assert resp.device_list[0].device_name == "A"
+        assert resp.master_device is not None
+        assert resp.master_device.device_name == "A"
+
+    def test_from_dict_camel_list_key(self):
+        data = {
+            "code": 0,
+            "data": {"deviceList": [{"deviceName": "C", "deviceType": "pc"}]},
+        }
+        resp = DeviceListResponse.from_dict(data)
+        assert len(resp.device_list) == 1
+        assert resp.device_list[0].device_name == "C"
+
+    def test_from_dict_empty(self):
+        resp = DeviceListResponse.from_dict({"code": 0, "data": {}})
+        assert resp.device_list == []
+        assert resp.master_device is None

@@ -18,6 +18,7 @@ from qfluentwidgets import (
     PushSettingCard,
     SettingCard,
     ScrollArea,
+    InfoBar,
 )
 
 from ..common.log import get_logger
@@ -290,8 +291,27 @@ class CloudInterface(ScrollArea):
         """设备列表加载完成回调（主线程）。"""
         if error or device_data is None:
             logger.warning("获取设备列表失败: %s", error)
+            InfoBar.error(
+                title=tr("cloud.device_load_failed", "获取设备列表失败"),
+                content=tr("cloud.device_load_error", "加载登录设备失败: {}").format(
+                    error or "未知错误"
+                ),
+                parent=self,
+            )
+            self._show_device_empty(tr("cloud.device_unavailable", "无法获取设备列表"))
             return
         self._update_device_display(device_data)
+
+    def _show_device_empty(self, text):
+        """设备列表为空/失败时显示占位卡片。"""
+        for card in self._device_cards:
+            self.deviceGroup.removeSettingCard(card)
+            card.deleteLater()
+        self._device_cards.clear()
+        card = SettingCard(FIF.IOT, text, "", self.deviceGroup)
+        self.deviceGroup.addSettingCard(card)
+        self._device_cards.append(card)
+        self.deviceGroup.updateGeometry()
 
     def _update_device_display(self, device_data):
         """更新设备列表界面。"""
@@ -305,6 +325,7 @@ class CloudInterface(ScrollArea):
         master = device_data.master_device
 
         if not devices:
+            self._show_device_empty(tr("cloud.device_none", "未获取到设备信息"))
             return
 
         for index, dev in enumerate(devices, start=1):
@@ -330,4 +351,5 @@ class CloudInterface(ScrollArea):
             self.deviceGroup.addSettingCard(card)
             self._device_cards.append(card)
 
+        self.deviceGroup.updateGeometry()
         logger.info("设备列表已更新: %d 个设备", len(devices))
