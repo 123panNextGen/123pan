@@ -97,3 +97,15 @@ class _QRPollSignals(QObject):
 class _QRVerifySignals(QObject):
     success = pyqtSignal(object)  # Pan123 对象
     error = pyqtSignal(str)       # 失败原因
+
+
+class _SyncJobSignals(QObject):
+    """文件夹同步运行状态信号。"""
+    # (job_id, phase_text) 阶段/状态文本
+    status = pyqtSignal(int, str)
+    # (job_id, rel_path, current, total) 文件级进度
+    file_progress = pyqtSignal(int, str, int, int)
+    # (job_id, rel_path, success, error) 单个文件处理完成
+    file_done = pyqtSignal(int, str, bool, str)
+    # (job_id, success, summary, stats) 运行结束
+    finished = pyqtSignal(int, bool, str, dict)
