@@ -263,7 +263,11 @@ class TestNetSessionHttp:
             status=200,
         )
         session = NetSession()
-        mocker.patch.object(session, "_resolve_download_url", return_value="https://resolved.example.com/file")
+        # 拆分后下载 URL 解析为模块级函数（见 api/session_file.py / download_url.py）
+        mocker.patch(
+            "src.app.api.session_file.resolve_download_url",
+            return_value="https://resolved.example.com/file",
+        )
         file_info = {"FileId": 42, "fileName": "doc.pdf", "Type": 0, "Size": 1024,
                      "Etag": "abc", "S3KeyFlag": ""}
         result = session.get_file_link(file_info)
