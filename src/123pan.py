@@ -27,6 +27,7 @@ from qfluentwidgets.common.style_sheet import updateStyleSheet
 from app.common.log import get_logger, set_log_level
 from app.common.config import ConfigManager
 from app.common.i18n import init_i18n
+from app.common import resource  # 注册 Qt 资源（qss 等，:/(prefix)/... 路径）
 from app.view.main_window import MainWindow
 
 logger = get_logger("123pan")
@@ -84,7 +85,11 @@ def main():
     window.themeListener = listener
     window.show()
     logger.info("主窗口已显示")
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    # 停止系统主题监听线程，避免退出时 "QThread: Destroyed while thread is still running"
+    listener.requestInterruption()
+    listener.wait(2000)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
