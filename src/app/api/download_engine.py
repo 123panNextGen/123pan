@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import concurrent.futures
 import logging
+import random
 import threading
 import time
 from pathlib import Path
@@ -18,6 +19,32 @@ from typing import Callable, Optional
 import requests
 
 logger = logging.getLogger(__name__)
+
+# CDN 限流 / 服务器临时故障状态码：需要更长的退避重试，而非直接判失败
+_THROTTLE_STATUS_CODES = (429, 500, 502, 503, 504)
+
+
+def _is_throttle_error(exc):
+    """判断异常是否属于限流（429）或服务器临时故障（5xx）。"""
+    if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+        return exc.response.status_code in _THROTTLE_STATUS_CODES
+    return False
+
+
+def _throttle_backoff(exc, attempt):
+    """计算限流/临时故障的重试退避秒数。
+
+    优先采用响应头 Retry-After；否则指数退避（2s, 4s, 8s...封顶 30s），
+    并加少量随机抖动，避免多分片同时重试再次触发限流。
+    """
+    if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return min(max(float(retry_after), 1.0), 60.0)
+            except ValueError:
+                pass
+    return min(2 ** attempt * 2.0, 30.0) + random.uniform(0, 0.5)
 
 
 class DownloadCancelledError(Exception):
@@ -119,10 +146,22 @@ class DownloadEngine:
                 )
 
             logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
-            return self._download_chunked(
-                url, file_path, file_size, progress_callback,
-                cancel_event=cancel_event,
-            )
+            try:
+                return self._download_chunked(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
+            except RuntimeError as e:
+                # 分片下载失败（如 CDN 限流 429 重试耗尽、分片合并失败）时
+                # 回退单线程重试，避免整个下载任务失败；
+                # 单线程内部自带限流退避重试。
+                logger.warning(
+                    "多线程分片下载失败，回退单线程: %s (%s)", file_path.name, e
+                )
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
         except DownloadCancelledError:
             logger.info("下载已取消: %s", file_path.name)
             return False
@@ -215,9 +254,12 @@ class DownloadEngine:
             "单线程下载开始: %s (resume_offset=%d)", file_path.name, resume_offset
         )
 
-        # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次
+        # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次；
+        # 限流（429）/服务器临时故障（5xx）退避更久，重试最多 6 次
         max_conn_retries = 3
-        for conn_attempt in range(max_conn_retries):
+        max_throttle_retries = 6
+        conn_attempt = 0
+        while True:
             t0 = time.monotonic()
             try:
                 # 每次尝试根据现有临时文件大小计算续传偏移（断点续传）
@@ -326,6 +368,7 @@ class DownloadEngine:
                         elapsed,
                         wait,
                     )
+                    conn_attempt += 1
                     time.sleep(wait)
                     continue
                 logger.error(
@@ -337,6 +380,34 @@ class DownloadEngine:
                     e,
                 )
                 # 保留临时文件，供下次断点续传
+                raise
+
+            except requests.exceptions.HTTPError as e:
+                elapsed = time.monotonic() - t0
+                if _is_throttle_error(e) and conn_attempt < max_throttle_retries - 1:
+                    wait = _throttle_backoff(e, conn_attempt)
+                    logger.warning(
+                        "单线程下载被限流/服务器临时故障 (第 %d/%d 次): "
+                        "%s (%.1fs)，%.0fs 后重试",
+                        conn_attempt + 1,
+                        max_throttle_retries,
+                        file_path.name,
+                        elapsed,
+                        wait,
+                    )
+                    conn_attempt += 1
+                    time.sleep(wait)
+                    continue
+                status = e.response.status_code if e.response is not None else "?"
+                logger.error(
+                    "单线程下载失败（HTTP %s）: %s (%.1fs): %s",
+                    status,
+                    file_path.name,
+                    elapsed,
+                    e,
+                )
+                if temp_path.exists():
+                    temp_path.unlink()
                 raise
 
             except Exception as e:
@@ -378,8 +449,10 @@ class DownloadEngine:
         def _download_chunk(start: int, end: int, index: int) -> bool:
             part_path = Path(str(temp_path) + f".part{index}")
             headers = {"Range": f"bytes={start}-{end}"}
+            # 普通错误最多重试 3 次；限流/临时故障退避更久，最多重试 6 次
             max_retries = 3
-            for attempt in range(max_retries):
+            max_throttle_retries = 6
+            for attempt in range(max_throttle_retries):
                 chunk_downloaded = 0  # 本次尝试下载的字节数，失败时需回退
                 try:
                     if part_path.exists():
@@ -421,10 +494,20 @@ class DownloadEngine:
                     if chunk_downloaded > 0:
                         with progress_lock:
                             downloaded_bytes[0] -= chunk_downloaded
-                    if attempt < max_retries - 1:
-                        wait = (attempt + 1) * 1.0
+                    is_throttle = _is_throttle_error(e)
+                    limit = max_throttle_retries if is_throttle else max_retries
+                    if attempt < limit - 1:
+                        if is_throttle:
+                            wait = _throttle_backoff(e, attempt)
+                        else:
+                            wait = (attempt + 1) * 1.0
                         logger.warning(
-                            f"分片 {index} 第 {attempt + 1} 次失败，{wait:.0f}s 后重试: {e}"
+                            "分片 %d 第 %d 次失败（%s），%.0fs 后重试: %s",
+                            index,
+                            attempt + 1,
+                            "限流" if is_throttle else "错误",
+                            wait,
+                            e,
                         )
                         time.sleep(wait)
                         continue
