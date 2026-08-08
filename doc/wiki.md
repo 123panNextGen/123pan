@@ -1,10 +1,5 @@
 # 123pan Wiki
 
-> 第三方 123 云盘客户端：通过模拟安卓协议绕过官方 PC 端每日 1GB 自用流量限制。
-> 当前版本 **4.0.0**，GPLv3，开发分支 `fluent-dev`。
-
----
-
 ## 目录
 
 - [1. 技术栈与依赖](#1-技术栈与依赖)
@@ -749,6 +744,5 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 
 ## 附：相关文档
 
-- `doc/PERFORMANCE_REPORT.md` — 性能优化报告（懒加载、内存实测、Nuitka 插件裁剪）
 - `README.md` — 用户使用说明（快捷键、免责声明、下载）
 - `AGENTS.md` — 项目规范与 AI 编写规范
