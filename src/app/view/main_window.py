@@ -59,9 +59,10 @@ class MainWindow(FluentWindow):
         if sys.platform != "win32":
             self.setMicaEffectEnabled(False)
 
-        # 应用窗口透明度设置
+        # 应用窗口透明度设置（100% 时不调用 setWindowOpacity，避免 Linux 平台无合成器警告）
         opacity = ConfigManager.get_setting("windowOpacity", 100)
-        self.set_window_opacity(opacity)
+        if opacity < 100:
+            self.set_window_opacity(opacity)
 
         self.pan = None
         # 持有后台任务引用，防止任务/信号被 GC 回收
