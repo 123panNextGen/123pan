@@ -390,7 +390,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         """启动单个上传线程。"""
         thread = UploadThread(task, self.pan)
         thread.progress_updated.connect(
-            lambda progress, t=task: self.__update_task_progress(t, progress)
+            lambda progress, speed, t=task: self.__update_task_progress(
+                t, progress, speed
+            )
         )
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
@@ -463,7 +465,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         """启动单个下载线程。"""
         thread = DownloadThread(task, self.pan)
         thread.progress_updated.connect(
-            lambda progress, t=task: self.__update_task_progress(t, progress)
+            lambda progress, speed, t=task: self.__update_task_progress(
+                t, progress, speed
+            )
         )
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
@@ -484,9 +488,10 @@ class TransferInterface(QWidget, TransferTableMixin):
             task.file_name,
             self._active_download_count,
             self._max_concurrent_downloads,
-        )
-
-    def __update_task_progress(self, task, progress):
+        ), speed=0.0):
+        """更新任务进度与实时速度（只刷新变更行，避免遍历整表）。"""
+        task.progress = progress
+        task.speed = speedelf, task, progress):
         """更新任务进度（只刷新变更行，避免遍历整表）。"""
         task.progress = progress
         self.__update_single_task_row(task)

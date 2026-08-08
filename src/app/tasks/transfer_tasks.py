@@ -24,6 +24,25 @@ from ..common.transfer_store import TransferStore
 logger = get_logger(__name__)
 
 
+def _measure_speed(speed_ts, speed_bytes, current_speed, bytes_done):
+    """实时速度计算（B/s）。
+
+    相邻两次上报间隔 >= 0.5s 时按字节差/时间差计算，
+    否则沿用当前速度，避免高频信号下抖动。
+
+    Returns:
+        (speed, new_ts, new_bytes)
+    """
+    now = time.monotonic()
+    if speed_ts is None:
+        return 0.0, now, bytes_done
+    dt = now - speed_ts
+    if dt >= 0.5:
+        speed = (bytes_done - speed_bytes) / dt
+        return max(speed, 0.0), now, bytes_done
+    return current_speed, speed_ts, speed_bytes
+
+
 class TransferTask:
     """传输任务基类"""
 
@@ -36,6 +55,7 @@ class TransferTask:
         self.file_name = file_name
         self.file_size = file_size
         self.progress = 0
+        self.speed = 0.0  # 实时速度（B/s），传输中更新
         self.status = tr("transfer.status_waiting", "等待中")
         self.priority = priority
         # 持久化任务 ID（由 TransferStore 分配），用于历史记录与断点续传
@@ -64,9 +84,10 @@ class DownloadTask(TransferTask):
 
 
 class UploadThread(QThread):
-    """上传线程（支持速度限制、暂停/恢复）"""
+    """上传线程（支持并行分片、速度限制、暂停/恢复）"""
 
-    progress_updated = Signal(int)
+    # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
+    progress_updated = Signal(int, float)
     status_updated = Signal(str)
     finished = Signal()
     error = Signal(str)
@@ -78,6 +99,9 @@ class UploadThread(QThread):
         self._pause_event = threading.Event()
         self._pause_event.set()  # 初始状态：不暂停
         self._cancelled = False
+        # 速度测量状态
+        self._speed_ts = None
+        self._speed_bytes = 0
 
     @property
     def is_cancelled(self):
@@ -91,6 +115,7 @@ class UploadThread(QThread):
     def pause(self):
         """暂停传输"""
         self._pause_event.clear()
+        self.task.speed = 0.0
         self.status_updated.emit(tr("transfer.status_paused", "已暂停"))
 
     def resume(self):
@@ -115,6 +140,8 @@ class UploadThread(QThread):
 
             ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
             self.pan.set_upload_speed_limit(ul_limit)
+            ul_threads = ConfigManager.get_setting("uploadThreadCount", 1)
+            logger.debug("上传分片线程数: %d", ul_threads)
 
             current_parent_id = self.pan.parent_file_id
             self.pan.parent_file_id = self.task.target_dir_id
@@ -142,6 +169,22 @@ class UploadThread(QThread):
                 except Exception as e:
                     logger.error("持久化上传会话失败: %s", e)
 
+            def _on_upload_progress(uploaded_bytes):
+                """上传进度回调：计算实时速度并更新 UI。"""
+                if self._cancelled:
+                    return
+                speed, ts, b = _measure_speed(
+                    self._speed_ts, self._speed_bytes,
+                    self.task.speed, uploaded_bytes,
+                )
+                self._speed_ts, self._speed_bytes = ts, b
+                self.task.speed = speed
+                if self.task.file_size > 0:
+                    pct = int(uploaded_bytes * 100 / self.task.file_size)
+                else:
+                    pct = 0
+                self.progress_updated.emit(pct, speed)
+
             t0 = time.monotonic()
             if resume_info:
                 self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
@@ -150,16 +193,20 @@ class UploadThread(QThread):
                 task=self,
                 resume_info=resume_info,
                 session_callback=_on_session,
+                num_threads=ul_threads,
+                progress_callback=_on_upload_progress,
             )
             elapsed = time.monotonic() - t0
 
             self.pan.parent_file_id = current_parent_id
 
             if self._cancelled:
+                self.task.speed = 0.0
                 self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
 
-            self.progress_updated.emit(100)
+            self.task.speed = 0.0
+            self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
             self.finished.emit()
             logger.info("上传完成: %s (%.1fs)", self.task.file_name, elapsed)
@@ -172,7 +219,8 @@ class UploadThread(QThread):
 class DownloadThread(QThread):
     """下载线程（支持多线程分片、速度限制、暂停/恢复）"""
 
-    progress_updated = Signal(int)
+    # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
+    progress_updated = Signal(int, float)
     status_updated = Signal(str)
     finished = Signal()
     error = Signal(str)
@@ -185,10 +233,14 @@ class DownloadThread(QThread):
         self._pause_event.set()
         self._cancelled = False
         self._cancel_event = threading.Event()
+        # 速度测量状态
+        self._speed_ts = None
+        self._speed_bytes = 0
 
     def pause(self):
         """暂停传输"""
         self._pause_event.clear()
+        self.task.speed = 0.0
         self.status_updated.emit(tr("transfer.status_paused", "已暂停"))
 
     def resume(self):
@@ -231,7 +283,13 @@ class DownloadThread(QThread):
                 self._pause_event.wait()  # 暂停时阻塞回调
                 if total > 0:
                     pct = int(downloaded * 100 / total)
-                    self.progress_updated.emit(pct)
+                    speed, ts, b = _measure_speed(
+                        self._speed_ts, self._speed_bytes,
+                        self.task.speed, downloaded,
+                    )
+                    self._speed_ts, self._speed_bytes = ts, b
+                    self.task.speed = speed
+                    self.progress_updated.emit(pct, speed)
 
             target_file = self._find_file_info()
             if not target_file:
@@ -286,7 +344,8 @@ class DownloadThread(QThread):
                     if file_path.exists():
                         file_path.unlink()
                     temp_path.rename(file_path)
-                    self.progress_updated.emit(100)
+                    self.task.speed = 0.0
+                    self.progress_updated.emit(100, 0.0)
                     self.status_updated.emit(tr("transfer.status_completed", "已完成"))
                     self.finished.emit()
                     return
@@ -304,13 +363,15 @@ class DownloadThread(QThread):
 
             # 取消优先于失败处理：已取消时不报错，临时文件保留供续传
             if self._cancelled:
+                self.task.speed = 0.0
                 self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
 
             if not success:
                 raise RuntimeError("下载失败")
 
-            self.progress_updated.emit(100)
+            self.task.speed = 0.0
+            self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
             self.finished.emit()
             speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
