@@ -98,7 +98,8 @@ class UploadService:
         if res_code_up != 0:
             raise RuntimeError(f"获取链接失败: {get_link_res_json}")
         urls = {}
-        for k, v in (get_link_res_json.get("data") or {}).get("presignedUrls") or {}:
+        presigned = (get_link_res_json.get("data") or {}).get("presignedUrls") or {}
+        for k, v in presigned.items():
             try:
                 urls[int(k)] = v
             except (TypeError, ValueError):

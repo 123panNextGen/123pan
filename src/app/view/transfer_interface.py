@@ -509,12 +509,12 @@ class TransferInterface(QWidget, TransferTableMixin):
             task.file_name,
             self._active_download_count,
             self._max_concurrent_downloads,
-        ), speed=0.0):
+        )
+
+    def __update_task_progress(self, task, progress, speed=0.0):
         """更新任务进度与实时速度（只刷新变更行，避免遍历整表）。"""
         task.progress = progress
-        task.speed = speedelf, task, progress):
-        """更新任务进度（只刷新变更行，避免遍历整表）。"""
-        task.progress = progress
+        task.speed = speed
         self.__update_single_task_row(task)
 
     def __update_task_status(self, task, status):
