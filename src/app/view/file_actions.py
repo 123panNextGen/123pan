@@ -32,6 +32,7 @@ from ..tasks.file_tasks import (
     CreateShareTask,
     DeleteFileTask,
     GetDownloadLinkTask,
+    CopyFileTask,
     MoveFileTask,
     RenameFileTask,
     connect_tracked,
@@ -49,7 +50,7 @@ logger = get_logger(__name__)
 
 
 class FileActionsMixin:
-    """文件操作逻辑（新建/上传/下载/删除/重命名/移动/分享/预览等）。"""
+    """文件操作逻辑（新建/上传/下载/删除/重命名/移动/复制/分享/预览等）。"""
 
     def _createNewFolder(self):
         """创建新文件夹"""
@@ -451,6 +452,77 @@ class FileActionsMixin:
                 # 显示错误信息
                 InfoBar.error(title=tr("file.msg_rename_failed", "重命名失败"), content=tr("file.msg_rename_failed", "重命名失败"), parent=self)
 
+    def _copyFile(self):
+        """复制选中文件/文件夹到目标目录"""
+
+        selected_items = self.fileTable.selectedItems()
+        if not selected_items:
+            InfoBar.warning(
+                title=tr("file.msg_copy_error", "复制错误"),
+                content=tr("file.msg_select_file_move", "请选择要复制的文件或文件夹"),
+                parent=self,
+            )
+            return
+
+        file_infos = []
+        seen = set()
+        for item in selected_items:
+            if item.column() != 0:
+                continue
+            row = item.row()
+            name_item = self.fileTable.item(row, 0)
+            if name_item is None:
+                continue
+            file_id = int(name_item.data(Qt.ItemDataRole.UserRole) or 0)
+            if file_id in seen:
+                continue
+            seen.add(file_id)
+            file_infos.append((file_id, name_item.text()))
+
+        if not file_infos:
+            return
+
+        # 不能复制到当前目录自身
+        dialog = FolderSelectDialog(
+            self.pan, exclude_dir_ids=(self.current_dir_id,), parent=self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        target = dialog.selected_dir_id()
+        if target is None or target == self.current_dir_id:
+            return
+
+        signals = _OpFinishedSignals()
+        task = CopyFileTask(
+            self.pan, file_infos, target, self.current_dir_id, signals, self
+        )
+        connect_tracked(self, signals, "finished", self._onCopyFileFinished, task)
+        QThreadPool.globalInstance().start(task)
+
+    def _onCopyFileFinished(
+        self, success, name, new_name, error, file_items, folder_items
+    ):
+        """复制文件完成后的回调 - 只负责UI更新"""
+        if success:
+            InfoBar.success(
+                title=tr("file.msg_copy_success", "复制成功"),
+                content=tr("file.msg_copy_done", "文件已复制到目标目录"),
+                parent=self,
+            )
+            # 更新文件列表与目录树（轻量级UI操作）
+            self._updateFileListUI(file_items)
+            self._updateTreeUI(folder_items)
+            current_item = self._findTreeItemById(self.current_dir_id)
+            if current_item:
+                self.folderTree.setCurrentItem(current_item)
+        else:
+            msg = error or tr("file.msg_copy_failed", "复制失败")
+            InfoBar.error(
+                title=tr("file.msg_copy_failed", "复制失败"),
+                content=tr("file.msg_copy_file_error", "复制文件时发生错误: {}").format(msg),
+                parent=self,
+            )
+
     def _moveFile(self):
         """移动选中文件/文件夹到目标目录"""
         selected_items = self.fileTable.selectedItems()
@@ -557,6 +629,11 @@ class FileActionsMixin:
         rename_action = QAction(_icon(FIF.EDIT), tr("file.menu_rename", "重命名"), self)
         rename_action.triggered.connect(self._renameFile)
         menu.addAction(rename_action)
+
+        # 添加复制菜单项
+        copy_action = QAction(_icon(FIF.COPY), tr("file.menu_copy", "复制到"), self)
+        copy_action.triggered.connect(self._copyFile)
+        menu.addAction(copy_action)
 
         # 添加移动菜单项
         move_action = QAction(_icon(FIF.RIGHT_ARROW), tr("file.menu_move", "移动到"), self)

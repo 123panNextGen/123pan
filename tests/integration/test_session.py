@@ -422,3 +422,99 @@ class TestNetSessionModPid:
         result = session.mod_pid([1], 99)
         assert result.code == -1
         assert result.api_code_enum == ApiCode.fail
+
+
+class TestNetSessionCopyFiles:
+    @responses.activate
+    def test_copy_files_async_success(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {"taskId": 1475675}},
+            status=200,
+        )
+        session = NetSession()
+        file_list = [{"FileId": 1, "FileName": "a.txt", "Type": 0, "DriveId": 0}]
+        result = session.copy_files_async(file_list, 99)
+        assert result.code == 0
+        assert result.api_code_enum == ApiCode.success
+        assert result.data == 1475675
+        import json as _json
+
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["targetFileId"] == 99
+        assert body["fileList"] == file_list
+
+    @responses.activate
+    def test_copy_files_async_taskID_uppercase(self):
+        """兼容响应字段为 taskID（大写）的情况。"""
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {"taskID": "abc123"}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 0)
+        assert result.code == 0
+        assert result.data == "abc123"
+
+    @responses.activate
+    def test_copy_files_async_failure(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 5066, "message": "文件不存在"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 999}], 99)
+        assert result.code == 5066
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "文件不存在"
+
+    @responses.activate
+    def test_copy_files_async_missing_task_id(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 99)
+        assert result.code == -1
+        assert "任务" in result.msg
+
+    @responses.activate
+    def test_copy_files_async_network_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            body=requests.exceptions.Timeout("request timed out"),
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 99)
+        assert result.code == -1
+        assert result.api_code_enum == ApiCode.fail
+
+    @responses.activate
+    def test_copy_file_task_success(self):
+        responses.get(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/task",
+            json={"code": 0, "message": "ok", "data": {"status": 2, "failMsg": ""}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_file_task(1475675)
+        assert result.code == 0
+        assert result.data["status"] == 2
+        assert "taskId=1475675" in responses.calls[0].request.url
+
+    @responses.activate
+    def test_copy_file_task_failure(self):
+        responses.get(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/task",
+            json={"code": 429, "message": "请求过于频繁"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_file_task(1)
+        assert result.code == 429
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "请求过于频繁"
