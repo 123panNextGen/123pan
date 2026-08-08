@@ -146,10 +146,22 @@ class DownloadEngine:
                 )
 
             logger.debug("启用多线程分片下载: %d 线程", self._num_threads)
-            return self._download_chunked(
-                url, file_path, file_size, progress_callback,
-                cancel_event=cancel_event,
-            )
+            try:
+                return self._download_chunked(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
+            except RuntimeError as e:
+                # 分片下载失败（如 CDN 限流 429 重试耗尽、分片合并失败）时
+                # 回退单线程重试，避免整个下载任务失败；
+                # 单线程内部自带限流退避重试。
+                logger.warning(
+                    "多线程分片下载失败，回退单线程: %s (%s)", file_path.name, e
+                )
+                return self._download_single(
+                    url, file_path, file_size, progress_callback,
+                    cancel_event=cancel_event,
+                )
         except DownloadCancelledError:
             logger.info("下载已取消: %s", file_path.name)
             return False
