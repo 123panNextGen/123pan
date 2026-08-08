@@ -254,9 +254,12 @@ class DownloadEngine:
             "单线程下载开始: %s (resume_offset=%d)", file_path.name, resume_offset
         )
 
-        # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次
+        # 连接级错误重试：文件夹 zip 等场景下 CDN 可能断连，重试最多 3 次；
+        # 限流（429）/服务器临时故障（5xx）退避更久，重试最多 6 次
         max_conn_retries = 3
-        for conn_attempt in range(max_conn_retries):
+        max_throttle_retries = 6
+        conn_attempt = 0
+        while True:
             t0 = time.monotonic()
             try:
                 # 每次尝试根据现有临时文件大小计算续传偏移（断点续传）
@@ -365,6 +368,7 @@ class DownloadEngine:
                         elapsed,
                         wait,
                     )
+                    conn_attempt += 1
                     time.sleep(wait)
                     continue
                 logger.error(
@@ -376,6 +380,34 @@ class DownloadEngine:
                     e,
                 )
                 # 保留临时文件，供下次断点续传
+                raise
+
+            except requests.exceptions.HTTPError as e:
+                elapsed = time.monotonic() - t0
+                if _is_throttle_error(e) and conn_attempt < max_throttle_retries - 1:
+                    wait = _throttle_backoff(e, conn_attempt)
+                    logger.warning(
+                        "单线程下载被限流/服务器临时故障 (第 %d/%d 次): "
+                        "%s (%.1fs)，%.0fs 后重试",
+                        conn_attempt + 1,
+                        max_throttle_retries,
+                        file_path.name,
+                        elapsed,
+                        wait,
+                    )
+                    conn_attempt += 1
+                    time.sleep(wait)
+                    continue
+                status = e.response.status_code if e.response is not None else "?"
+                logger.error(
+                    "单线程下载失败（HTTP %s）: %s (%.1fs): %s",
+                    status,
+                    file_path.name,
+                    elapsed,
+                    e,
+                )
+                if temp_path.exists():
+                    temp_path.unlink()
                 raise
 
             except Exception as e:
