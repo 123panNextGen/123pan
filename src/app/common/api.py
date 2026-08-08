@@ -217,6 +217,21 @@ class Pan123:
     def rename_file(self, file_id, new_name):
         return self._file.rename_file(file_id, new_name)
 
+    def copy_file(self, file_id_list, target_parent_id, source_parent_id=None):
+        """复制文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+            source_parent_id: 源目录 ID（可选，用于构造完整的 fileList）
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.copy_files(
+            file_id_list, target_parent_id, source_parent_id
+        )
+
     def move_file(self, file_id_list, target_parent_id):
         """移动文件/文件夹到目标目录。
 

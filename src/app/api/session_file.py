@@ -551,6 +551,122 @@ class FileSessionMixin:
             msg="",
         )
 
+    def copy_files_async(self, file_list: list[dict], target_parent_id: int) -> ApiReturnModel:
+        """复制文件/文件夹到目标目录（异步任务）。
+
+        调用 /b/api/restful/goapi/v1/file/copy/async 接口创建复制任务，
+        成功后返回任务 ID（data 字段）。
+        """
+        url = urljoin(BASE_URL, "/b/api/restful/goapi/v1/file/copy/async")
+        data = {"fileList": file_list, "targetFileId": int(target_parent_id)}
+        t0 = time.monotonic()
+        try:
+            resp = self._http.post(url, json=data, timeout=10)
+        except requests.RequestException as e:
+            logger.error(
+                "发起复制任务失败: target=%s, n=%d, err=%s",
+                target_parent_id,
+                len(file_list),
+                e,
+            )
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        logger.debug(
+            "发起复制任务 (%.2fs): target=%s, n=%d, code=%s",
+            elapsed,
+            target_parent_id,
+            len(file_list),
+            code,
+        )
+        if code != 0:
+            logger.error(
+                "发起复制任务失败: target=%s, code=%s, msg=%s",
+                target_parent_id,
+                code,
+                body.get("message", ""),
+            )
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=body.get("message", ""),
+            )
+        data_dict = body.get("data") or {}
+        task_id = data_dict.get("taskId") or data_dict.get("taskID")
+        if task_id is None:
+            logger.error("复制任务响应中未找到任务 ID: %s", data_dict)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg="响应中未找到任务 ID",
+            )
+        logger.info("复制任务已创建: task_id=%s, n=%d", task_id, len(file_list))
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data=task_id,
+        )
+
+    def copy_file_task(self, task_id) -> ApiReturnModel:
+        """查询复制任务状态。
+
+        调用 /b/api/restful/goapi/v1/file/copy/task 接口。
+        任务状态（data.status）：1 进行中，2 结束（成功），3 失败，4 等待。
+        """
+        url = urljoin(BASE_URL, "/b/api/restful/goapi/v1/file/copy/task")
+        params = {"taskId": task_id}
+        t0 = time.monotonic()
+        try:
+            resp = self._http.get(url, params=params, timeout=10)
+        except requests.RequestException as e:
+            logger.error("查询复制任务失败: task_id=%s, err=%s", task_id, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+        elapsed = time.monotonic() - t0
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        logger.debug(
+            "查询复制任务 (%.2fs): task_id=%s, code=%s", elapsed, task_id, code
+        )
+        if code != 0:
+            logger.warning(
+                "查询复制任务失败: task_id=%s, code=%s, msg=%s",
+                task_id,
+                code,
+                body.get("message", ""),
+            )
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=body.get("message", ""),
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg="",
+            data=body.get("data"),
+        )
+
 
 from ..common.log import get_logger  # noqa: E402  (模块底部导入，避免循环依赖)
 

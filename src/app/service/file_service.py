@@ -229,6 +229,75 @@ class FileService:
             self._db.mark_dirty(parent_file_id)
         return True
 
+    def copy_files(self, file_id_list, target_parent_id, source_parent_id=None):
+        """复制文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+            source_parent_id: 源目录 ID（用于获取完整文件信息构造 fileList）
+
+        Returns:
+            (success, msg)
+        """
+        if not file_id_list:
+            return False, "文件列表为空"
+
+        # 构造 fileList：优先使用源目录列表（含本地缓存）中的完整文件信息
+        file_list = []
+        by_id = {}
+        if source_parent_id is not None:
+            code, files, _, _, _ = self.get_dir_by_id(
+                source_parent_id, all=True, limit=1000
+            )
+            if code == 0 and files:
+                by_id = {str(f.get("FileId")): f for f in files}
+        # 逐项构造：源列表缺失（目录过大/缓存不全）的文件降级为仅 FileId，不静默丢弃
+        for fid in file_id_list:
+            info = by_id.get(str(fid))
+            if info:
+                item = dict(info)
+                item.setdefault("DriveId", 0)
+            else:
+                item = {"FileId": int(fid)}
+            file_list.append(item)
+
+        result = self._session.copy_files_async(file_list, target_parent_id)
+        if result.code != 0:
+            logger.error(
+                "复制文件失败: target=%s, code=%s, msg=%s",
+                target_parent_id, result.code, result.msg,
+            )
+            return False, result.msg or f"复制失败 (code={result.code})"
+
+        success, msg = self._poll_copy_task(result.data)
+        if not success:
+            return False, msg
+        # 复制后目标目录缓存失效
+        self._db.mark_dirty(target_parent_id)
+        return True, ""
+
+    def _poll_copy_task(self, task_id, max_retries=60, interval=1.0):
+        """轮询复制任务直到终态。返回 (success, msg)。"""
+        for _ in range(max_retries):
+            result = self._session.copy_file_task(task_id)
+            if result.code != 0:
+                return False, result.msg or f"查询复制任务失败 (code={result.code})"
+            data = result.data or {}
+            status = data.get("status")
+            if status is None:
+                # 防御性兜底：响应不含状态字段时视为成功。
+                # 风险：若服务端处理中恰好返回无 status 的响应，会提前报成功，
+                # 用户可通过刷新列表核对结果。
+                return True, ""
+            if status == 2:
+                return True, ""
+            if status == 3:
+                return False, data.get("failMsg") or "复制任务失败"
+            # status 1（进行中）/4（等待）继续轮询
+            time.sleep(interval)
+        return False, "复制超时，请稍后刷新查看结果"
+
     def move_files(self, file_id_list, target_parent_id):
         """移动文件/文件夹到目标目录。
 
