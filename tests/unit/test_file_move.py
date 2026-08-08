@@ -126,6 +126,21 @@ class TestFileServiceCopy:
         assert sent_list == [{"FileId": 1}, {"FileId": 2}]
         session.copy_file_task.assert_called_once_with(1475675)
 
+    def test_copy_success_string_taskid(self, tmp_db):
+        """任务 ID 为字符串时透传，不做 int() 强转。"""
+        svc, session = self._make()
+        session.copy_files_async.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg="", data="abc123"
+        )
+        session.copy_file_task.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg="",
+            data={"status": 2, "failMsg": ""},
+        )
+        ok, msg = svc.copy_files([1], 99)
+        assert ok is True
+        assert msg == ""
+        session.copy_file_task.assert_called_once_with("abc123")
+
     def test_copy_success_with_source_list(self, tmp_db, mocker):
         """有源目录信息时 fileList 使用完整文件对象并补 DriveId。"""
         svc, session = self._make()

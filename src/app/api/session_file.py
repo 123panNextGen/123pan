@@ -627,7 +627,7 @@ class FileSessionMixin:
         任务状态（data.status）：1 进行中，2 结束（成功），3 失败，4 等待。
         """
         url = urljoin(BASE_URL, "/b/api/restful/goapi/v1/file/copy/task")
-        params = {"taskId": int(task_id)}
+        params = {"taskId": task_id}
         t0 = time.monotonic()
         try:
             resp = self._http.get(url, params=params, timeout=10)
