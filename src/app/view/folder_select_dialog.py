@@ -142,7 +142,9 @@ class FolderSelectDialog(QDialog):
             self._checked_dir_ids.setdefault(fid, None)
         else:
             self._checked_dir_ids.pop(fid, None)
-        self.btn_ok.setEnabled(bool(self._checked_dir_ids))
+        # 按钮可能尚未创建（__build_root 设置根节点复选框期间触发的 itemChanged）
+        if hasattr(self, "btn_ok"):
+            self.btn_ok.setEnabled(bool(self._checked_dir_ids))
 
     def __ensure_loaded(self, item):
         loaded = item.data(0, Qt.ItemDataRole.UserRole + 1)
