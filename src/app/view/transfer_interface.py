@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (
@@ -28,7 +28,7 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
-from ..common.utils import format_file_size
+from ..common.utils import format_file_size, format_speed
 from ..common.config import ConfigManager
 from ..common.transfer_store import (
     TransferStore,
@@ -85,6 +85,12 @@ class TransferInterface(QWidget, TransferTableMixin):
         self._max_concurrent_downloads = ConfigManager.get_setting(
             "maxConcurrentDownloads", _DEFAULT_MAX_CONCURRENT
         )
+
+        # 总速度汇总定时刷新（每秒）
+        self._speed_timer = QTimer(self)
+        self._speed_timer.setInterval(1000)
+        self._speed_timer.timeout.connect(self.__update_total_speed)
+        self._speed_timer.start()
 
         self.__createTopBar()
         self.__createContent()
@@ -152,14 +158,15 @@ class TransferInterface(QWidget, TransferTableMixin):
             self.pan.clear_download_proxy()
 
     def _apply_speed_settings(self):
-        """从配置读取并应用速度限制设置。"""
+        """从配置读取并应用速度限制与分片线程设置。"""
         if not self.pan:
             return
         dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
         ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
         multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
+        dl_threads = ConfigManager.get_setting("downloadThreadCount", 4)
 
-        self.pan.set_download_multi_thread(multi_thread)
+        self.pan.set_download_multi_thread(multi_thread, dl_threads)
         self.pan.set_download_speed_limit(dl_limit)
         self.pan.set_upload_speed_limit(ul_limit)
 
@@ -183,6 +190,16 @@ class TransferInterface(QWidget, TransferTableMixin):
         )
         self.segmentedWidget.setCurrentItem("upload")
 
+        # 顶栏汇总速度标签（每秒刷新）
+        self.uploadTotalSpeedLabel = QLabel(
+            tr("transfer.total_upload_speed", "↑ 上传 --"), self.topBarFrame
+        )
+        self.downloadTotalSpeedLabel = QLabel(
+            tr("transfer.total_download_speed", "↓ 下载 --"), self.topBarFrame
+        )
+        for lbl in (self.uploadTotalSpeedLabel, self.downloadTotalSpeedLabel):
+            lbl.setStyleSheet("color: gray; font-size: 12px;")
+
         self.clearCompletedButton = PushButton(
             FIF.DELETE.icon(), tr("transfer.clear_completed", "清除已完成"), self.topBarFrame
         )
@@ -190,6 +207,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         self.topBarLayout.addWidget(self.titleLabel)
         self.topBarLayout.addWidget(self.segmentedWidget)
         self.topBarLayout.addStretch(1)
+        self.topBarLayout.addWidget(self.uploadTotalSpeedLabel, 0)
+        self.topBarLayout.addWidget(self.downloadTotalSpeedLabel, 0)
+        self.topBarLayout.addSpacing(8)
         self.topBarLayout.addWidget(self.clearCompletedButton, 0)
 
         self.mainLayout.addWidget(self.topBarFrame)
@@ -203,9 +223,9 @@ class TransferInterface(QWidget, TransferTableMixin):
 
         self.uploadTable = TableWidget(self.uploadFrame)
         self.uploadTable.setAlternatingRowColors(True)
-        self.uploadTable.setColumnCount(7)
+        self.uploadTable.setColumnCount(8)
         self.uploadTable.setHorizontalHeaderLabels(
-            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_speed", "速度"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
@@ -217,10 +237,11 @@ class TransferInterface(QWidget, TransferTableMixin):
             header.setSectionResizeMode(0, header.ResizeMode.Stretch)
             header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(4, header.ResizeMode.Stretch)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(7, header.ResizeMode.ResizeToContents)
 
         self.uploadLayout.addWidget(self.uploadTable)
         self.uploadEmptyLabel = self.__make_empty_label(
@@ -236,9 +257,9 @@ class TransferInterface(QWidget, TransferTableMixin):
 
         self.downloadTable = TableWidget(self.downloadFrame)
         self.downloadTable.setAlternatingRowColors(True)
-        self.downloadTable.setColumnCount(7)
+        self.downloadTable.setColumnCount(8)
         self.downloadTable.setHorizontalHeaderLabels(
-            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
+            [tr("transfer.col_name", "文件名"), tr("transfer.col_priority", "优先级"), tr("transfer.col_size", "大小"), tr("transfer.col_speed", "速度"), tr("transfer.col_progress", "进度"), tr("transfer.col_percent", "百分比"), tr("transfer.col_status", "状态"), tr("transfer.col_action", "操作")]
         )
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
@@ -250,10 +271,11 @@ class TransferInterface(QWidget, TransferTableMixin):
             header.setSectionResizeMode(0, header.ResizeMode.Stretch)
             header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(4, header.ResizeMode.Stretch)
             header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(7, header.ResizeMode.ResizeToContents)
 
         self.downloadLayout.addWidget(self.downloadTable)
         self.downloadEmptyLabel = self.__make_empty_label(
@@ -389,7 +411,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         """启动单个上传线程。"""
         thread = UploadThread(task, self.pan)
         thread.progress_updated.connect(
-            lambda progress, t=task: self.__update_task_progress(t, progress)
+            lambda progress, speed, t=task: self.__update_task_progress(
+                t, progress, speed
+            )
         )
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
@@ -462,7 +486,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         """启动单个下载线程。"""
         thread = DownloadThread(task, self.pan)
         thread.progress_updated.connect(
-            lambda progress, t=task: self.__update_task_progress(t, progress)
+            lambda progress, speed, t=task: self.__update_task_progress(
+                t, progress, speed
+            )
         )
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
@@ -485,9 +511,10 @@ class TransferInterface(QWidget, TransferTableMixin):
             self._max_concurrent_downloads,
         )
 
-    def __update_task_progress(self, task, progress):
-        """更新任务进度（只刷新变更行，避免遍历整表）。"""
+    def __update_task_progress(self, task, progress, speed=0.0):
+        """更新任务进度与实时速度（只刷新变更行，避免遍历整表）。"""
         task.progress = progress
+        task.speed = speed
         self.__update_single_task_row(task)
 
     def __update_task_status(self, task, status):
@@ -827,6 +854,17 @@ class TransferInterface(QWidget, TransferTableMixin):
     def __update_download_table(self):
         self._update_table(self.downloadTable, self.download_tasks, "download")
         self.downloadEmptyLabel.setVisible(not bool(self.download_tasks))
+
+    def __update_total_speed(self):
+        """汇总当前上传/下载总速度并更新顶栏标签（由 QTimer 周期触发）。"""
+        ul_speed = sum(t.speed for t in self.upload_tasks)
+        dl_speed = sum(t.speed for t in self.download_tasks)
+        self.uploadTotalSpeedLabel.setText(
+            tr("transfer.total_upload_speed", "↑ 上传 {}").format(format_speed(ul_speed))
+        )
+        self.downloadTotalSpeedLabel.setText(
+            tr("transfer.total_download_speed", "↓ 下载 {}").format(format_speed(dl_speed))
+        )
 
     # ---- 历史记录 ----
 

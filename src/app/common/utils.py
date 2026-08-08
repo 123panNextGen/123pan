@@ -34,3 +34,17 @@ def format_file_size(size):
     if unit_index == 0:
         return f"{int(rounded)} {units[unit_index]}"
     return f"{rounded} {units[unit_index]}"
+
+
+def format_speed(bps):
+    """将字节/秒格式化为可读速度字符串。
+
+    Args:
+        bps: 每秒传输字节数（<=0 时显示占位符 "--"）
+
+    Returns:
+        格式化后的速度字符串，如 "1.5 MB/s"、"256 KB/s"、"--"
+    """
+    if bps <= 0:
+        return "--"
+    return format_file_size(bps) + "/s"

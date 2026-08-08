@@ -15,7 +15,7 @@ from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import ProgressBar, PushButton
 
 from ..common.i18n import tr
-from ..common.utils import format_file_size
+from ..common.utils import format_file_size, format_speed
 
 
 class TransferTableMixin:
@@ -36,13 +36,16 @@ class TransferTableMixin:
     def _update_row(self, table, task, row, task_type):
         """更新表格中单行任务的状态展示。
 
-        渲染状态 = (状态, 进度, 大小, 名称)，任一变化才更新该行。
+        渲染状态 = (状态, 进度, 速度, 大小, 名称)，任一变化才更新该行。
         """
-        status_item = table.item(row, 5)
+        status_item = table.item(row, 6)
         last_state = (
             status_item.data(Qt.ItemDataRole.UserRole) if status_item else None
         )
-        state = (task.status, task.progress, task.file_size, task.file_name)
+        state = (
+            task.status, task.progress, task.speed,
+            task.file_size, task.file_name,
+        )
 
         if state == last_state:
             return
@@ -88,38 +91,48 @@ class TransferTableMixin:
         else:
             size_item.setText(format_file_size(task.file_size))
 
+        # ---- 实时速度 ----
+        speed_item = table.item(row, 3)
+        speed_text = format_speed(task.speed)
+        if not speed_item:
+            speed_item = QTableWidgetItem(speed_text)
+            speed_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(row, 3, speed_item)
+        else:
+            speed_item.setText(speed_text)
+
         # ---- 进度条 ----
-        progress_bar = table.cellWidget(row, 3)
+        progress_bar = table.cellWidget(row, 4)
         if not progress_bar:
             progress_bar = ProgressBar()
             progress_bar.setTextVisible(False)
-            table.setCellWidget(row, 3, progress_bar)
+            table.setCellWidget(row, 4, progress_bar)
         progress_bar.setValue(task.progress)
 
         # ---- 百分比 ----
-        percent_item = table.item(row, 4)
+        percent_item = table.item(row, 5)
         if not percent_item:
             percent_item = QTableWidgetItem(f"{task.progress}%")
             percent_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(row, 4, percent_item)
+            table.setItem(row, 5, percent_item)
         else:
             percent_item.setText(f"{task.progress}%")
 
         # ---- 状态 ----
         if not status_item:
             status_item = QTableWidgetItem(task.status)
-            table.setItem(row, 5, status_item)
+            table.setItem(row, 6, status_item)
         else:
             status_item.setText(task.status)
 
         # ---- 操作按钮（状态变化时重建，按钮集合随状态变化） ----
-        old_action = table.cellWidget(row, 6)
+        old_action = table.cellWidget(row, 7)
         prev_status = last_state[0] if last_state else None
         status_item.setData(Qt.ItemDataRole.UserRole, state)
 
         if old_action is None or prev_status != task.status:
             if old_action is not None:
-                table.removeCellWidget(row, 6)
+                table.removeCellWidget(row, 7)
                 old_action.deleteLater()
 
             action_layout = QHBoxLayout()
@@ -168,4 +181,4 @@ class TransferTableMixin:
             action_layout.addWidget(delete_button)
             action_widget = QWidget()
             action_widget.setLayout(action_layout)
-            table.setCellWidget(row, 6, action_widget)
+            table.setCellWidget(row, 7, action_widget)

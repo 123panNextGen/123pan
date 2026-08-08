@@ -251,10 +251,12 @@ class Pan123:
         """从回收站永久删除指定文件"""
         return self._file.permanent_delete_files(file_id_list)
 
-    def up_load(self, file_path, task=None, resume_info=None, session_callback=None):
+    def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
+                num_threads=1, progress_callback=None):
         return self._upload.up_load(
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
+            num_threads=num_threads, progress_callback=progress_callback,
         )
 
     def mkdir(self, dirname, remakedir=False):
@@ -279,8 +281,9 @@ class Pan123:
 
     # ---- Session 配置（门面方法） ----
 
-    def set_download_multi_thread(self, enabled):
-        self._download.set_multi_thread(enabled)
+    def set_download_multi_thread(self, enabled, num_threads=4):
+        """启用/关闭多线程分片下载，并设置每个文件的下载线程数。"""
+        self._download.set_multi_thread(enabled, num_threads)
 
     def set_download_speed_limit(self, kbps):
         self._download.set_download_speed_limit(kbps)

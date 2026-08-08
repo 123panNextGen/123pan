@@ -226,6 +226,28 @@ class SettingInterface(ScrollArea):
             ConfigManager.get_setting("multiThreadDownload", True)
         )
 
+        self.downloadThreadCountCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("settings.download_threads", "下载线程数"),
+            tr("settings.download_threads_desc", "每个下载任务使用的分片线程数（1-16）"),
+            ConfigManager.get_setting("downloadThreadCount", 4),
+            self.downloadGroup,
+            min_val=1,
+            max_val=16,
+            step=1,
+        )
+
+        self.uploadThreadCountCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("settings.upload_threads", "上传线程数"),
+            tr("settings.upload_threads_desc", "每个上传任务并行上传的分片数（1=顺序上传）"),
+            ConfigManager.get_setting("uploadThreadCount", 1),
+            self.downloadGroup,
+            min_val=1,
+            max_val=16,
+            step=1,
+        )
+
         self.downloadSpeedCard = _SpeedLimitCard(
             FIF.SPEED_HIGH,
             tr("下载限速"),
@@ -466,6 +488,8 @@ class SettingInterface(ScrollArea):
         self.downloadGroup.addSettingCard(self.downloadFolderCard)
         self.downloadGroup.addSettingCard(self.askDownloadLocationCard)
         self.downloadGroup.addSettingCard(self.multiThreadCard)
+        self.downloadGroup.addSettingCard(self.downloadThreadCountCard)
+        self.downloadGroup.addSettingCard(self.uploadThreadCountCard)
         self.downloadGroup.addSettingCard(self.downloadSpeedCard)
         self.downloadGroup.addSettingCard(self.uploadSpeedCard)
         self.downloadGroup.addSettingCard(self.maxConcurrentUploadCard)
@@ -667,8 +691,22 @@ class SettingInterface(ScrollArea):
         ConfigManager.set_setting("multiThreadDownload", checked)
         mw = self.window()
         if mw and hasattr(mw, "pan"):
-            mw.pan.set_download_multi_thread(checked)
+            num_threads = ConfigManager.get_setting("downloadThreadCount", 4)
+            mw.pan.set_download_multi_thread(checked, num_threads)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
+
+    def __onDownloadThreadsChanged(self, val):
+        ConfigManager.set_setting("downloadThreadCount", val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_multi_thread(
+                ConfigManager.get_setting("multiThreadDownload", True), val
+            )
+        logger.info("下载线程数: %d", val)
+
+    def __onUploadThreadsChanged(self, val):
+        ConfigManager.set_setting("uploadThreadCount", val)
+        logger.info("上传线程数: %d", val)
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
@@ -760,6 +798,12 @@ class SettingInterface(ScrollArea):
             self.__onAskDownloadLocationChanged
         )
         self.multiThreadCard.checkedChanged.connect(self.__onMultiThreadChanged)
+        self.downloadThreadCountCard.spinBox.valueChanged.connect(
+            self.__onDownloadThreadsChanged
+        )
+        self.uploadThreadCountCard.spinBox.valueChanged.connect(
+            self.__onUploadThreadsChanged
+        )
         self.downloadSpeedCard.spinBox.valueChanged.connect(
             self.__onDownloadSpeedChanged
         )

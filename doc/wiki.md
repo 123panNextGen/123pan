@@ -416,6 +416,8 @@ QThreadPool.globalInstance().start(task)
 | `defaultDownloadPath` | string | `~/Downloads` | 默认下载目录 |
 | `askDownloadLocation` | bool | `true` | 每次下载前是否询问保存位置 |
 | `multiThreadDownload` | bool | `true` | 是否启用多线程分片下载 |
+| `downloadThreadCount` | int | `4` | 每个下载任务的分片线程数（1-16） |
+| `uploadThreadCount` | int | `1` | 每个上传任务并行上传的分片数（1=顺序上传） |
 | `downloadSpeedLimit` | int | `0` | 下载速度限制（KB/s），`0` 不限速 |
 | `uploadSpeedLimit` | int | `0` | 上传速度限制（KB/s），`0` 不限速 |
 | `maxConcurrentUploads` | int | `3` | 最大并发上传数 |
