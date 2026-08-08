@@ -279,8 +279,9 @@ class Pan123:
 
     # ---- Session 配置（门面方法） ----
 
-    def set_download_multi_thread(self, enabled):
-        self._download.set_multi_thread(enabled)
+    def set_download_multi_thread(self, enabled, num_threads=4):
+        """启用/关闭多线程分片下载，并设置每个文件的下载线程数。"""
+        self._download.set_multi_thread(enabled, num_threads)
 
     def set_download_speed_limit(self, kbps):
         self._download.set_download_speed_limit(kbps)

@@ -152,14 +152,15 @@ class TransferInterface(QWidget, TransferTableMixin):
             self.pan.clear_download_proxy()
 
     def _apply_speed_settings(self):
-        """从配置读取并应用速度限制设置。"""
+        """从配置读取并应用速度限制与分片线程设置。"""
         if not self.pan:
             return
         dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
         ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
         multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
+        dl_threads = ConfigManager.get_setting("downloadThreadCount", 4)
 
-        self.pan.set_download_multi_thread(multi_thread)
+        self.pan.set_download_multi_thread(multi_thread, dl_threads)
         self.pan.set_download_speed_limit(dl_limit)
         self.pan.set_upload_speed_limit(ul_limit)
 

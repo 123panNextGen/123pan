@@ -214,13 +214,15 @@ class DownloadThread(QThread):
 
             multi_thread = ConfigManager.get_setting("multiThreadDownload", True)
             dl_limit = ConfigManager.get_setting("downloadSpeedLimit", 0)
+            dl_threads = ConfigManager.get_setting("downloadThreadCount", 4)
             logger.debug(
-                "下载配置: multi_thread=%s, speed_limit=%d KB/s",
+                "下载配置: multi_thread=%s, threads=%d, speed_limit=%d KB/s",
                 multi_thread,
+                dl_threads,
                 dl_limit,
             )
 
-            self.pan.set_download_multi_thread(multi_thread)
+            self.pan.set_download_multi_thread(multi_thread, dl_threads)
             self.pan.set_download_speed_limit(dl_limit)
 
             def _on_progress(downloaded, total):

@@ -44,9 +44,14 @@ class DownloadService:
             logger.info("获取下载链接成功: %s", redirect_url)
         return redirect_url
 
-    def set_multi_thread(self, enabled: bool):
-        """启用或禁用多线程下载。"""
-        self._session.set_multi_thread(enabled)
+    def set_multi_thread(self, enabled: bool, num_threads: int = 4):
+        """启用或禁用多线程下载。
+
+        Args:
+            enabled: 是否启用多线程分片下载。
+            num_threads: 每个文件的分片线程数。
+        """
+        self._session.set_multi_thread(enabled, num_threads)
 
     def set_download_speed_limit(self, kbps: int):
         """设置下载速度限制（KB/s），0 为不限速。"""
