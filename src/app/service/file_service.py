@@ -286,7 +286,9 @@ class FileService:
             data = result.data or {}
             status = data.get("status")
             if status is None:
-                # 响应不含状态字段时视为成功
+                # 防御性兜底：响应不含状态字段时视为成功。
+                # 风险：若服务端处理中恰好返回无 status 的响应，会提前报成功，
+                # 用户可通过刷新列表核对结果。
                 return True, ""
             if status == 2:
                 return True, ""
