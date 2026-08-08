@@ -53,6 +53,7 @@ from ..tasks.signals import (
 from .file_actions import FileActionsMixin
 from .file_table import FileTableManager
 from .file_tree import FileTreeManager
+from ..tasks.file_tasks import connect_tracked
 
 logger = get_logger(__name__)
 # noinspection PyUnresolvedReferences
