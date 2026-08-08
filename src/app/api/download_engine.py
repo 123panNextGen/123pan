@@ -405,8 +405,10 @@ class DownloadEngine:
         def _download_chunk(start: int, end: int, index: int) -> bool:
             part_path = Path(str(temp_path) + f".part{index}")
             headers = {"Range": f"bytes={start}-{end}"}
+            # 普通错误最多重试 3 次；限流/临时故障退避更久，最多重试 6 次
             max_retries = 3
-            for attempt in range(max_retries):
+            max_throttle_retries = 6
+            for attempt in range(max_throttle_retries):
                 chunk_downloaded = 0  # 本次尝试下载的字节数，失败时需回退
                 try:
                     if part_path.exists():
@@ -448,10 +450,20 @@ class DownloadEngine:
                     if chunk_downloaded > 0:
                         with progress_lock:
                             downloaded_bytes[0] -= chunk_downloaded
-                    if attempt < max_retries - 1:
-                        wait = (attempt + 1) * 1.0
+                    is_throttle = _is_throttle_error(e)
+                    limit = max_throttle_retries if is_throttle else max_retries
+                    if attempt < limit - 1:
+                        if is_throttle:
+                            wait = _throttle_backoff(e, attempt)
+                        else:
+                            wait = (attempt + 1) * 1.0
                         logger.warning(
-                            f"分片 {index} 第 {attempt + 1} 次失败，{wait:.0f}s 后重试: {e}"
+                            "分片 %d 第 %d 次失败（%s），%.0fs 后重试: %s",
+                            index,
+                            attempt + 1,
+                            "限流" if is_throttle else "错误",
+                            wait,
+                            e,
                         )
                         time.sleep(wait)
                         continue
