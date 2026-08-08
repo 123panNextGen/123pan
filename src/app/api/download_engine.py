@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import concurrent.futures
 import logging
+import random
 import threading
 import time
 from pathlib import Path
@@ -18,6 +19,32 @@ from typing import Callable, Optional
 import requests
 
 logger = logging.getLogger(__name__)
+
+# CDN 限流 / 服务器临时故障状态码：需要更长的退避重试，而非直接判失败
+_THROTTLE_STATUS_CODES = (429, 500, 502, 503, 504)
+
+
+def _is_throttle_error(exc):
+    """判断异常是否属于限流（429）或服务器临时故障（5xx）。"""
+    if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+        return exc.response.status_code in _THROTTLE_STATUS_CODES
+    return False
+
+
+def _throttle_backoff(exc, attempt):
+    """计算限流/临时故障的重试退避秒数。
+
+    优先采用响应头 Retry-After；否则指数退避（2s, 4s, 8s...封顶 30s），
+    并加少量随机抖动，避免多分片同时重试再次触发限流。
+    """
+    if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return min(max(float(retry_after), 1.0), 60.0)
+            except ValueError:
+                pass
+    return min(2 ** attempt * 2.0, 30.0) + random.uniform(0, 0.5)
 
 
 class DownloadCancelledError(Exception):
