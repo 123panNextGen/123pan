@@ -288,6 +288,89 @@ class TestCopyFileTask:
         assert success is False
         assert "boom" in error
 
+    def test_multi_targets_all_success(self):
+        pan = MagicMock()
+        pan.copy_file.return_value = (True, "")
+        fi = MagicMock()
+        fi._reload_dir_data.return_value = ([{"FileId": 1}], [])
+        results = []
+
+        task = CopyFileTask(
+            pan, [(1, "a.txt")], [88, 99], 0, _OpFinishedSignals(), fi
+        )
+        task.signals.finished.connect(lambda *args: results.append(args))
+        task.run()
+
+        assert len(results) == 1
+        success, name, new_name, error, items, folders = results[0]
+        assert success is True
+        assert error == ""
+        assert items == [{"FileId": 1}]
+        assert pan.copy_file.call_count == 2
+        pan.copy_file.assert_any_call([1], 88, source_parent_id=0)
+        pan.copy_file.assert_any_call([1], 99, source_parent_id=0)
+        fi._reload_dir_data.assert_called_once_with(0)
+
+    def test_multi_targets_partial_failure(self):
+        pan = MagicMock()
+
+        def _side_effect(fids, target, source_parent_id=None):
+            return (True, "") if target == 88 else (False, "目标目录不存在")
+
+        pan.copy_file.side_effect = _side_effect
+        fi = MagicMock()
+        fi._reload_dir_data.return_value = ([{"FileId": 1}], [])
+        results = []
+
+        task = CopyFileTask(
+            pan, [(1, "a.txt")], [88, 99], 0, _OpFinishedSignals(), fi
+        )
+        task.signals.finished.connect(lambda *args: results.append(args))
+        task.run()
+
+        assert len(results) == 1
+        success, _, _, error, items, folders = results[0]
+        # 部分成功：success 仍为 True，错误信息带回失败目录明细
+        assert success is True
+        assert "目录#99" in error
+        assert "目标目录不存在" in error
+        assert items == [{"FileId": 1}]
+        fi._reload_dir_data.assert_called_once_with(0)
+
+    def test_multi_targets_all_failed(self):
+        pan = MagicMock()
+        pan.copy_file.return_value = (False, "复制超时")
+        fi = MagicMock()
+        results = []
+
+        task = CopyFileTask(
+            pan, [(1, "a.txt")], [88, 99], 0, _OpFinishedSignals(), fi
+        )
+        task.signals.finished.connect(lambda *args: results.append(args))
+        task.run()
+
+        success, _, _, error, _, _ = results[0]
+        assert success is False
+        assert "目录#88" in error
+        assert "目录#99" in error
+        fi._reload_dir_data.assert_not_called()
+
+    def test_multi_targets_dedupe(self):
+        pan = MagicMock()
+        pan.copy_file.return_value = (True, "")
+        fi = MagicMock()
+        fi._reload_dir_data.return_value = ([], [])
+        results = []
+
+        task = CopyFileTask(
+            pan, [(1, "a.txt")], [99, 99], 0, _OpFinishedSignals(), fi
+        )
+        task.signals.finished.connect(lambda *args: results.append(args))
+        task.run()
+
+        assert pan.copy_file.call_count == 1
+        pan.copy_file.assert_called_once_with([1], 99, source_parent_id=0)
+
 
 class TestPan123CopyFile:
     def test_copy_file_forwards_to_service(self):
