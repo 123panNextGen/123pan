@@ -11,6 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 from unittest.mock import MagicMock
 
 from src.app.api.model import ApiCode, ApiReturnModel
+from src.app.common.api import Pan123
 from src.app.service.file_service import FileService
 from src.app.tasks.file_tasks import CopyFileTask, MoveFileTask
 from src.app.tasks.signals import _OpFinishedSignals
@@ -286,3 +287,19 @@ class TestCopyFileTask:
         success, _, _, error, _, _ = results[0]
         assert success is False
         assert "boom" in error
+
+
+class TestPan123CopyFile:
+    def test_copy_file_forwards_to_service(self):
+        """门面 copy_file 转发到 FileService.copy_files（含 source_parent_id）。"""
+        pan = Pan123.__new__(Pan123)  # 不触发真实 NetSession 初始化
+        pan._file = MagicMock()
+        pan.copy_file([1, 2], 99, source_parent_id=0)
+        pan._file.copy_files.assert_called_once_with([1, 2], 99, 0)
+
+    def test_copy_file_default_source(self):
+        """未传 source_parent_id 时按 None 转发。"""
+        pan = Pan123.__new__(Pan123)
+        pan._file = MagicMock()
+        pan.copy_file([1], 99)
+        pan._file.copy_files.assert_called_once_with([1], 99, None)
