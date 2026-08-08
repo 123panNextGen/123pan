@@ -69,7 +69,6 @@ from ..tasks.signals import (
     _ShareCreateSignals,
     _StorageInfoSignals,
 )
-from ..tasks.file_tasks import LoadStorageInfoTask
 from .dialogs import InputDialog
 from .file_table import FileTableManager
 from .file_tree import FileTreeManager

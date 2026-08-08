@@ -9,7 +9,6 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import time
-from pathlib import Path
 
 from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
@@ -144,13 +143,6 @@ class FileService:
 
         return 0, lists, total, all_file, times
 
-    def show(self, file_list_len, total, all_file):
-        """显示文件列表信息到日志。"""
-        if not all_file:
-            logger.info("获取了%d/%d个文件", file_list_len, total)
-        else:
-            logger.info("获取全部%d个文件", file_list_len)
-
     def mkdir(self, dirname, file_list, parent_file_id, remakedir=False):
         """创建文件夹。
 
@@ -261,16 +253,6 @@ class FileService:
         self._db.mark_dirty(target_parent_id)
         return True, ""
 
-    def delete_file_by_id(self, file_id, parent_file_id):
-        """按文件ID删除文件（无需外部 file_list）。"""
-        code, items, *_ = self.get_dir_by_id(parent_file_id, all=True, limit=1000)
-        if code != 0:
-            return False, "获取文件列表失败"
-        for item in items:
-            if str(item.get("FileId")) == str(file_id):
-                return self.delete_file(items, item, by_num=False, operation=True)
-        return False, "文件未找到"
-
     def recycle(self):
         """获取回收站列表。
 
@@ -336,76 +318,3 @@ class FileService:
             raise RuntimeError(f"分享失败: {share_res_json.get('message', '')}")
         share_key = share_res_json["data"]["ShareKey"]
         return "https://www.123pan.cn/s/" + share_key
-
-    def get_all_things(self, file_id, dir_ids, file_list, name_dict):
-        """递归获取文件夹内所有内容。
-
-        Returns:
-            (file_list, dir_ids, name_dict) 更新后的状态
-        """
-        dir_ids.discard(file_id)
-        code, items, *_ = self.get_dir_by_id(file_id, all=True, limit=100)
-        if code != 0:
-            return file_list, dir_ids, name_dict
-
-        for item in items:
-            if item["Type"] == 0:
-                file_list.append(item)
-            else:
-                dir_ids.add(item["FileId"])
-                name_dict[item["FileId"]] = item["FileName"]
-
-        for did in list(dir_ids):
-            if did != file_id:
-                file_list, dir_ids, name_dict = self.get_all_things(
-                    did, dir_ids, file_list, name_dict
-                )
-
-        return file_list, dir_ids, name_dict
-
-    def download_dir(self, file_detail, file_list, name_dict, download_path_root="download"):
-        """下载文件夹（递归）。使用 file_list 中的 DownloadUrl。"""
-        name_dict[file_detail["FileId"]] = file_detail["FileName"]
-        if file_detail["Type"] != 1:
-            logger.warning("不是文件夹")
-            return
-
-        code, items, *_ = self.get_dir_by_id(
-            file_detail["FileId"], all=True, limit=100
-        )
-        if code != 0:
-            return
-
-        for item in reversed(items):
-            if item["Type"] == 0:
-                abs_path = item["AbsPath"]
-                for key, value in name_dict.items():
-                    abs_path = abs_path.replace(str(key), value)
-                download_path = download_path_root + abs_path
-                download_path = download_path.replace("/" + str(item["FileId"]), "")
-                self._download_from_url(
-                    item["DownloadUrl"], item["FileName"], download_path
-                )
-            else:
-                self.download_dir(item, file_list, name_dict, download_path_root)
-
-    def _download_from_url(self, url, file_name, download_path):
-        """从URL下载文件到指定路径。"""
-        download_dir = Path(download_path)
-        if not download_dir.exists():
-            logger.info("创建下载目录")
-            download_dir.mkdir(parents=True, exist_ok=True)
-
-        file_path = download_dir / file_name
-        temp_path = file_path.with_suffix(file_path.suffix + ".123pan")
-
-        if temp_path.exists():
-            temp_path.unlink()
-
-        resp = self._session.transfer.get(url, stream=True, timeout=10)
-        with open(temp_path, "wb") as f:
-            for chunk in resp.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-
-        temp_path.rename(file_path)
