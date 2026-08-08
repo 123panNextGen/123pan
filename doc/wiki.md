@@ -1,5 +1,8 @@
 # 123pan Wiki
 
+>[!IMPORTANT]
+>含有AI生成内容，请注意辨别
+
 ## 目录
 
 - [1. 技术栈与依赖](#1-技术栈与依赖)
@@ -93,7 +96,7 @@ src/
       speed_limiter.py       # SpeedLimiter —— 令牌桶限速器
       i18n.py                # TranslationManager —— 多语言
       log.py                 # 日志（文件 + 控制台，7 天轮转）
-      resource.py            # ⚠️ 失效死代码（PySide2 残留），勿依赖
+      resource.py            # Qt 资源注册（pyside6-rcc 生成，:/(prefix) 路径），入口 import，勿删
       style_sheet.py         # QSS 样式
       utils.py               # format_file_size 等工具函数
     data/
@@ -730,7 +733,7 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 ## 16. 常见问题与陷阱
 
 1. **`uv sync` 移除测试依赖**：不带 group 的 `uv sync` 会卸载 pytest 等；测试统一走 `uv run --group test pytest` 或 `script/test.sh`。
-2. **`common/resource.py` 是失效死代码**：PySide2 残留，勿删但勿依赖；`:123pan/qss` 资源实际未注册。真实 QSS 资源在 `resource.qrc`，需用 `pyside6-rcc` 生成并在入口 `import`（`from app.common import resource`），移除该 import 会导致 QSS "device not open"。
+2. **`common/resource.py` 是必需的资源注册模块（勿删）**：由 `resource.qrc`（prefix `/123pan`）经 `pyside6-rcc` 编译生成，入口 `from app.common import resource` 注册 `:/123pan/qss/...` 资源；`style_sheet.py` 的 `StyleSheet`（`StyleSheet.VIEW_INTERFACE.apply(self)` 等）依赖这些路径加载 QSS。移除该 import 会导致 QSS "device not open"。注意资源名以 UTF-16 编码存储，grep 明文 "123pan" 搜不到属正常现象。
 3. **懒加载 lambda 参数**：`NavigationWidget.clicked` 传 `True`，lambda 必须 `lambda checked=False, rk=route_key: ...`。
 4. **动态添加 SettingCard**：动态添加到已显示 `SettingCardGroup` 的卡片必须 `card.show()`，否则 ExpandLayout 按 hidden 跳过；无 removeSettingCard API，刷新需整体重建组。
 5. **SystemThemeListener**：必须在 `app.exec()` 后 `requestInterruption() + wait(2000)`，否则退出时 QThread 销毁警告。
