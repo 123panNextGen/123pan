@@ -302,30 +302,51 @@ class CloudInterface(ScrollArea):
             return
         self._update_device_display(device_data)
 
+    def _reset_device_group(self):
+        """移除并重建设备卡片组（SettingCardGroup 无 removeSettingCard API，刷新时整体替换）。"""
+        self.mainLayout.removeWidget(self.deviceGroup)
+        self.deviceGroup.deleteLater()
+        self.deviceGroup = SettingCardGroup(
+            tr("cloud.device_title", "登录设备"), self.scrollWidget
+        )
+        # 插回原位：存储信息组之后、弹性空间之前
+        idx = self.mainLayout.indexOf(self.storageGroup)
+        self.mainLayout.insertWidget(idx + 1, self.deviceGroup)
+        self._device_cards = []
+
+    def _append_device_card(self, card):
+        """添加设备卡片并显式显示。
+
+        动态添加到已显示卡片组的卡片需显式 show()，否则 ExpandLayout
+        视为 hidden 跳过高度计算，卡片组不伸展导致设备列表不可见。
+        """
+        self.deviceGroup.addSettingCard(card)
+        card.show()
+        self._device_cards.append(card)
+
     def _show_device_empty(self, text):
         """设备列表为空/失败时显示占位卡片。"""
-        for card in self._device_cards:
-            self.deviceGroup.removeSettingCard(card)
-            card.deleteLater()
-        self._device_cards.clear()
-        card = SettingCard(FIF.IOT, text, "", self.deviceGroup)
-        self.deviceGroup.addSettingCard(card)
-        self._device_cards.append(card)
+        self._reset_device_group()
+        self._append_device_card(SettingCard(FIF.IOT, text, "", self.deviceGroup))
         self.deviceGroup.updateGeometry()
 
     def _update_device_display(self, device_data):
         """更新设备列表界面。"""
-        # 清除旧卡片
-        for card in self._device_cards:
-            self.deviceGroup.removeSettingCard(card)
-            card.deleteLater()
-        self._device_cards.clear()
+        self._reset_device_group()
 
         devices = device_data.device_list
         master = device_data.master_device
 
         if not devices:
-            self._show_device_empty(tr("cloud.device_none", "未获取到设备信息"))
+            self._append_device_card(
+                SettingCard(
+                    FIF.IOT,
+                    tr("cloud.device_none", "未获取到设备信息"),
+                    "",
+                    self.deviceGroup,
+                )
+            )
+            self.deviceGroup.updateGeometry()
             return
 
         for index, dev in enumerate(devices, start=1):
@@ -336,9 +357,9 @@ class CloudInterface(ScrollArea):
             content = tr("cloud.device_detail", "平台: {} | IP: {} | 登录: {} | 方式: {}").format(
                 dev.plat_form, dev.ip, dev.last_login_time, dev.login_type
             )
-            card = SettingCard(FIF.IOT, title, content, self.deviceGroup)
-            self.deviceGroup.addSettingCard(card)
-            self._device_cards.append(card)
+            self._append_device_card(
+                SettingCard(FIF.IOT, title, content, self.deviceGroup)
+            )
 
         if master:
             title = tr("cloud.device_master_item", "{} ({}) — 主设备").format(
@@ -347,9 +368,9 @@ class CloudInterface(ScrollArea):
             content = tr("cloud.device_master_detail", "平台: {} | IP: {} | 登录: {}").format(
                 master.plat_form, master.ip, master.last_login_time
             )
-            card = SettingCard(FIF.HOME, title, content, self.deviceGroup)
-            self.deviceGroup.addSettingCard(card)
-            self._device_cards.append(card)
+            self._append_device_card(
+                SettingCard(FIF.HOME, title, content, self.deviceGroup)
+            )
 
         self.deviceGroup.updateGeometry()
         logger.info("设备列表已更新: %d 个设备", len(devices))
