@@ -45,6 +45,9 @@
 >Windows下如果无法运行，可以尝试打开兼容模式。杀毒软件有可能报毒，请放行。
 
 >[!IMPORTANT]
+>请**不要**把文件放在**中文路径**下！
+
+>[!IMPORTANT]
 >请不要从未知渠道下载！
 
 其他系统以及开发者请参考下方的源码运行。
@@ -201,16 +204,7 @@ tests/
 
 本程序使用[GPLv3](./LICENSE)协议。  
 
-## 其他版本推荐
-
->[!WARNING]
->以下项目与[123panNextGen](https://github.com/123panNextGen)团队没有任何关系，为社区的技术爱好者基于我们的项目进一步创作的。
-
-- https://github.com/crmmc/123pan-open
-
 ---
-
-[![Star History Chart](https://api.star-history.com/svg?repos=123panNextGen/123pan&type=date&legend=top-left)](https://www.star-history.com/#123panNextGen/123pan&type=date&legend=top-left)
 
 本程序由[123panNextGen](https://github.com/123panNextGen)开发团队用♥️制作～  
 我们由衷感谢为本程序贡献代码的人们。 [贡献人员名单](https://github.com/123panNextGen/123pan/graphs/contributors)
