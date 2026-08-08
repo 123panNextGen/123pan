@@ -509,35 +509,70 @@ class RenameFileTask(QRunnable):
             self.signals.finished.emit(False, self.old_name, self.new_name, str(e), [], [])
 
 class CopyFileTask(QRunnable):
-    """复制文件/文件夹任务"""
+    """复制文件/文件夹到目标目录（支持一次复制到多个目标目录）"""
 
-    def __init__(self, pan, file_infos, target_parent_id, current_dir_id, signals, file_interface):
+    def __init__(self, pan, file_infos, target_parent_ids, current_dir_id, signals, file_interface):
         super().__init__()
         self.pan = pan
         self.file_infos = file_infos  # list of (file_id, file_name)
-        self.target_parent_id = target_parent_id
+        self.target_parent_ids = target_parent_ids
         self.current_dir_id = current_dir_id
         self.signals = signals
         self._fi = file_interface
+
+    @staticmethod
+    def _normalize_targets(target_parent_ids):
+        """统一为去重后的目标目录 ID 列表（兼容单个 int / 列表 / 元组）。"""
+        if isinstance(target_parent_ids, (list, tuple, set)):
+            targets = (int(t) for t in target_parent_ids if t is not None)
+        else:
+            targets = (int(target_parent_ids),)
+        return list(dict.fromkeys(targets))
 
     def run(self):
         try:
             file_ids = [fid for fid, _ in self.file_infos]
             names = [name for _, name in self.file_infos]
-            logger.info("复制文件: %s -> 目录 %s", names, self.target_parent_id)
-            success, msg = self.pan.copy_file(
-                file_ids,
-                self.target_parent_id,
-                source_parent_id=self.current_dir_id,
-            )
-            if success:
-                items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
-                self.signals.finished.emit(
-                    True, "复制成功", "", "", items, folder_items
-                )
-            else:
-                logger.warning("复制失败: %s", msg)
-                self.signals.finished.emit(False, "复制失败", "", msg, [], [])
+            targets = self._normalize_targets(self.target_parent_ids)
+            if not targets:
+                logger.warning("复制文件: 未选择目标目录")
+                self.signals.finished.emit(False, "复制失败", "", "未选择目标目录", [], [])
+                return
+
+            ok_targets = []
+            failures = []  # list of (target, err_msg)
+            for target in targets:
+                try:
+                    logger.info("复制文件: %s -> 目录 %s", names, target)
+                    success, msg = self.pan.copy_file(
+                        file_ids, target, source_parent_id=self.current_dir_id,
+                    )
+                    if success:
+                        ok_targets.append(target)
+                    else:
+                        failures.append((target, msg))
+                except Exception as e:
+                    logger.error("复制异常: target=%s, %s", target, e)
+                    failures.append((target, str(e)))
+
+            if failures:
+                if len(targets) == 1:
+                    detail = failures[0][1] or "复制失败"
+                else:
+                    detail = "；".join(
+                        f"目录#{t}: {m}" for t, m in failures
+                    )
+                if ok_targets:
+                    # 部分目标成功：刷新列表，并回传失败明细（success=True + error 供 UI 提示）
+                    items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
+                    self.signals.finished.emit(True, "复制成功", "", detail, items, folder_items)
+                    return
+                logger.warning("复制失败: %s", detail)
+                self.signals.finished.emit(False, "复制失败", "", detail, [], [])
+                return
+
+            items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
+            self.signals.finished.emit(True, "复制成功", "", "", items, folder_items)
         except Exception as e:
             logger.error("复制异常: %s", e)
             self.signals.finished.emit(False, "复制失败", "", str(e), [], [])
