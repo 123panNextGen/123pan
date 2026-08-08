@@ -72,11 +72,56 @@ class UploadService:
             return None
         return resume_info
 
+    def _fetch_presigned_urls(
+        self, bucket, upload_key, upload_id, storage_node, start, end
+    ):
+        """批量获取 [start, end) 分片的预签名 URL。
+
+        Returns:
+            dict: {part_number(int): url}，可能少于请求范围（由调用方兜底）。
+        """
+        get_link_data = {
+            "bucket": bucket,
+            "key": upload_key,
+            "partNumberEnd": end,
+            "partNumberStart": start,
+            "uploadId": upload_id,
+            "StorageNode": storage_node,
+        }
+        get_link_res = self._session.http.post(
+            "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
+            json=get_link_data,
+            timeout=30,
+        )
+        get_link_res_json = get_link_res.json()
+        res_code_up = get_link_res_json.get("code", -1)
+        if res_code_up != 0:
+            raise RuntimeError(f"获取链接失败: {get_link_res_json}")
+        urls = {}
+        for k, v in (get_link_res_json.get("data") or {}).get("presignedUrls") or {}:
+            try:
+                urls[int(k)] = v
+            except (TypeError, ValueError):
+                continue
+        return urls
+
+    def _fetch_single_presigned_url(
+        self, bucket, upload_key, upload_id, storage_node, part_number
+    ):
+        """获取单个分片的预签名 URL（严格模式：缺失即抛错）。"""
+        urls = self._fetch_presigned_urls(
+            bucket, upload_key, upload_id, storage_node, part_number, part_number + 1
+        )
+        if part_number not in urls:
+            raise RuntimeError(f"获取分片 {part_number} 预签名 URL 失败")
+        return urls[part_number]
+
     def up_load(
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
-        resume_info=None, session_callback=None,
+        resume_info=None, session_callback=None, num_threads=1,
+        progress_callback=None,
     ):
-        """上传文件（支持断点续传）。
+        """上传文件（支持断点续传与并行分片上传）。
 
         Args:
             file_path: 本地文件路径
@@ -86,6 +131,8 @@ class UploadService:
             task: 可选的任务控制对象（需有 is_cancelled 属性）
             resume_info: 断点续传信息（S3 会话），文件未变化时复用
             session_callback: 获得 S3 会话后回调，供调用方持久化续传信息
+            num_threads: 并行上传的分片线程数，1 表示顺序上传
+            progress_callback: 可选进度回调 (uploaded_bytes)，实时上报已上传字节数
 
         Returns:
             int: 上传后的文件ID（成功）
@@ -99,7 +146,10 @@ class UploadService:
         if file_path_obj.is_dir():
             raise IsADirectoryError("不支持文件夹上传")
         fsize = file_path_obj.stat().st_size
-        logger.info("上传开始: %s (%.2f MB)", file_name, fsize / 1024 / 1024)
+        logger.info(
+            "上传开始: %s (%.2f MB, %d 线程)",
+            file_name, fsize / 1024 / 1024, num_threads,
+        )
 
         t0 = time.monotonic()
         block_size = 5242880
@@ -209,31 +259,87 @@ class UploadService:
             except (TypeError, ValueError):
                 pass
 
-        part_number = 1
-        while part_number in uploaded_parts:
-            part_number += 1
-        total_sent = min((part_number - 1) * block_size, fsize)
-        if part_number > 1:
-            logger.info("上传续传跳过 %d 个已完成分片", part_number - 1)
+        # 需要上传的分片
+        total_parts = (fsize + block_size - 1) // block_size
+        pending_parts = [p for p in range(1, total_parts + 1) if p not in uploaded_parts]
+        skipped = len(uploaded_parts)
+        if skipped > 0:
+            logger.info("上传续传跳过 %d 个已完成分片", skipped)
 
-        with open(file_path, "rb") as f:
-            if part_number > 1:
-                f.seek((part_number - 1) * block_size)
-            while True:
-                if task and task.is_cancelled:
-                    return "已取消"
+        # 初始已上传字节数（含续传已传分片），供进度/速度计算
+        total_sent = [0]
+        for pn in uploaded_parts:
+            total_sent[0] += min(block_size, max(0, fsize - (pn - 1) * block_size))
 
-                data = f.read(block_size)
-                if not data:
-                    break
+        def _report_progress():
+            if progress_callback:
+                progress_callback(total_sent[0])
+            if signals and fsize:
+                signals.progress.emit(int(total_sent[0] * 100 / fsize))
 
-                # 暂停：阻塞等待恢复；取消：立即中止（保留已上传分片供续传）
-                if task:
-                    waiter = getattr(task, "wait_if_paused", None)
-                    if waiter is not None:
-                        waiter()
-                    if getattr(task, "is_cancelled", False):
-                        return "已取消"
+        def _cancelled():
+            return bool(task and getattr(task, "is_cancelled", False))
+
+        def _wait_pause():
+            waiter = getattr(task, "wait_if_paused", None) if task else None
+            if waiter is not None:
+                waiter()
+
+        # 首次上报（让 UI 立即反映续传起点）
+        if progress_callback or signals:
+            _report_progress()
+
+        # ---- 并行分片上传 ----
+        if num_threads > 1 and len(pending_parts) > 1:
+            import threading
+            from concurrent.futures import ThreadPoolExecutor
+
+            progress_lock = threading.Lock()
+            url_lock = threading.Lock()
+            url_cache = {}
+            cancel_flag = [False]
+
+            def _get_presigned_url(pn):
+                """获取分片预签名 URL：批量请求 + 缓存，缺失时单分片兜底。"""
+                with url_lock:
+                    url = url_cache.get(pn)
+                    if url is not None:
+                        return url
+                    # 批量请求 [pn, pn+batch)，减少往返次数
+                    batch = min(max(4, num_threads * 2), 8)
+                    end = min(pn + batch, total_parts + 1)
+                    try:
+                        urls = self._fetch_presigned_urls(
+                            bucket, upload_key, upload_id, storage_node, pn, end
+                        )
+                        url_cache.update(urls)
+                    except Exception as e:
+                        logger.warning("批量获取分片 URL 失败，回退单分片: %s", e)
+                    if pn in url_cache:
+                        return url_cache[pn]
+                    # 单分片兜底（失败则抛错中止上传）
+                    url = self._fetch_single_presigned_url(
+                        bucket, upload_key, upload_id, storage_node, pn
+                    )
+                    url_cache[pn] = url
+                    return url
+
+            def _upload_part(pn):
+                if _cancelled():
+                    cancel_flag[0] = True
+                    return
+                _wait_pause()
+                if _cancelled():
+                    cancel_flag[0] = True
+                    return
+
+                # 每分片独立打开文件句柄读取，避免多线程共享句柄竞争
+                offset = (pn - 1) * block_size
+                with open(file_path, "rb") as pf:
+                    pf.seek(offset)
+                    data = pf.read(block_size)
+
+                upload_url = _get_presigned_url(pn)
 
                 # 上传限速：消费当前分片的令牌并等待
                 if self._limiter:
@@ -241,31 +347,57 @@ class UploadService:
                     if wait > 0:
                         time.sleep(wait)
 
-                get_link_data = {
-                    "bucket": bucket,
-                    "key": upload_key,
-                    "partNumberEnd": part_number + 1,
-                    "partNumberStart": part_number,
-                    "uploadId": upload_id,
-                    "StorageNode": storage_node,
-                }
-                get_link_res = self._session.http.post(
-                    "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
-                    json=get_link_data,
-                    timeout=30,
-                )
-                get_link_res_json = get_link_res.json()
-                res_code_up = get_link_res_json.get("code", -1)
-                if res_code_up != 0:
-                    raise RuntimeError(f"获取链接失败: {get_link_res_json}")
-                upload_url = get_link_res_json["data"]["presignedUrls"][
-                    str(part_number)
-                ]
                 self._session.transfer.put(upload_url, data=data, timeout=60)
-                total_sent += len(data)
-                if signals and fsize:
-                    signals.progress.emit(int(total_sent * 100 / fsize))
+
+                with progress_lock:
+                    total_sent[0] += len(data)
+                    _report_progress()
+
+            workers = min(num_threads, len(pending_parts))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                list(executor.map(_upload_part, pending_parts))
+
+            if cancel_flag[0] or _cancelled():
+                return "已取消"
+
+        else:
+            # ---- 顺序分片上传（原逻辑） ----
+            part_number = 1
+            while part_number in uploaded_parts:
                 part_number += 1
+
+            with open(file_path, "rb") as f:
+                if part_number > 1:
+                    f.seek((part_number - 1) * block_size)
+                while True:
+                    if task and task.is_cancelled:
+                        return "已取消"
+
+                    data = f.read(block_size)
+                    if not data:
+                        break
+
+                    # 暂停：阻塞等待恢复；取消：立即中止（保留已上传分片供续传）
+                    if task:
+                        waiter = getattr(task, "wait_if_paused", None)
+                        if waiter is not None:
+                            waiter()
+                        if getattr(task, "is_cancelled", False):
+                            return "已取消"
+
+                    # 上传限速：消费当前分片的令牌并等待
+                    if self._limiter:
+                        wait = self._limiter.consume(len(data))
+                        if wait > 0:
+                            time.sleep(wait)
+
+                    upload_url = self._fetch_single_presigned_url(
+                        bucket, upload_key, upload_id, storage_node, part_number
+                    )
+                    self._session.transfer.put(upload_url, data=data, timeout=60)
+                    total_sent[0] += len(data)
+                    _report_progress()
+                    part_number += 1
 
         uploaded_comp_data = {
             "bucket": bucket,
