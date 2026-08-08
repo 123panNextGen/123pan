@@ -482,19 +482,27 @@ class FileActionsMixin:
         if not file_infos:
             return
 
-        # 不能复制到当前目录自身
+        # 不能复制到当前目录自身；支持一次选择多个目标目录
         dialog = FolderSelectDialog(
-            self.pan, exclude_dir_ids=(self.current_dir_id,), parent=self
+            self.pan,
+            exclude_dir_ids=(self.current_dir_id,),
+            parent=self,
+            multi_select=True,
+            title=tr("file.copy_title", "选择目标文件夹（可多选）"),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        target = dialog.selected_dir_id()
-        if target is None or target == self.current_dir_id:
+        targets = dialog.selected_dir_ids()
+        if not targets:
+            return
+        # 对话框已排除当前目录，这里再兜底过滤一遍
+        targets = [t for t in targets if t != self.current_dir_id]
+        if not targets:
             return
 
         signals = _OpFinishedSignals()
         task = CopyFileTask(
-            self.pan, file_infos, target, self.current_dir_id, signals, self
+            self.pan, file_infos, targets, self.current_dir_id, signals, self
         )
         connect_tracked(self, signals, "finished", self._onCopyFileFinished, task)
         QThreadPool.globalInstance().start(task)
@@ -504,11 +512,19 @@ class FileActionsMixin:
     ):
         """复制文件完成后的回调 - 只负责UI更新"""
         if success:
-            InfoBar.success(
-                title=tr("file.msg_copy_success", "复制成功"),
-                content=tr("file.msg_copy_done", "文件已复制到目标目录"),
-                parent=self,
-            )
+            if error:
+                # 部分目标复制失败（其余成功）：警告提示
+                InfoBar.warning(
+                    title=tr("file.msg_copy_partial", "部分复制失败"),
+                    content=tr("file.msg_copy_partial_detail", "以下目标目录复制失败: {}").format(error),
+                    parent=self,
+                )
+            else:
+                InfoBar.success(
+                    title=tr("file.msg_copy_success", "复制成功"),
+                    content=tr("file.msg_copy_done", "文件已复制到目标目录"),
+                    parent=self,
+                )
             # 更新文件列表与目录树（轻量级UI操作）
             self._updateFileListUI(file_items)
             self._updateTreeUI(folder_items)
