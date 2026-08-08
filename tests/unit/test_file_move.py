@@ -162,6 +162,27 @@ class TestFileServiceCopy:
         ]
         svc.get_dir_by_id.assert_called_once()
 
+    def test_copy_partial_source_list(self, tmp_db, mocker):
+        """源目录列表不完整时，缺失项降级为仅 FileId，不静默丢文件。"""
+        svc, session = self._make()
+        svc.get_dir_by_id = mocker.MagicMock(
+            return_value=(0, [{"FileId": 1, "FileName": "a.txt", "Type": 0}], 1, True, 1)
+        )
+        session.copy_files_async.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg="", data=1
+        )
+        session.copy_file_task.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg="",
+            data={"status": 2, "failMsg": ""},
+        )
+        ok, msg = svc.copy_files([1, 2], 99, source_parent_id=5)
+        assert ok is True
+        sent_list = session.copy_files_async.call_args[0][0]
+        assert sent_list == [
+            {"FileId": 1, "FileName": "a.txt", "Type": 0, "DriveId": 0},
+            {"FileId": 2},
+        ]
+
     def test_copy_empty_list(self, tmp_db):
         svc, _ = self._make()
         ok, msg = svc.copy_files([], 99)

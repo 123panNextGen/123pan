@@ -245,22 +245,22 @@ class FileService:
 
         # 构造 fileList：优先使用源目录列表（含本地缓存）中的完整文件信息
         file_list = []
+        by_id = {}
         if source_parent_id is not None:
             code, files, _, _, _ = self.get_dir_by_id(
                 source_parent_id, all=True, limit=1000
             )
             if code == 0 and files:
                 by_id = {str(f.get("FileId")): f for f in files}
-                for fid in file_id_list:
-                    info = by_id.get(str(fid))
-                    if info:
-                        item = dict(info)
-                        item.setdefault("DriveId", 0)
-                        file_list.append(item)
-
-        # 源目录信息不可用时降级：仅携带 FileId
-        if not file_list:
-            file_list = [{"FileId": int(fid)} for fid in file_id_list]
+        # 逐项构造：源列表缺失（目录过大/缓存不全）的文件降级为仅 FileId，不静默丢弃
+        for fid in file_id_list:
+            info = by_id.get(str(fid))
+            if info:
+                item = dict(info)
+                item.setdefault("DriveId", 0)
+            else:
+                item = {"FileId": int(fid)}
+            file_list.append(item)
 
         result = self._session.copy_files_async(file_list, target_parent_id)
         if result.code != 0:
