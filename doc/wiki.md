@@ -231,7 +231,7 @@ flowchart TD
 
 ### 5.1 Database 单例
 
-- 文件：`~/.config/123pan/123pan.db`（Windows：`%APPDATA%/123pan/123pan.db`）
+- 文件：`~/.config/123pan-ng/123pan.db`（Windows：`%APPDATA%/123pan-ng/123pan.db`）
 - `PRAGMA journal_mode=WAL`，`check_same_thread=False`（线程安全由内部 `RLock` 保证）。
 - 统一入口：`execute` / `query` / `query_one`。
 - 测试/迁移：`Database.set_path(path)` / `Database.reset()`。
@@ -409,7 +409,7 @@ QThreadPool.globalInstance().start(task)
 
 ## 7. 设置项说明
 
-配置文件位于 `~/.config/123pan/123pan.db`（SQLite，旧版为 `config.json`），账户与设置均存于其中。
+配置文件位于 `~/.config/123pan-ng/123pan.db`（SQLite，旧版为 `config.json`），账户与设置均存于其中。
 
 | 设置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -597,7 +597,7 @@ tests/
 | 层级 | 方式 | 说明 |
 | --- | --- | --- |
 | 纯函数 | 直接断言返回值 | `SpeedLimiter`、`format_file_size` |
-| 文件系统 | `tmp_path` fixture | 不碰 `~/.config/123pan` |
+| 文件系统 | `tmp_path` fixture | 不碰 `~/.config/123pan-ng` |
 | 配置/DB | `tmp_config_dir` / `tmp_db` fixture | 隔离 CONFIG_DIR + SQLite |
 | 加密 | 模块级 `_KEY_FILE` 覆盖 | 测试用临时 `.keyfile` |
 | HTTP | `responses` 拦截 `requests` | 不发起真实网络请求 |
@@ -722,7 +722,7 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 
 ## 15. 日志
 
-- 位置：`~/.config/123pan/logs/log_<时间戳>.log`（Windows：`%APPDATA%/123pan/logs/`）。
+- 位置：`~/.config/123pan-ng/logs/log_<时间戳>.log`（Windows：`%APPDATA%/123pan-ng/logs/`）。
 - 文件 + 控制台双输出，`get_logger(name)` 获取；所有 logger 共享同一组 handler。
 - 保留 `LOG_RETENTION_DAYS = 7` 天，启动时清理过期日志。
 - 等级：`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`；`set_log_level` 运行时切换会遍历更新全部 logger。
