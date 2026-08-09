@@ -138,7 +138,7 @@ src/
       icons.py               # 图标共享缓存
 tests/
   conftest.py                # tmp_config_dir / tmp_db fixture
-  unit/                      # 纯逻辑测试（19 个文件，覆盖各模块）
+  unit/                      # 纯逻辑测试（22 个文件，覆盖各模块）
   integration/               # mock HTTP 集成测试（responses）
 script/
   test.sh / lint.sh / build.sh
@@ -550,7 +550,7 @@ QThreadPool.globalInstance().start(task)
 
 ## 12. 测试
 
-项目当前包含 **207 个测试函数**（21 个测试文件，其中 19 个单元测试 + 2 个集成测试）。
+项目当前包含 **261 个测试函数**（24 个测试文件，其中 22 个单元测试 + 2 个集成测试）。
 
 ### 12.1 运行测试
 
@@ -578,6 +578,7 @@ tests/
     test_file_list_db.py    # 目录缓存（脏/过期/内存上限）
     test_file_move.py       # 文件移动（Service + FolderSelectDialog 任务）
     test_file_table_tree.py # FileTableManager / FileTreeManager
+    test_folder_select_dialog.py  # 目录选择对话框（单选/多选模式）
     test_auth_qr.py         # AuthService 二维码接口封装
     test_qr_login_tasks.py  # 扫码任务（patch Pan123）
     test_qr_login_page.py   # QRLoginPage 页面逻辑（offscreen）
@@ -586,7 +587,9 @@ tests/
     test_transfer_priority.py      # 优先级队列选择
     test_transfer_shutdown.py      # 退出清理
     test_transfer_speed_limit_cancel.py  # 限速/取消/暂停
+    test_download_retry.py  # 下载限流（429）识别与退避重试
     test_upload_resume.py   # 续传校验 + 上传续传
+    test_upload_parallel.py # 上传并行分片
     test_sync_service.py    # 本地索引/变更计算/run_sync
     test_sync_manager.py    # 调度器
   integration/              # mock HTTP（responses，不发起真实请求）
@@ -744,6 +747,7 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 8. **同步误删安全闸**：`build_remote_index` 返回 `None` 时必须中止，勿改回空 dict。
 9. **非 ASCII 路径打包崩溃**：打包版必须放纯 ASCII 路径。
 10. **信号测试**：传真实信号类，不传 MagicMock；Qt 测试文件尽量分开运行。
+11. **空 QSS 规则陷阱**：`SettingInterface, #scrollWidget {}` 这类空规则会触发 Qt 样式引擎 `autoFillBackground`，用默认浅色调色板绘制背景（暗色主题下为 `#efefef` 浅灰），与全局主题产生明显色差。qfluentwidgets 通过 QSS 主题化而非 QPalette，必须显式写 `background-color: transparent` 才能让页面跟随全局主题。修改 QSS 后需重新编译 `resource.py`（`pyside6-rcc`）。
 
 ---
 
