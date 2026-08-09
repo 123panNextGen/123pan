@@ -259,6 +259,8 @@ class DownloadEngine:
         max_conn_retries = 3
         max_throttle_retries = 6
         conn_attempt = 0
+        # 断点续传偏移：在循环外初始化，确保取消/异常分支引用时已绑定
+        current_offset = 0
         while True:
             t0 = time.monotonic()
             try:
