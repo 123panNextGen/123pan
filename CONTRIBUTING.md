@@ -89,3 +89,6 @@ uv sync --group build               # + nuitka 打包
 
 ## 文档
 关于文档，请在[WIKI](./doc/wiki.md)页面查看
+
+## TODO
+TODO列表请查看[这里](./doc/TODO.md)
