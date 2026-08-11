@@ -11,6 +11,7 @@ the Free Software Foundation, either version 3 of the License, or
 import json
 
 from ..api.constants import OFFLINE_BASE_URL
+from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 from .file_service import FileService
 from .upload_service import UploadService
@@ -225,9 +226,9 @@ class OfflineService:
         parent_dir_id = int(parent_dir_id)
         # 任务内已知目录缓存：(parent_id, name) -> file_id
         known_dirs = {}
-
-        def _cancelled():
-            return cancel is not None and getattr(cancel, "is_cancelled", False)
+        success = []
+        failed = []
+        total = len(files)
 
         def _ensure_folder(name, parent_id):
             key = (parent_id, name)
@@ -251,51 +252,45 @@ class OfflineService:
             known_dirs[key] = fid
             return fid
 
-        success = []
-        failed = []
-        total = len(files)
+        def _make_parent_dirs(path):
+            """创建/复用文件父目录结构，返回父目录 ID；失败返回 None。"""
+            if "/" not in path:
+                return parent_dir_id
+            parent_id = parent_dir_id
+            for part in path.rsplit("/", 1)[0].split("/"):
+                fid = _ensure_folder(part, parent_id)
+                if fid is None:
+                    return None
+                parent_id = fid
+            return parent_id
+
         for i, f in enumerate(files, start=1):
-            if _cancelled():
+            if cancel is not None and getattr(cancel, "is_cancelled", False):
                 break
             path = f.get("path", "")
             file_name = path.rsplit("/", 1)[-1] if "/" in path else path
-            parent_rel = path.rsplit("/", 1)[0] if "/" in path else ""
 
-            # 创建/复用父目录结构
-            parent_id = parent_dir_id
-            if parent_rel:
-                ok = True
-                for part in parent_rel.split("/"):
-                    fid = _ensure_folder(part, parent_id)
+            parent_id = _make_parent_dirs(path)
+            if parent_id is None:
+                failed.append((path, "创建目录失败"))
+            else:
+                try:
+                    fid = self._upload.fast_upload(
+                        file_name, int(f.get("size", 0) or 0), f.get("etag", ""),
+                        parent_id,
+                    )
                     if fid is None:
-                        failed.append((path, "创建目录失败"))
-                        ok = False
-                        break
-                    parent_id = fid
-                if not ok:
-                    if progress_callback:
-                        progress_callback(i, total)
-                    continue
-
-            try:
-                fid = self._upload.fast_upload(
-                    file_name, int(f.get("size", 0) or 0), f.get("etag", ""),
-                    parent_id,
-                )
-                if fid is None:
-                    failed.append((path, "网盘中不存在相同文件，无法秒传"))
-                else:
-                    success.append(path)
-            except Exception as e:
-                logger.error("秒传失败: %s (%s)", path, e)
-                failed.append((path, str(e)))
+                        failed.append((path, "网盘中不存在相同文件，无法秒传"))
+                    else:
+                        success.append(path)
+                except Exception as e:
+                    logger.error("秒传失败: %s (%s)", path, e)
+                    failed.append((path, str(e)))
 
             if progress_callback:
                 progress_callback(i, total)
 
         # 秒传可能改变了云端结构，标记缓存失效
         if success:
-            from ..common.file_list_db import FileListDB
-
             FileListDB().mark_all_dirty()
         return {"success": success, "failed": failed}

@@ -619,9 +619,7 @@ class OfflineDownloadDialog(QDialog):
         task = RapidTransferTask(
             self.pan, self._rapid_files, self.current_dir_id, signals
         )
-        signals.progress.connect(
-            lambda cur, total: self.__onRapidProgress(cur, total)
-        )
+        signals.progress.connect(self.__onRapidProgress)
         connect_tracked(self, signals, "finished", self.__onRapidFinished, task)
         QThreadPool.globalInstance().start(task)
 
