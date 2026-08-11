@@ -13,6 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -122,8 +123,6 @@ class RapidExportDialog(QDialog):
             self.textEdit.setPlainText(self._link_text)
 
     def __copy_link(self):
-        from PySide6.QtWidgets import QApplication
-
         QApplication.clipboard().setText(self._link_text)
         InfoBar.success(
             title=tr("rapid.msg_copied", "已复制"),
@@ -132,8 +131,6 @@ class RapidExportDialog(QDialog):
         )
 
     def __copy_json(self):
-        from PySide6.QtWidgets import QApplication
-
         QApplication.clipboard().setText(self._json_text)
         InfoBar.success(
             title=tr("rapid.msg_copied", "已复制"),

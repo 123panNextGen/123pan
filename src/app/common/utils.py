@@ -8,6 +8,10 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtWidgets import QHeaderView
+
+
 def format_file_size(size):
     """将字节数格式化为人类可读的文件大小字符串。
 
@@ -66,9 +70,6 @@ def configure_resizable_header(table, stretch_column=0, default_widths=None):
         callable: stretch() 函数，可在界面 resize 时主动调用
         （内部已自动监听表格 resize，通常无需手动调用）
     """
-    from PySide6.QtCore import QEvent, QObject
-    from PySide6.QtWidgets import QHeaderView
-
     header = table.horizontalHeader()
     if header is None:
         return lambda: None
