@@ -131,3 +131,9 @@ class _RapidTransferSignals(QObject):
     """秒传导入进度/完成信号。"""
     progress = Signal(int, int)      # (current, total)
     finished = Signal(dict, str)     # (stats, error)
+
+
+class _GenerateRapidSignals(QObject):
+    """秒传数据生成完成信号。"""
+    # (json_text, link_text, file_count, total_size, error)
+    finished = Signal(str, str, int, int, str)

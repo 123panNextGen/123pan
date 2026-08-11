@@ -31,6 +31,7 @@ from ..tasks.file_tasks import (
     CreateFolderTask,
     CreateShareTask,
     DeleteFileTask,
+    GenerateRapidTask,
     GetDownloadLinkTask,
     CopyFileTask,
     MoveFileTask,
@@ -40,6 +41,7 @@ from ..tasks.file_tasks import (
 )
 from ..tasks.signals import (
     _DownloadLinkSignals,
+    _GenerateRapidSignals,
     _OpFinishedSignals,
     _ShareCreateSignals,
     _UploadFolderSignals,
@@ -720,6 +722,13 @@ class FileActionsMixin:
         share_action.triggered.connect(self._shareFile)
         menu.addAction(share_action)
 
+        # 添加生成秒传菜单项
+        rapid_action = QAction(
+            _icon(FIF.HISTORY), tr("file.menu_rapid", "生成秒传"), self
+        )
+        rapid_action.triggered.connect(self._generateRapidTransfer)
+        menu.addAction(rapid_action)
+
         # 添加重命名菜单项
         rename_action = QAction(_icon(FIF.EDIT), tr("file.menu_rename", "重命名"), self)
         rename_action.triggered.connect(self._renameFile)
@@ -852,6 +861,61 @@ class FileActionsMixin:
             if str(item.get("FileId")) == str(file_id):
                 return item
         return None
+
+    def _generateRapidTransfer(self):
+        """为选中的文件/文件夹生成秒传数据（JSON + 文本链接）。
+
+        递归收集文件夹下所有文件的 etag/size/path，生成后弹出导出对话框。
+        """
+        selected_rows = self._getSelectedRows()
+        if not selected_rows:
+            InfoBar.warning(
+                title=tr("rapid.msg_error", "生成失败"),
+                content=tr("rapid.msg_select_files", "请选择要生成秒传的文件或文件夹"),
+                parent=self,
+            )
+            return
+
+        file_infos = []
+        for row in selected_rows:
+            name_item = self.fileTable.item(row, 0)
+            if name_item is None:
+                continue
+            file_id = name_item.data(Qt.ItemDataRole.UserRole)
+            file_name = name_item.text()
+            file_detail = self._findFileById(file_id)
+            if not file_detail:
+                continue
+            file_infos.append((file_detail, file_name))
+
+        if not file_infos:
+            InfoBar.error(
+                title=tr("rapid.msg_error", "生成失败"),
+                content=tr("rapid.msg_no_file_detail", "无法获取所选文件信息"),
+                parent=self,
+            )
+            return
+
+        signals = _GenerateRapidSignals()
+        task = GenerateRapidTask(self.pan, file_infos, signals)
+        connect_tracked(self, signals, "finished", self._onRapidGenerated, task)
+        QThreadPool.globalInstance().start(task)
+
+    def _onRapidGenerated(self, json_text, link_text, file_count, total_size, error):
+        """秒传数据生成完成回调。"""
+        if error or not json_text:
+            InfoBar.error(
+                title=tr("rapid.msg_error", "生成失败"),
+                content=error or tr("rapid.msg_no_files", "没有可生成的文件"),
+                parent=self,
+            )
+            return
+        from .rapid_export_dialog import RapidExportDialog
+
+        dialog = RapidExportDialog(
+            json_text, link_text, file_count, total_size, self
+        )
+        dialog.exec()
 
     def _previewFile(self):
         """预览选中的文件。
