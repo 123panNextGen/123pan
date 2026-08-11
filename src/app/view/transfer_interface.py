@@ -556,6 +556,9 @@ class TransferInterface(QWidget, TransferTableMixin):
             self._active_upload_count -= 1
             self.__update_upload_table()
             self.__start_next_pending_upload()
+            # 上传成功后云端目录内容已变化：失效缓存并刷新当前目录，
+            # 避免文件列表显示旧缓存导致新上传文件不出现
+            self._invalidate_upload_dir(task)
             InfoBar.success(
                 title=tr("transfer.msg_upload_complete", "上传完成"),
                 content=tr("transfer.msg_file_uploaded", "文件 '{}' 上传成功").format(task.file_name),
@@ -566,6 +569,23 @@ class TransferInterface(QWidget, TransferTableMixin):
             self.__update_download_table()
             self.__start_next_pending_download()
         self.__record_history(task, task_type)
+
+    def _invalidate_upload_dir(self, task):
+        """上传完成后失效目标目录缓存；若用户正浏览该目录则强制刷新列表。"""
+        try:
+            target_dir_id = getattr(task, "target_dir_id", None)
+            if target_dir_id is None or not self.pan:
+                return
+            self.pan.mark_dir_dirty(target_dir_id)
+            # 当前正浏览上传目标目录时，立即强制刷新（跳过缓存）
+            mw = self.window()
+            if mw is not None and hasattr(mw, "file_interface"):
+                fi = mw.file_interface
+                if fi is not None and getattr(fi, "current_dir_id", None) == int(target_dir_id):
+                    logger.debug("上传完成，刷新当前目录: %s", target_dir_id)
+                    fi._loadCurrentList(force_refresh=True)
+        except Exception as e:
+            logger.error("上传后刷新目录失败: %s", e)
 
     def __on_thread_error(self, task, thread, error):
         """线程错误回调：更新 UI、清理线程资源、启动下一个等待任务。"""

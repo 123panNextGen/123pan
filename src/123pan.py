@@ -67,7 +67,11 @@ def main():
     app.installTranslator(translator)
     logger.debug("Fluent 翻译已安装")
 
-    setTheme(Theme.AUTO)
+    # 应用主题模式（跟随系统/浅色/深色），用户可在设置页切换
+    theme_mode = ConfigManager.get_setting("themeMode", "auto")
+    theme_map = {"auto": Theme.AUTO, "light": Theme.LIGHT, "dark": Theme.DARK}
+    setTheme(theme_map.get(theme_mode, Theme.AUTO))
+    logger.info("主题模式: %s", theme_mode)
     listener = SystemThemeListener()
 
     def on_system_theme_changed():

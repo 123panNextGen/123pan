@@ -116,6 +116,9 @@ class FileInterface(QWidget, FileActionsMixin):
             FIF.FOLDER_ADD.icon(), tr("file.new_folder", "新建文件夹"), self.topBarFrame
         )
         self.uploadButton = PushButton(FIF.UP.icon(), tr("file.upload", "上传"), self.topBarFrame)
+        self.offlineDownloadButton = PushButton(
+            FIF.CLOUD_DOWNLOAD.icon(), tr("file.offline_download", "离线下载"), self.topBarFrame
+        )
         self.downloadButton = PushButton(FIF.DOWNLOAD.icon(), tr("file.download", "下载"), self.topBarFrame)
         self.deleteButton = PushButton(FIF.DELETE.icon(), tr("file.delete", "删除"), self.topBarFrame)
         self.refreshButton = PushButton(FIF.UPDATE.icon(), tr("file.refresh", "刷新"), self.topBarFrame)
@@ -125,6 +128,7 @@ class FileInterface(QWidget, FileActionsMixin):
         self.topBarLayout.addWidget(self.searchBox, 0)
         self.topBarLayout.addWidget(self.newFolderButton, 0)
         self.topBarLayout.addWidget(self.uploadButton, 0)
+        self.topBarLayout.addWidget(self.offlineDownloadButton, 0)
         self.topBarLayout.addWidget(self.downloadButton, 0)
         self.topBarLayout.addWidget(self.deleteButton, 0)
         self.topBarLayout.addWidget(self.refreshButton, 0)
@@ -213,10 +217,14 @@ class FileInterface(QWidget, FileActionsMixin):
         self.fileTable.setBorderVisible(True)
         header = self.fileTable.horizontalHeader()
         if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            # 名称列允许用户手动调整宽度（默认 320px），其余列按内容自适应；
+            # 长文件名被截断时可拖动列宽查看完整名称。
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.resizeSection(0, 320)
+            header.setMinimumSectionSize(60)
             # 启用列头点击排序
             header.setSectionsClickable(True)
             header.setSortIndicatorShown(True)
@@ -279,7 +287,8 @@ class FileInterface(QWidget, FileActionsMixin):
         self.fileTable.itemDoubleClicked.connect(self.__onTableItemDoubleClicked)
         self.breadcrumbBar.currentItemChanged.connect(self.__onBreadcrumbItemChanged)
         self.newFolderButton.clicked.connect(self._createNewFolder)
-        self.uploadButton.clicked.connect(self._uploadFile)
+        self.uploadButton.clicked.connect(self._showUploadMenu)
+        self.offlineDownloadButton.clicked.connect(self._openOfflineDownload)
         self.downloadButton.clicked.connect(self._downloadFile)
         self.deleteButton.clicked.connect(self._deleteFile)
         self.refreshButton.clicked.connect(self._refreshFileList)
@@ -534,11 +543,13 @@ class FileInterface(QWidget, FileActionsMixin):
         self._table_mgr.update_state(count, self._loading)
 
     def resizeEvent(self, event):
-        """保持表格状态提示覆盖层与列表区域同步。"""
+        """保持表格状态提示覆盖层与列表区域同步，并填充名称列多余宽度。"""
         super().resizeEvent(event)
         state_label = getattr(self, "listStateLabel", None)
         if state_label is not None and self.listFrame is not None:
             state_label.setGeometry(self.listFrame.rect())
+        if self._table_mgr is not None:
+            self._table_mgr.stretch_name_column()
 
     def __onSearchTextChanged(self, text):
         """搜索文本变化时启动防抖，清空时立即恢复"""

@@ -57,6 +57,8 @@ class TransferTableMixin:
             table.setItem(row, 0, name_item)
         else:
             name_item.setText(task.file_name)
+        # 长文件名被截断时悬停显示完整名称
+        name_item.setToolTip(task.file_name)
 
         # ---- 优先级下拉 ----
         priority_combo = table.cellWidget(row, 1)

@@ -64,6 +64,8 @@ def _get_default_settings():
         "proxyPassword": "",
         "logLevel": "DEBUG",
         "windowOpacity": 100,
+        # 主题模式：auto=跟随系统 / light=浅色 / dark=深色
+        "themeMode": "auto",
         # 系统托盘
         "closeToTray": False,      # 关闭窗口时最小化到系统托盘
         "startMinimized": False,   # 启动登录后最小化到托盘（后台同步）

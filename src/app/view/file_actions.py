@@ -35,12 +35,14 @@ from ..tasks.file_tasks import (
     CopyFileTask,
     MoveFileTask,
     RenameFileTask,
+    UploadFolderTask,
     connect_tracked,
 )
 from ..tasks.signals import (
     _DownloadLinkSignals,
     _OpFinishedSignals,
     _ShareCreateSignals,
+    _UploadFolderSignals,
 )
 from .dialogs import InputDialog
 from .folder_select_dialog import FolderSelectDialog
@@ -108,6 +110,20 @@ class FileActionsMixin:
             else:
                 InfoBar.error(title=tr("file.msg_create_failed", "创建失败"), content=tr("file.msg_create_folder_failed", "创建文件夹失败"), parent=self)
 
+    def _openOfflineDownload(self):
+        """打开离线下载/秒传导入对话框。"""
+        if not self.pan:
+            InfoBar.warning(
+                title=tr("offline.title", "离线下载"),
+                content=tr("offline.msg_not_logged_in", "请先登录"),
+                parent=self,
+            )
+            return
+        from .offline_download_dialog import OfflineDownloadDialog
+
+        dialog = OfflineDownloadDialog(self.pan, self.current_dir_id, self)
+        dialog.exec()
+
     def _uploadFile(self):
         """上传文件"""
         file_paths, _ = QFileDialog.getOpenFileNames(self, tr("file.upload_title", "选择要上传的文件"))
@@ -115,8 +131,62 @@ class FileActionsMixin:
         if file_paths:
             self._addUploadTasks(file_paths)
 
+    def _showUploadMenu(self):
+        """上传按钮下拉菜单：上传文件 / 上传文件夹。"""
+        menu = QMenu(self)
+        file_action = QAction(
+            _icon(FIF.DOCUMENT), tr("file.upload_files", "上传文件"), self
+        )
+        file_action.triggered.connect(self._uploadFile)
+        folder_action = QAction(
+            _icon(FIF.FOLDER), tr("file.upload_folder", "上传文件夹"), self
+        )
+        folder_action.triggered.connect(self._uploadFolder)
+        menu.addAction(file_action)
+        menu.addAction(folder_action)
+        pos = self.uploadButton.mapToGlobal(self.uploadButton.rect().bottomLeft())
+        menu.exec(pos)
+
+    def _uploadFolder(self):
+        """选择文件夹并递归上传（保留目录结构）。"""
+        folder = QFileDialog.getExistingDirectory(
+            self, tr("file.upload_folder_title", "选择要上传的文件夹")
+        )
+        if folder:
+            self._addFolderUpload(folder)
+
+    def _addFolderUpload(self, local_folder):
+        """启动文件夹上传任务（后台扫描 + 建目录，完成后加入上传队列）。"""
+        signals = _UploadFolderSignals()
+        task = UploadFolderTask(self.pan, local_folder, self.current_dir_id, signals)
+        connect_tracked(self, signals, "finished", self._onUploadFolderFinished, task)
+        QThreadPool.globalInstance().start(task)
+
+    def _onUploadFolderFinished(self, files, error):
+        """文件夹上传扫描完成回调：将文件加入上传队列。"""
+        if error or not files:
+            InfoBar.error(
+                title=tr("file.msg_folder_upload_failed", "文件夹上传失败"),
+                content=error or tr("file.msg_folder_empty", "文件夹中没有可上传的文件"),
+                parent=self,
+            )
+            return
+
+        for local_path, dir_id in files:
+            path = Path(local_path)
+            file_size = path.stat().st_size
+            if self.transfer_interface:
+                self.transfer_interface.add_upload_task(
+                    path.name, file_size, local_path, dir_id
+                )
+        InfoBar.success(
+            title=tr("file.msg_upload_success", "上传文件"),
+            content=tr("file.msg_upload_added", "已添加 {} 个上传任务").format(len(files)),
+            parent=self,
+        )
+
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """拖拽进入时接受文件拖放"""
+        """拖拽进入时接受文件/文件夹拖放"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
@@ -126,23 +196,32 @@ class FileActionsMixin:
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
-        """处理拖放文件"""
+        """处理拖放文件/文件夹（文件夹递归上传）。"""
         urls = event.mimeData().urls()
-        if urls:
-            file_paths = []
-            for url in urls:
-                path = url.toLocalFile()
-                if path and Path(path).is_file():
-                    file_paths.append(path)
+        if not urls:
+            return
+        file_paths = []
+        folder_paths = []
+        for url in urls:
+            path = url.toLocalFile()
+            if not path:
+                continue
+            p = Path(path)
+            if p.is_file():
+                file_paths.append(path)
+            elif p.is_dir():
+                folder_paths.append(path)
 
-            if file_paths:
-                self._addUploadTasks(file_paths)
-            else:
-                InfoBar.warning(
-                    title=tr("file.drop_warn_title", "拖拽上传"),
-                    content=tr("file.drop_warn_content", "只支持拖放文件，不支持文件夹"),
-                    parent=self,
-                )
+        if file_paths:
+            self._addUploadTasks(file_paths)
+        for folder in folder_paths:
+            self._addFolderUpload(folder)
+        if not file_paths and not folder_paths:
+            InfoBar.warning(
+                title=tr("file.drop_warn_title", "拖拽上传"),
+                content=tr("file.drop_warn_content", "只支持拖放文件或文件夹"),
+                parent=self,
+            )
 
     def _addUploadTasks(self, file_paths):
         """添加上传任务（共用方法）"""

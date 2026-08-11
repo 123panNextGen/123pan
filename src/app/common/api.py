@@ -17,6 +17,7 @@ from ..api.session import NetSession
 from ..service.auth_service import AuthService
 from ..service.download_service import DownloadService
 from ..service.file_service import FileService
+from ..service.offline_service import OfflineService
 from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
 from .const import all_device_type, all_os_versions, VERSION
@@ -47,6 +48,7 @@ class Pan123:
         self._download = DownloadService(self._session)
         self._upload = UploadService(self._session)
         self._share = ShareService(self._session)
+        self._offline = OfflineService(self._session)
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -252,11 +254,45 @@ class Pan123:
         return self._file.permanent_delete_files(file_id_list)
 
     def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
-                num_threads=1, progress_callback=None):
+                num_threads=1, progress_callback=None, validation_callback=None):
         return self._upload.up_load(
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
+            validation_callback=validation_callback,
+        )
+
+    def mark_dir_dirty(self, dir_id):
+        """标记目录缓存为脏，下次浏览时强制从服务器刷新。"""
+        self._file.mark_dir_dirty(dir_id)
+
+    def create_folder(self, dirname, parent_file_id):
+        """创建文件夹（简化版，不依赖当前列表）。
+
+        Returns:
+            (FileId, error_msg)，成功时 error_msg 为空字符串
+        """
+        return self._file.create_folder(dirname, parent_file_id)
+
+    # ---- 离线下载 / 秒传导入 ----
+
+    def offline_resolve(self, urls):
+        """解析离线下载链接。"""
+        return self._offline.resolve(urls)
+
+    def offline_submit(self, resources):
+        """提交离线下载任务。"""
+        return self._offline.submit(resources)
+
+    def offline_parse_rapid(self, text):
+        """解析秒传数据（JSON 或文本链接）。"""
+        return self._offline.parse_rapid_data(text)
+
+    def offline_rapid_transfer(self, files, parent_dir_id, progress_callback=None,
+                               cancel=None):
+        """秒传导入：创建目录结构并逐个秒传文件。"""
+        return self._offline.rapid_transfer(
+            files, parent_dir_id, progress_callback=progress_callback, cancel=cancel
         )
 
     def mkdir(self, dirname, remakedir=False):

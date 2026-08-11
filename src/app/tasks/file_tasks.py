@@ -21,12 +21,16 @@ from .signals import (
     _DownloadLinkSignals,
     _FolderListSignals,
     _LoadListSignals,
+    _OfflineResolveSignals,
+    _OfflineSubmitSignals,
     _PasswordLoginSignals,
+    _RapidTransferSignals,
     _ShareCreateSignals,
     _ShareListSignals,
     _StorageInfoSignals,
     _TrashListSignals,
     _TrashOpSignals,
+    _UploadFolderSignals,
     _UserInfoSignals,
 )
 
@@ -610,7 +614,6 @@ class MoveFileTask(QRunnable):
 
 class BatchDeleteTask(QRunnable):
     """批量删除文件任务"""
-
     def __init__(self, pan, file_infos, current_dir_id, signals, file_interface):
         super().__init__()
         self.pan = pan
@@ -665,3 +668,165 @@ class BatchDeleteTask(QRunnable):
         except Exception as e:
             logger.error("批量删除异常: %s", e)
             self.signals.finished.emit(False, "", "", str(e), [], [])
+
+
+class UploadFolderTask(QRunnable):
+    """文件夹上传：递归遍历本地目录，在云端创建对应目录结构。
+
+    完成后通过信号返回待上传文件列表 [(local_path, cloud_dir_id), ...]，
+    由界面层逐一加入上传队列。同名云端文件夹存在时复用（合并），
+    避免重复创建目录。
+    """
+
+    def __init__(self, pan, local_root, target_dir_id, signals: _UploadFolderSignals):
+        super().__init__()
+        self.pan = pan
+        self.local_root = local_root
+        self.target_dir_id = int(target_dir_id)
+        self.signals = signals
+        # 任务内已知目录缓存：(parent_id, name) -> file_id，避免重复建目录
+        self._known_dirs = {}
+
+    def run(self):
+        try:
+            files = self._walk_and_make_dirs()
+            logger.info(
+                "文件夹上传扫描完成: %s, %d 个文件", self.local_root, len(files)
+            )
+            self.signals.finished.emit(files, "")
+        except Exception as e:
+            logger.error("文件夹上传失败: %s (%s)", self.local_root, e)
+            self.signals.finished.emit([], str(e))
+
+    def _walk_and_make_dirs(self):
+        """遍历本地目录并创建云端目录结构。
+
+        Returns:
+            [(local_path, cloud_dir_id), ...] 待上传文件列表
+        """
+        import os as _os
+        from pathlib import Path as _Path
+
+        root = _Path(self.local_root)
+        if not root.exists() or not root.is_dir():
+            raise FileNotFoundError(f"文件夹不存在: {self.local_root}")
+
+        # 顶层文件夹（以本地文件夹名命名）在目标目录中创建/复用
+        top_id = self._ensure_folder(root.name, self.target_dir_id)
+        if top_id is None:
+            raise RuntimeError("创建云端顶层文件夹失败")
+
+        files = []
+        for dirpath, dirnames, filenames in _os.walk(root):
+            rel = _os.path.relpath(dirpath, root)
+            parent_cloud_id = top_id
+            if rel != ".":
+                # 递归创建/复用子目录
+                for part in rel.split(_os.sep):
+                    parent_cloud_id = self._ensure_folder(part, parent_cloud_id)
+                    if parent_cloud_id is None:
+                        raise RuntimeError(f"创建云端子文件夹失败: {part}")
+            for fname in filenames:
+                full = _Path(dirpath) / fname
+                if not full.is_file():
+                    continue
+                files.append((str(full), parent_cloud_id))
+        return files
+
+    def _ensure_folder(self, name, parent_id):
+        """在 parent_id 下查找同名文件夹，不存在则创建。
+
+        Returns:
+            int: 云端文件夹 FileId；失败返回 None
+        """
+        key = (parent_id, name)
+        if key in self._known_dirs:
+            return self._known_dirs[key]
+
+        # 先查找目标目录下是否已有同名文件夹（合并上传）
+        cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
+        self.pan.file_page = 0
+        try:
+            code, items = self.pan.get_dir_by_id(
+                parent_id, save=False, all=True, limit=100
+            )
+            if code == 0:
+                for item in items:
+                    if int(item.get("Type", 0)) == 1 and item.get("FileName") == name:
+                        fid = int(item["FileId"])
+                        self._known_dirs[key] = fid
+                        return fid
+        finally:
+            self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+
+        # 不存在则创建
+        fid, err = self.pan.create_folder(name, parent_id)
+        if fid is None:
+            logger.error("创建云端文件夹失败: %s (%s)", name, err)
+            return None
+        fid = int(fid)
+        self._known_dirs[key] = fid
+        return fid
+
+
+class OfflineResolveTask(QRunnable):
+    """后台解析离线下载链接。"""
+
+    def __init__(self, pan, urls, signals: _OfflineResolveSignals):
+        super().__init__()
+        self.pan = pan
+        self.urls = urls
+        self.signals = signals
+
+    def run(self):
+        try:
+            resources = self.pan.offline_resolve(self.urls)
+            self.signals.finished.emit(resources, "")
+        except Exception as e:
+            logger.error("离线下载解析失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class OfflineSubmitTask(QRunnable):
+    """后台提交离线下载任务。"""
+
+    def __init__(self, pan, resources, signals: _OfflineSubmitSignals):
+        super().__init__()
+        self.pan = pan
+        self.resources = resources
+        self.signals = signals
+
+    def run(self):
+        try:
+            task_list = self.pan.offline_submit(self.resources)
+            self.signals.finished.emit(task_list, "")
+        except Exception as e:
+            logger.error("离线下载提交失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class RapidTransferTask(QRunnable):
+    """后台执行秒传导入（建目录 + 逐个秒传）。"""
+
+    def __init__(self, pan, files, parent_dir_id, signals: _RapidTransferSignals):
+        super().__init__()
+        self.pan = pan
+        self.files = files
+        self.parent_dir_id = parent_dir_id
+        self.signals = signals
+
+    def run(self):
+        try:
+            total = len(self.files)
+
+            def _on_progress(current, total_count):
+                self.signals.progress.emit(current, total_count)
+
+            stats = self.pan.offline_rapid_transfer(
+                self.files, self.parent_dir_id,
+                progress_callback=_on_progress,
+            )
+            self.signals.finished.emit(stats, "")
+        except Exception as e:
+            logger.error("秒传导入失败: %s", e)
+            self.signals.finished.emit({}, str(e))
