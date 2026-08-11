@@ -31,7 +31,7 @@ from qfluentwidgets import (
 
 from ..common.i18n import tr
 from ..common.log import get_logger
-from ..common.utils import format_file_size
+from ..common.utils import configure_resizable_header, format_file_size
 from ..tasks.file_tasks import (
     OfflineResolveTask,
     OfflineSubmitTask,
@@ -82,10 +82,9 @@ class _FileSelectDialog(QDialog):
         ])
         self.table.setBorderRadius(8)
         self.table.setBorderVisible(True)
-        header = self.table.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(1, header.ResizeMode.Stretch)
+        configure_resizable_header(
+            self.table, stretch_column=1, default_widths={0: 60, 1: 400}
+        )
 
         files = resource.get("files") or []
         self.table.setRowCount(len(files))
@@ -274,14 +273,12 @@ class OfflineDownloadDialog(QDialog):
         self.resourceTable.setSelectionBehavior(
             self.resourceTable.SelectionBehavior.SelectRows
         )
-        header = self.resourceTable.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(1, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，名称列吸收多余宽度
+        configure_resizable_header(
+            self.resourceTable,
+            stretch_column=1,
+            default_widths={0: 60, 1: 280, 2: 100, 3: 90, 4: 70, 5: 140},
+        )
         self.resourceTable.itemChanged.connect(self.__onResourceItemChanged)
         layout.addWidget(self.resourceTable, 1)
 

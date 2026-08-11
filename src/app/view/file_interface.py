@@ -94,14 +94,18 @@ class FileInterface(QWidget, FileActionsMixin):
     def __createTopBar(self):
         self.topBarFrame = QFrame(self)
         self.topBarFrame.setObjectName("frame")
-        self.topBarLayout = QHBoxLayout(self.topBarFrame)
-        self.topBarLayout.setContentsMargins(12, 10, 12, 10)
-        self.topBarLayout.setSpacing(8)
+        # 两排布局：第一排导航（返回/面包屑/搜索），第二排操作按钮
+        self.topBarLayout = QVBoxLayout(self.topBarFrame)
+        self.topBarLayout.setContentsMargins(12, 10, 12, 8)
+        self.topBarLayout.setSpacing(6)
+
+        # ---- 第一排：导航 ----
+        self.navRowLayout = QHBoxLayout()
+        self.navRowLayout.setSpacing(8)
 
         self.backButton = PushButton(
             FIF.LEFT_ARROW.icon(), tr("file.back_button", "返回上一级"), self.topBarFrame
         )
-
         self.breadcrumbBar = BreadcrumbBar(self.topBarFrame)
 
         # 搜索框
@@ -111,7 +115,14 @@ class FileInterface(QWidget, FileActionsMixin):
         self.searchBox.setMaximumWidth(200)
         self.searchBox.textChanged.connect(self.__onSearchTextChanged)
 
-        # 右侧按钮
+        self.navRowLayout.addWidget(self.backButton, 0)
+        self.navRowLayout.addWidget(self.breadcrumbBar, 1)
+        self.navRowLayout.addWidget(self.searchBox, 0)
+
+        # ---- 第二排：操作按钮 ----
+        self.actionRowLayout = QHBoxLayout()
+        self.actionRowLayout.setSpacing(8)
+
         self.newFolderButton = PushButton(
             FIF.FOLDER_ADD.icon(), tr("file.new_folder", "新建文件夹"), self.topBarFrame
         )
@@ -123,15 +134,16 @@ class FileInterface(QWidget, FileActionsMixin):
         self.deleteButton = PushButton(FIF.DELETE.icon(), tr("file.delete", "删除"), self.topBarFrame)
         self.refreshButton = PushButton(FIF.UPDATE.icon(), tr("file.refresh", "刷新"), self.topBarFrame)
 
-        self.topBarLayout.addWidget(self.backButton, 0)
-        self.topBarLayout.addWidget(self.breadcrumbBar, 1)
-        self.topBarLayout.addWidget(self.searchBox, 0)
-        self.topBarLayout.addWidget(self.newFolderButton, 0)
-        self.topBarLayout.addWidget(self.uploadButton, 0)
-        self.topBarLayout.addWidget(self.offlineDownloadButton, 0)
-        self.topBarLayout.addWidget(self.downloadButton, 0)
-        self.topBarLayout.addWidget(self.deleteButton, 0)
-        self.topBarLayout.addWidget(self.refreshButton, 0)
+        self.actionRowLayout.addWidget(self.newFolderButton, 0)
+        self.actionRowLayout.addWidget(self.uploadButton, 0)
+        self.actionRowLayout.addWidget(self.offlineDownloadButton, 0)
+        self.actionRowLayout.addWidget(self.downloadButton, 0)
+        self.actionRowLayout.addWidget(self.deleteButton, 0)
+        self.actionRowLayout.addStretch(1)
+        self.actionRowLayout.addWidget(self.refreshButton, 0)
+
+        self.topBarLayout.addLayout(self.navRowLayout)
+        self.topBarLayout.addLayout(self.actionRowLayout)
 
         self.mainLayout.addWidget(self.topBarFrame, 0)
 

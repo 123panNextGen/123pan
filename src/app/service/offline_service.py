@@ -294,3 +294,86 @@ class OfflineService:
         if success:
             FileListDB().mark_all_dirty()
         return {"success": success, "failed": failed}
+
+    # ---- 秒传数据生成（导出） ----
+
+    def build_rapid_payload(self, files):
+        """根据文件信息生成标准秒传数据（JSON + 文本链接）。
+
+        Args:
+            files: [{"path": str, "etag": str, "size": int}, ...]
+                   path 为完整相对路径（从所选根开始，含目录结构）
+
+        Returns:
+            (json_text, link_text)
+            json_text: 标准 123pan 秒传 JSON 文本
+            link_text: 文本秒传链接（123FLCPV2 格式）
+
+        Raises:
+            ValueError: files 为空或缺少有效 etag
+        """
+        if not files:
+            raise ValueError("没有可生成的文件")
+        valid = [
+            f for f in files
+            if f.get("etag") and self._is_valid_etag(str(f["etag"]))
+        ]
+        if not valid:
+            raise ValueError("所选文件缺少有效的 etag，无法生成秒传数据")
+
+        common_path = self._common_path(valid)
+        rel_files = []
+        for f in valid:
+            path = str(f.get("path", ""))
+            if common_path and path.startswith(common_path):
+                path = path[len(common_path):]
+            rel_files.append({
+                "path": path,
+                "etag": str(f.get("etag", "")).lower(),
+                "size": int(f.get("size", 0) or 0),
+            })
+
+        total_size = sum(f["size"] for f in rel_files)
+        json_data = {
+            "scriptVersion": "3.0.3",
+            "exportVersion": "1.0",
+            "usesBase62EtagsInExport": False,
+            "commonPath": common_path,
+            "files": [
+                {"path": f["path"], "etag": f["etag"], "size": f["size"]}
+                for f in rel_files
+            ],
+            "totalFilesCount": len(rel_files),
+            "totalSize": total_size,
+        }
+        json_text = json.dumps(json_data, ensure_ascii=False, indent=2)
+
+        parts = []
+        for f in rel_files:
+            safe_path = f["path"].replace("%", "").replace("#", "").replace("$", "")
+            parts.append(f"{f['etag']}#{f['size']}#{safe_path}")
+        link_text = _RAPID_LINK_PREFIX + common_path + "%" + "$".join(parts)
+        return json_text, link_text
+
+    @staticmethod
+    def _common_path(files):
+        """计算所有文件路径的公共目录前缀（含尾部斜杠）。
+
+        Returns:
+            str: 公共目录前缀，如 "folder/sub/"，无公共目录时返回 ""
+        """
+        dirs = []
+        for f in files:
+            path = str(f.get("path", ""))
+            dirs.append(path.rsplit("/", 1)[0] if "/" in path else "")
+
+        if not dirs or all(d == "" for d in dirs):
+            return ""
+        common = dirs[0].split("/")
+        for d in dirs[1:]:
+            parts = d.split("/")
+            common = [a for a, b in zip(common, parts) if a == b]
+            if not common:
+                return ""
+        cp = "/".join(common)
+        return (cp + "/") if cp else ""

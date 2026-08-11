@@ -295,6 +295,10 @@ class Pan123:
             files, parent_dir_id, progress_callback=progress_callback, cancel=cancel
         )
 
+    def offline_build_rapid(self, files):
+        """生成标准秒传数据（JSON + 文本链接）。"""
+        return self._offline.build_rapid_payload(files)
+
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
         if file_id is not None:

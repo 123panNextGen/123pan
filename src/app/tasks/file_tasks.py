@@ -13,6 +13,7 @@ from PySide6.QtCore import QRunnable
 from ..common.api import Pan123
 from ..common.config import ConfigManager
 from ..common.log import get_logger
+from ..service.offline_service import OfflineService
 from .signals import (
     _AutoLoginSignals,
     _CheckVersionSignals,
@@ -20,6 +21,7 @@ from .signals import (
     _DeviceListSignals,
     _DownloadLinkSignals,
     _FolderListSignals,
+    _GenerateRapidSignals,
     _LoadListSignals,
     _OfflineResolveSignals,
     _OfflineSubmitSignals,
@@ -830,3 +832,74 @@ class RapidTransferTask(QRunnable):
         except Exception as e:
             logger.error("秒传导入失败: %s", e)
             self.signals.finished.emit({}, str(e))
+
+
+class GenerateRapidTask(QRunnable):
+    """后台生成秒传数据（JSON + 文本链接）。
+
+    对选中的文件/文件夹递归收集 etag/size/path，生成标准秒传格式。
+    """
+
+    def __init__(self, pan, file_infos, signals: _GenerateRapidSignals):
+        super().__init__()
+        self.pan = pan
+        # file_infos: [(item_dict, rel_path), ...]，rel_path 从当前目录起
+        self.file_infos = file_infos
+        self.signals = signals
+
+    def run(self):
+        try:
+            files = self._collect_files()
+            if not files:
+                self.signals.finished.emit("", "", 0, 0, "没有可生成的文件")
+                return
+            json_text, link_text = self.pan.offline_build_rapid(files)
+            total_size = sum(int(f.get("size", 0) or 0) for f in files)
+            self.signals.finished.emit(
+                json_text, link_text, len(files), total_size, ""
+            )
+        except Exception as e:
+            logger.error("生成秒传数据失败: %s", e)
+            self.signals.finished.emit("", "", 0, 0, str(e))
+
+    def _collect_files(self):
+        """递归收集文件（etag/size/path）。"""
+        result = []
+        for item, rel_path in self.file_infos:
+            if int(item.get("Type", 0)) == 1:
+                self._collect_folder(int(item["FileId"]), rel_path, result)
+            else:
+                etag = str(item.get("Etag", "") or "").lower()
+                if OfflineService._is_valid_etag(etag):
+                    result.append({
+                        "path": rel_path,
+                        "etag": etag,
+                        "size": int(item.get("Size", 0) or 0),
+                    })
+        return result
+
+    def _collect_folder(self, folder_id, rel_path, result):
+        """递归收集文件夹下所有文件。"""
+        cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
+        self.pan.file_page = 0
+        try:
+            code, items = self.pan.get_dir_by_id(
+                folder_id, save=False, all=True, limit=100
+            )
+        finally:
+            self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+        if code != 0:
+            return
+        for child in items:
+            name = child.get("FileName", "")
+            child_path = rel_path + "/" + name if rel_path else name
+            if int(child.get("Type", 0)) == 1:
+                self._collect_folder(int(child["FileId"]), child_path, result)
+            else:
+                etag = str(child.get("Etag", "") or "").lower()
+                if OfflineService._is_valid_etag(etag):
+                    result.append({
+                        "path": child_path,
+                        "etag": etag,
+                        "size": int(child.get("Size", 0) or 0),
+                    })
