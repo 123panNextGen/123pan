@@ -28,7 +28,11 @@ from qfluentwidgets import (
 )
 
 from ..common.style_sheet import StyleSheet
-from ..common.utils import format_file_size, format_speed
+from ..common.utils import (
+    configure_resizable_header,
+    format_file_size,
+    format_speed,
+)
 from ..common.config import ConfigManager
 from ..common.transfer_store import (
     TransferStore,
@@ -230,18 +234,12 @@ class TransferInterface(QWidget, TransferTableMixin):
         self.uploadTable.setBorderRadius(8)
         self.uploadTable.setBorderVisible(True)
 
-        # 设置列宽：文件名/进度为弹性列吸收宽度变化，其余按内容自适应，
-        # 避免窗口较窄时固定列总和超出可视宽度导致列被横向滚动条截断。
-        header = self.uploadTable.horizontalHeader()
-        if header:
-            header.setSectionResizeMode(0, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(7, header.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，文件名列吸收多余宽度
+        configure_resizable_header(
+            self.uploadTable,
+            stretch_column=0,
+            default_widths={0: 260, 1: 80, 2: 100, 3: 100, 4: 160, 5: 60, 6: 90, 7: 140},
+        )
 
         self.uploadLayout.addWidget(self.uploadTable)
         self.uploadEmptyLabel = self.__make_empty_label(
@@ -264,18 +262,12 @@ class TransferInterface(QWidget, TransferTableMixin):
         self.downloadTable.setBorderRadius(8)
         self.downloadTable.setBorderVisible(True)
 
-        # 设置列宽：文件名/进度为弹性列吸收宽度变化，其余按内容自适应，
-        # 避免窗口较窄时固定列总和超出可视宽度导致列被横向滚动条截断。
-        header = self.downloadTable.horizontalHeader()
-        if header:
-            header.setSectionResizeMode(0, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(6, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(7, header.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，文件名列吸收多余宽度
+        configure_resizable_header(
+            self.downloadTable,
+            stretch_column=0,
+            default_widths={0: 260, 1: 80, 2: 100, 3: 100, 4: 160, 5: 60, 6: 90, 7: 140},
+        )
 
         self.downloadLayout.addWidget(self.downloadTable)
         self.downloadEmptyLabel = self.__make_empty_label(
@@ -313,13 +305,12 @@ class TransferInterface(QWidget, TransferTableMixin):
         self.historyTable.setBorderRadius(8)
         self.historyTable.setBorderVisible(True)
 
-        header = self.historyTable.horizontalHeader()
-        if header:
-            header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(1, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，文件名列吸收多余宽度
+        configure_resizable_header(
+            self.historyTable,
+            stretch_column=1,
+            default_widths={0: 80, 1: 300, 2: 100, 3: 90, 4: 160},
+        )
         self.historyLayout.addWidget(self.historyTable)
         self.historyEmptyLabel = self.__make_empty_label(
             tr("transfer.state_empty_his", "暂无历史记录"), self.historyFrame

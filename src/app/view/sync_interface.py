@@ -40,6 +40,7 @@ from qfluentwidgets import (
 from ..common.i18n import tr
 from ..common.log import get_logger
 from ..common.style_sheet import StyleSheet
+from ..common.utils import configure_resizable_header
 from .folder_select_dialog import FolderSelectDialog
 
 logger = get_logger(__name__)
@@ -307,18 +308,14 @@ class SyncInterface(QWidget):
             QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self.jobsTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.jobsTable.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
-            # 操作列：ResizeToContents 不计算 cellWidget 宽度，固定宽度保证按钮完整显示。
-            # 4 个紧凑图标按钮最小约 192px，取 200 留余量。
-            header.setSectionResizeMode(6, header.ResizeMode.Fixed)
-            self.jobsTable.setColumnWidth(6, 200)
+        # 所有列可交互调整列宽，本地路径列吸收多余宽度；
+        # 操作列固定宽度保证按钮完整显示。
+        configure_resizable_header(
+            self.jobsTable,
+            stretch_column=2,
+            default_widths={0: 80, 1: 180, 2: 300, 3: 180, 4: 100, 5: 160},
+        )
+        self.jobsTable.setColumnWidth(6, 200)
         self.jobsLayout.addWidget(self.jobsTable)
 
         # ---- 历史表格 ----
@@ -350,14 +347,12 @@ class SyncInterface(QWidget):
         ])
         self.historyTable.setBorderRadius(8)
         self.historyTable.setBorderVisible(True)
-        header = self.historyTable.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, header.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, header.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(5, header.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，任务列吸收多余宽度
+        configure_resizable_header(
+            self.historyTable,
+            stretch_column=0,
+            default_widths={0: 220, 1: 80, 2: 80, 3: 80, 4: 80, 5: 160},
+        )
         self.historyLayout.addWidget(self.historyTable)
 
         self.historyFrame.hide()

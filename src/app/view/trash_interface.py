@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QVBoxLayout,
     QWidget,
     QLabel,
@@ -29,7 +28,7 @@ from qfluentwidgets import (
 from PySide6.QtCore import QThreadPool, Qt
 
 from ..common.style_sheet import StyleSheet
-from ..common.utils import format_file_size
+from ..common.utils import configure_resizable_header, format_file_size
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import (
@@ -131,11 +130,12 @@ class TrashInterface(QWidget):
             vertical_header.hide()
         self.trashTable.setBorderRadius(8)
         self.trashTable.setBorderVisible(True)
-        header = self.trashTable.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，名称列吸收多余宽度
+        configure_resizable_header(
+            self.trashTable,
+            stretch_column=0,
+            default_widths={0: 300, 1: 100, 2: 120},
+        )
         self.listLayout.addWidget(self.trashTable)
 
         # 空回收站提示（覆盖在表格上）
