@@ -543,11 +543,13 @@ class FileInterface(QWidget, FileActionsMixin):
         self._table_mgr.update_state(count, self._loading)
 
     def resizeEvent(self, event):
-        """保持表格状态提示覆盖层与列表区域同步。"""
+        """保持表格状态提示覆盖层与列表区域同步，并填充名称列多余宽度。"""
         super().resizeEvent(event)
         state_label = getattr(self, "listStateLabel", None)
         if state_label is not None and self.listFrame is not None:
             state_label.setGeometry(self.listFrame.rect())
+        if self._table_mgr is not None:
+            self._table_mgr.stretch_name_column()
 
     def __onSearchTextChanged(self, text):
         """搜索文本变化时启动防抖，清空时立即恢复"""

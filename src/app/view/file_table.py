@@ -126,6 +126,8 @@ class FileTableManager:
         finally:
             table.blockSignals(False)
             table.setUpdatesEnabled(True)
+        # 渲染后让名称列吸收多余宽度（窗口 resize 时也会调用）
+        self.stretch_name_column()
 
     # ---- 排序 ----
 
@@ -197,6 +199,24 @@ class FileTableManager:
     def find_by_id(self, file_id):
         """从当前目录索引中查找文件详情（O(1)）。"""
         return self.index_by_id.get(str(file_id))
+
+    # ---- 列宽 ----
+
+    def stretch_name_column(self):
+        """让名称列吸收视口多余宽度。
+
+        名称列允许用户手动调整（Interactive），但当表格视口比各列宽之和
+        更宽时，把多余宽度分给名称列，避免右侧出现大片空白。
+        用户手动拖窄后，下一次 resize 会重新填充（与默认 Stretch 行为一致）。
+        """
+        header = self.table.horizontalHeader()
+        if header is None or header.count() == 0:
+            return
+        total = sum(header.sectionSize(i) for i in range(header.count()))
+        viewport = header.viewport().width()
+        extra = viewport - total
+        if extra > 10:
+            header.resizeSection(0, header.sectionSize(0) + extra)
 
 
 def format_size_text(size):
