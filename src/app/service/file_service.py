@@ -143,6 +143,14 @@ class FileService:
 
         return 0, lists, total, all_file, times
 
+    def mark_dir_dirty(self, dir_id):
+        """标记目录缓存为脏，下次浏览时强制从服务器刷新。
+
+        上传/离线下载等云端内容变更后调用，确保文件列表不显示旧缓存。
+        """
+        self._db.mark_dirty(dir_id)
+        logger.debug("标记目录缓存为脏: %s", dir_id)
+
     def mkdir(self, dirname, file_list, parent_file_id, remakedir=False):
         """创建文件夹。
 

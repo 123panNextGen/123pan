@@ -259,6 +259,10 @@ class Pan123:
             num_threads=num_threads, progress_callback=progress_callback,
         )
 
+    def mark_dir_dirty(self, dir_id):
+        """标记目录缓存为脏，下次浏览时强制从服务器刷新。"""
+        self._file.mark_dir_dirty(dir_id)
+
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
         if file_id is not None:
