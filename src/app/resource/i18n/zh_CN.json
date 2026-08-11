@@ -480,5 +480,10 @@
     "settings.theme_auto": "跟随系统",
     "settings.theme_light": "浅色",
     "settings.theme_dark": "深色",
-    "transfer.status_validating": "校验中"
+    "transfer.status_validating": "校验中",
+    "file.upload_files": "上传文件",
+    "file.upload_folder": "上传文件夹",
+    "file.upload_folder_title": "选择要上传的文件夹",
+    "file.msg_folder_upload_failed": "文件夹上传失败",
+    "file.msg_folder_empty": "文件夹中没有可上传的文件"
 }

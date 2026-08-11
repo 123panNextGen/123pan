@@ -480,5 +480,10 @@
     "settings.theme_auto": "Follow System",
     "settings.theme_light": "Light",
     "settings.theme_dark": "Dark",
-    "transfer.status_validating": "Validating"
+    "transfer.status_validating": "Validating",
+    "file.upload_files": "Upload Files",
+    "file.upload_folder": "Upload Folder",
+    "file.upload_folder_title": "Select folder to upload",
+    "file.msg_folder_upload_failed": "Folder upload failed",
+    "file.msg_folder_empty": "No files to upload in the folder"
 }

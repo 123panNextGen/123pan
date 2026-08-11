@@ -264,6 +264,14 @@ class Pan123:
         """标记目录缓存为脏，下次浏览时强制从服务器刷新。"""
         self._file.mark_dir_dirty(dir_id)
 
+    def create_folder(self, dirname, parent_file_id):
+        """创建文件夹（简化版，不依赖当前列表）。
+
+        Returns:
+            (FileId, error_msg)，成功时 error_msg 为空字符串
+        """
+        return self._file.create_folder(dirname, parent_file_id)
+
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
         if file_id is not None:

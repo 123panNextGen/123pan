@@ -283,7 +283,7 @@ class FileInterface(QWidget, FileActionsMixin):
         self.fileTable.itemDoubleClicked.connect(self.__onTableItemDoubleClicked)
         self.breadcrumbBar.currentItemChanged.connect(self.__onBreadcrumbItemChanged)
         self.newFolderButton.clicked.connect(self._createNewFolder)
-        self.uploadButton.clicked.connect(self._uploadFile)
+        self.uploadButton.clicked.connect(self._showUploadMenu)
         self.downloadButton.clicked.connect(self._downloadFile)
         self.deleteButton.clicked.connect(self._deleteFile)
         self.refreshButton.clicked.connect(self._refreshFileList)

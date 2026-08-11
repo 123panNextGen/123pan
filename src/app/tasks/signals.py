@@ -109,3 +109,9 @@ class _SyncJobSignals(QObject):
     file_done = Signal(int, str, bool, str)
     # (job_id, success, summary, stats) 运行结束
     finished = Signal(int, bool, str, dict)
+
+
+class _UploadFolderSignals(QObject):
+    """文件夹上传扫描完成信号。"""
+    # (files, error)，files 为 [(local_path, cloud_dir_id), ...]
+    finished = Signal(list, str)
