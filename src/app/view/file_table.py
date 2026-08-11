@@ -96,6 +96,8 @@ class FileTableManager:
                     name_item = QTableWidgetItem()
                     table.setItem(row, 0, name_item)
                 name_item.setText(file_name)
+                # 长文件名被列宽截断时，悬停显示完整名称
+                name_item.setToolTip(file_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, file_id)
                 name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
                 name_item.setIcon(folder_icon if file_type == 1 else file_icon)

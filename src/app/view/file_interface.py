@@ -213,10 +213,14 @@ class FileInterface(QWidget, FileActionsMixin):
         self.fileTable.setBorderVisible(True)
         header = self.fileTable.horizontalHeader()
         if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            # 名称列允许用户手动调整宽度（默认 320px），其余列按内容自适应；
+            # 长文件名被截断时可拖动列宽查看完整名称。
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.resizeSection(0, 320)
+            header.setMinimumSectionSize(60)
             # 启用列头点击排序
             header.setSectionsClickable(True)
             header.setSortIndicatorShown(True)

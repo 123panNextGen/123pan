@@ -47,6 +47,32 @@ class TestFileTableManager:
         assert mgr.find_by_id(2)["FileName"] == "文件夹A"
         assert mgr.find_by_id(999) is None
 
+    def test_name_tooltip(self, qapp):
+        """名称单元格悬停提示完整文件名（长名截断时可查看）。"""
+        table = TableWidget()
+        table.setColumnCount(4)
+        mgr = FileTableManager(table, QLabel())
+        long_name = "这是一个非常长的文件名用来测试悬停提示功能是否正常工作" * 3
+        mgr.set_items([{"FileId": 1, "FileName": long_name, "Type": 0,
+                        "Size": 100, "UpdateAt": 1700000000}])
+        item = table.item(0, 0)
+        assert item.toolTip() == long_name
+
+    def test_name_column_interactive(self, qapp):
+        """文件表格名称列允许用户手动调整宽度。"""
+        from PySide6.QtWidgets import QHeaderView
+        from src.app.view.file_interface import FileInterface
+
+        panel = FileInterface()
+        header = panel.fileTable.horizontalHeader()
+        assert header is not None
+        assert (
+            header.sectionResizeMode(0) == QHeaderView.ResizeMode.Interactive
+        )
+        # 默认宽度为 320
+        assert header.sectionSize(0) == 320
+        panel.deleteLater()
+
     def test_sort_folders_first(self, qapp):
         table = TableWidget()
         table.setColumnCount(4)
