@@ -474,5 +474,10 @@
     "sync.sum_failed": "Failed {}",
     "sync.sum_cancelled": "Cancelled",
     "sync.sum_uptodate": "Already up to date",
-    "sync.error_run": "Sync failed: {}"
+    "sync.error_run": "Sync failed: {}",
+    "settings.theme_mode": "Theme Mode",
+    "settings.theme_mode_desc": "Switch between light and dark themes, or follow the system",
+    "settings.theme_auto": "Follow System",
+    "settings.theme_light": "Light",
+    "settings.theme_dark": "Dark"
 }

@@ -474,5 +474,10 @@
     "sync.sum_failed": "失败 {}",
     "sync.sum_cancelled": "已取消",
     "sync.sum_uptodate": "已是最新，无需同步",
-    "sync.error_run": "同步失败: {}"
+    "sync.error_run": "同步失败: {}",
+    "settings.theme_mode": "主题模式",
+    "settings.theme_mode_desc": "切换应用深浅色主题，可选择跟随系统",
+    "settings.theme_auto": "跟随系统",
+    "settings.theme_light": "浅色",
+    "settings.theme_dark": "深色"
 }

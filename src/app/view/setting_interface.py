@@ -374,6 +374,22 @@ class SettingInterface(ScrollArea):
             parent=self.personalGroup,
         )
 
+        # 主题模式：跟随系统 / 浅色 / 深色
+        self.themeModeCard = _ComboCard(
+            FIF.PALETTE,
+            tr("settings.theme_mode", "主题模式"),
+            tr("settings.theme_mode_desc", "切换应用深浅色主题，可选择跟随系统"),
+            texts=[
+                tr("settings.theme_auto", "跟随系统"),
+                tr("settings.theme_light", "浅色"),
+                tr("settings.theme_dark", "深色"),
+            ],
+            current_index={
+                "auto": 0, "light": 1, "dark": 2,
+            }.get(ConfigManager.get_setting("themeMode", "auto"), 0),
+            parent=self.personalGroup,
+        )
+
         # ---- 系统托盘组 ----
         self.trayGroup = SettingCardGroup(tr("系统托盘"), self.scrollWidget)
 
@@ -506,6 +522,7 @@ class SettingInterface(ScrollArea):
         self.personalGroup.addSettingCard(self.micaCard)
         self.personalGroup.addSettingCard(self.opacityCard)
         self.personalGroup.addSettingCard(self.languageCard)
+        self.personalGroup.addSettingCard(self.themeModeCard)
 
         # 系统托盘组
         self.trayGroup.addSettingCard(self.closeToTrayCard)
@@ -540,6 +557,36 @@ class SettingInterface(ScrollArea):
             content=tr("settings.msg_lang_restart_desc", "语言设置将在重启应用后生效"),
             parent=self,
         )
+
+    def __onThemeModeChanged(self, text):
+        """主题模式切换（跟随系统/浅色/深色）。"""
+        mapping = {
+            tr("settings.theme_auto", "跟随系统"): "auto",
+            tr("settings.theme_light", "浅色"): "light",
+            tr("settings.theme_dark", "深色"): "dark",
+        }
+        mode = mapping.get(text, "auto")
+        ConfigManager.set_setting("themeMode", mode)
+        self._apply_theme(mode)
+        logger.info("主题模式切换为: %s", mode)
+
+    @staticmethod
+    def _apply_theme(mode):
+        """应用主题模式（qfluentwidgets 全局）。"""
+        try:
+            from qfluentwidgets import Theme, setTheme
+            from qfluentwidgets.common.style_sheet import updateStyleSheet
+
+            theme_map = {
+                "auto": Theme.AUTO,
+                "light": Theme.LIGHT,
+                "dark": Theme.DARK,
+            }
+            theme = theme_map.get(mode, Theme.AUTO)
+            # setTheme 内部：qconfig.set(themeMode, theme) + updateStyleSheet + 完成信号
+            setTheme(theme)
+        except Exception as e:
+            logger.error("切换主题失败: %s", e)
 
     def __onOpacityChanged(self, val):
         """窗口透明度变更"""
@@ -845,6 +892,9 @@ class SettingInterface(ScrollArea):
         # 个性化
         self.languageCard.comboBox.currentTextChanged.connect(
             self.__onLanguageChanged
+        )
+        self.themeModeCard.comboBox.currentTextChanged.connect(
+            self.__onThemeModeChanged
         )
         self.opacityCard.slider.valueChanged.connect(self.__onOpacityChanged)
 
