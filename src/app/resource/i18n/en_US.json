@@ -479,5 +479,6 @@
     "settings.theme_mode_desc": "Switch between light and dark themes, or follow the system",
     "settings.theme_auto": "Follow System",
     "settings.theme_light": "Light",
-    "settings.theme_dark": "Dark"
+    "settings.theme_dark": "Dark",
+    "transfer.status_validating": "Validating"
 }

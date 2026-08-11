@@ -252,11 +252,12 @@ class Pan123:
         return self._file.permanent_delete_files(file_id_list)
 
     def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
-                num_threads=1, progress_callback=None):
+                num_threads=1, progress_callback=None, validation_callback=None):
         return self._upload.up_load(
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
+            validation_callback=validation_callback,
         )
 
     def mark_dir_dirty(self, dir_id):

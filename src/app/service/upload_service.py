@@ -41,15 +41,35 @@ class UploadService:
             self._limiter = None
 
     @staticmethod
-    def compute_file_md5(file_path):
-        """计算文件MD5值。"""
+    def compute_file_md5(file_path, progress_callback=None):
+        """计算文件MD5值。
+
+        Args:
+            file_path: 文件路径
+            progress_callback: 可选进度回调 (percent)，0-100 整数；
+                仅在百分比变化时回调，避免高频信号。
+
+        Returns:
+            str: 文件 MD5 值（小写十六进制）
+        """
         md5 = hashlib.md5()
+        fsize = Path(file_path).stat().st_size
+        read_total = 0
+        last_pct = -1
         with open(file_path, "rb") as f:
             while True:
                 data = f.read(64 * 1024)
                 if not data:
                     break
                 md5.update(data)
+                read_total += len(data)
+                if progress_callback and fsize > 0:
+                    pct = min(99, int(read_total * 100 / fsize))
+                    if pct != last_pct:
+                        last_pct = pct
+                        progress_callback(pct)
+        if progress_callback:
+            progress_callback(100)
         return md5.hexdigest()
 
     def _validate_resume_info(self, resume_info, file_path_obj, fsize):
@@ -120,7 +140,7 @@ class UploadService:
     def up_load(
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
         resume_info=None, session_callback=None, num_threads=1,
-        progress_callback=None,
+        progress_callback=None, validation_callback=None,
     ):
         """上传文件（支持断点续传与并行分片上传）。
 
@@ -134,6 +154,7 @@ class UploadService:
             session_callback: 获得 S3 会话后回调，供调用方持久化续传信息
             num_threads: 并行上传的分片线程数，1 表示顺序上传
             progress_callback: 可选进度回调 (uploaded_bytes)，实时上报已上传字节数
+            validation_callback: 可选校验进度回调 (percent)，MD5 计算期间上报
 
         Returns:
             int: 上传后的文件ID（成功）
@@ -169,7 +190,9 @@ class UploadService:
             up_file_id = resume["up_file_id"]
             logger.info("上传断点续传: %s (upload_id=%s)", file_name, upload_id)
         else:
-            readable_hash = self.compute_file_md5(file_path)
+            readable_hash = self.compute_file_md5(
+                file_path, progress_callback=validation_callback
+            )
             logger.debug("文件 MD5 计算完成: %s", readable_hash)
 
             list_up_request = {

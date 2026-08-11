@@ -185,6 +185,17 @@ class UploadThread(QThread):
                     pct = 0
                 self.progress_updated.emit(pct, speed)
 
+            def _on_validation(percent):
+                """MD5 校验进度回调：显示 '校验中 xx%'，完成后切回上传中。"""
+                if self._cancelled:
+                    return
+                if percent >= 100:
+                    self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
+                else:
+                    self.status_updated.emit(
+                        tr("transfer.status_validating", "校验中") + f" {percent}%"
+                    )
+
             t0 = time.monotonic()
             if resume_info:
                 self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
@@ -195,6 +206,7 @@ class UploadThread(QThread):
                 session_callback=_on_session,
                 num_threads=ul_threads,
                 progress_callback=_on_upload_progress,
+                validation_callback=_on_validation,
             )
             elapsed = time.monotonic() - t0
 

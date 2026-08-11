@@ -479,5 +479,6 @@
     "settings.theme_mode_desc": "切换应用深浅色主题，可选择跟随系统",
     "settings.theme_auto": "跟随系统",
     "settings.theme_light": "浅色",
-    "settings.theme_dark": "深色"
+    "settings.theme_dark": "深色",
+    "transfer.status_validating": "校验中"
 }
