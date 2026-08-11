@@ -116,6 +116,9 @@ class FileInterface(QWidget, FileActionsMixin):
             FIF.FOLDER_ADD.icon(), tr("file.new_folder", "新建文件夹"), self.topBarFrame
         )
         self.uploadButton = PushButton(FIF.UP.icon(), tr("file.upload", "上传"), self.topBarFrame)
+        self.offlineDownloadButton = PushButton(
+            FIF.CLOUD_DOWNLOAD.icon(), tr("file.offline_download", "离线下载"), self.topBarFrame
+        )
         self.downloadButton = PushButton(FIF.DOWNLOAD.icon(), tr("file.download", "下载"), self.topBarFrame)
         self.deleteButton = PushButton(FIF.DELETE.icon(), tr("file.delete", "删除"), self.topBarFrame)
         self.refreshButton = PushButton(FIF.UPDATE.icon(), tr("file.refresh", "刷新"), self.topBarFrame)
@@ -125,6 +128,7 @@ class FileInterface(QWidget, FileActionsMixin):
         self.topBarLayout.addWidget(self.searchBox, 0)
         self.topBarLayout.addWidget(self.newFolderButton, 0)
         self.topBarLayout.addWidget(self.uploadButton, 0)
+        self.topBarLayout.addWidget(self.offlineDownloadButton, 0)
         self.topBarLayout.addWidget(self.downloadButton, 0)
         self.topBarLayout.addWidget(self.deleteButton, 0)
         self.topBarLayout.addWidget(self.refreshButton, 0)
@@ -284,6 +288,7 @@ class FileInterface(QWidget, FileActionsMixin):
         self.breadcrumbBar.currentItemChanged.connect(self.__onBreadcrumbItemChanged)
         self.newFolderButton.clicked.connect(self._createNewFolder)
         self.uploadButton.clicked.connect(self._showUploadMenu)
+        self.offlineDownloadButton.clicked.connect(self._openOfflineDownload)
         self.downloadButton.clicked.connect(self._downloadFile)
         self.deleteButton.clicked.connect(self._deleteFile)
         self.refreshButton.clicked.connect(self._refreshFileList)

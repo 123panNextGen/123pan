@@ -115,3 +115,19 @@ class _UploadFolderSignals(QObject):
     """文件夹上传扫描完成信号。"""
     # (files, error)，files 为 [(local_path, cloud_dir_id), ...]
     finished = Signal(list, str)
+
+
+class _OfflineResolveSignals(QObject):
+    """离线下载 URL 解析完成信号。"""
+    finished = Signal(list, str)  # (resources, error)
+
+
+class _OfflineSubmitSignals(QObject):
+    """离线下载任务提交完成信号。"""
+    finished = Signal(list, str)  # (task_list, error)
+
+
+class _RapidTransferSignals(QObject):
+    """秒传导入进度/完成信号。"""
+    progress = Signal(int, int)      # (current, total)
+    finished = Signal(dict, str)     # (stats, error)

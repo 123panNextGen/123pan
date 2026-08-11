@@ -17,3 +17,5 @@ BASE_URL = "https://www.123pan.cn"
 FALLBACK_BASE_URL = "https://api.123278.com"
 # 二维码登录专用域名（web 端登录接口）
 LOGIN_BASE_URL = "https://login.123pan.com"
+# 离线下载专用域名（解析/提交任务，固定使用 api.123278.com）
+OFFLINE_BASE_URL = "https://api.123278.com"

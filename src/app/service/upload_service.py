@@ -461,3 +461,60 @@ class UploadService:
             file_name, fsize / 1024 / 1024, elapsed, speed,
         )
         return up_file_id
+
+    def fast_upload(self, file_name, file_size, etag, parent_file_id):
+        """秒传：以 etag 直接调用 upload_request，无需上传文件内容。
+
+        服务器存在相同文件（同 etag + size）时返回 Reuse=true，
+        立即获得 FileId，实现秒传（兼容其他网盘导出的秒传数据）。
+
+        Args:
+            file_name: 文件名
+            file_size: 文件大小（字节）
+            etag: 文件 MD5（32 位十六进制）
+            parent_file_id: 目标目录 ID
+
+        Returns:
+            int: 文件 ID（秒传成功）
+            None: 服务器不存在该文件，无法秒传
+
+        Raises:
+            RuntimeError: 接口错误
+        """
+        list_up_request = {
+            "driveId": 0,
+            "etag": etag,
+            "fileName": file_name,
+            "parentFileId": parent_file_id,
+            "size": file_size,
+            "type": 0,
+            "duplicate": 1,
+        }
+        up_res = self._session.http.post(
+            "https://www.123pan.cn/b/api/file/upload_request",
+            json=list_up_request,
+            timeout=30,
+        )
+        up_res_json = up_res.json()
+        res_code = up_res_json.get("code", -1)
+        if res_code == 5060:
+            # 同名文件冲突：以覆盖方式重试
+            list_up_request["duplicate"] = 1
+            up_res = self._session.http.post(
+                "https://www.123pan.cn/b/api/file/upload_request",
+                json=list_up_request,
+                timeout=30,
+            )
+            up_res_json = up_res.json()
+            res_code = up_res_json.get("code", -1)
+        if res_code != 0:
+            raise RuntimeError(f"秒传请求失败: {up_res_json}")
+
+        data = up_res_json.get("data") or {}
+        if not data.get("Reuse", False):
+            logger.debug("秒传未命中: %s (etag=%s)", file_name, etag[:8])
+            return None
+        info = data.get("Info") or {}
+        fid = data.get("FileId") or info.get("FileId")
+        logger.info("秒传成功: %s (FileId=%s)", file_name, fid)
+        return int(fid) if fid is not None else None

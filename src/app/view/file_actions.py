@@ -110,6 +110,20 @@ class FileActionsMixin:
             else:
                 InfoBar.error(title=tr("file.msg_create_failed", "创建失败"), content=tr("file.msg_create_folder_failed", "创建文件夹失败"), parent=self)
 
+    def _openOfflineDownload(self):
+        """打开离线下载/秒传导入对话框。"""
+        if not self.pan:
+            InfoBar.warning(
+                title=tr("offline.title", "离线下载"),
+                content=tr("offline.msg_not_logged_in", "请先登录"),
+                parent=self,
+            )
+            return
+        from .offline_download_dialog import OfflineDownloadDialog
+
+        dialog = OfflineDownloadDialog(self.pan, self.current_dir_id, self)
+        dialog.exec()
+
     def _uploadFile(self):
         """上传文件"""
         file_paths, _ = QFileDialog.getOpenFileNames(self, tr("file.upload_title", "选择要上传的文件"))

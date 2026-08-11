@@ -21,7 +21,10 @@ from .signals import (
     _DownloadLinkSignals,
     _FolderListSignals,
     _LoadListSignals,
+    _OfflineResolveSignals,
+    _OfflineSubmitSignals,
     _PasswordLoginSignals,
+    _RapidTransferSignals,
     _ShareCreateSignals,
     _ShareListSignals,
     _StorageInfoSignals,
@@ -764,3 +767,66 @@ class UploadFolderTask(QRunnable):
         fid = int(fid)
         self._known_dirs[key] = fid
         return fid
+
+
+class OfflineResolveTask(QRunnable):
+    """后台解析离线下载链接。"""
+
+    def __init__(self, pan, urls, signals: _OfflineResolveSignals):
+        super().__init__()
+        self.pan = pan
+        self.urls = urls
+        self.signals = signals
+
+    def run(self):
+        try:
+            resources = self.pan.offline_resolve(self.urls)
+            self.signals.finished.emit(resources, "")
+        except Exception as e:
+            logger.error("离线下载解析失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class OfflineSubmitTask(QRunnable):
+    """后台提交离线下载任务。"""
+
+    def __init__(self, pan, resources, signals: _OfflineSubmitSignals):
+        super().__init__()
+        self.pan = pan
+        self.resources = resources
+        self.signals = signals
+
+    def run(self):
+        try:
+            task_list = self.pan.offline_submit(self.resources)
+            self.signals.finished.emit(task_list, "")
+        except Exception as e:
+            logger.error("离线下载提交失败: %s", e)
+            self.signals.finished.emit([], str(e))
+
+
+class RapidTransferTask(QRunnable):
+    """后台执行秒传导入（建目录 + 逐个秒传）。"""
+
+    def __init__(self, pan, files, parent_dir_id, signals: _RapidTransferSignals):
+        super().__init__()
+        self.pan = pan
+        self.files = files
+        self.parent_dir_id = parent_dir_id
+        self.signals = signals
+
+    def run(self):
+        try:
+            total = len(self.files)
+
+            def _on_progress(current, total_count):
+                self.signals.progress.emit(current, total_count)
+
+            stats = self.pan.offline_rapid_transfer(
+                self.files, self.parent_dir_id,
+                progress_callback=_on_progress,
+            )
+            self.signals.finished.emit(stats, "")
+        except Exception as e:
+            logger.error("秒传导入失败: %s", e)
+            self.signals.finished.emit({}, str(e))
