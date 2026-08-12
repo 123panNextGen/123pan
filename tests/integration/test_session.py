@@ -263,7 +263,11 @@ class TestNetSessionHttp:
             status=200,
         )
         session = NetSession()
-        mocker.patch.object(session, "_resolve_download_url", return_value="https://resolved.example.com/file")
+        # 拆分后下载 URL 解析为模块级函数（见 api/session_file.py / download_url.py）
+        mocker.patch(
+            "src.app.api.session_file.resolve_download_url",
+            return_value="https://resolved.example.com/file",
+        )
         file_info = {"FileId": 42, "fileName": "doc.pdf", "Type": 0, "Size": 1024,
                      "Etag": "abc", "S3KeyFlag": ""}
         result = session.get_file_link(file_info)
@@ -418,3 +422,200 @@ class TestNetSessionModPid:
         result = session.mod_pid([1], 99)
         assert result.code == -1
         assert result.api_code_enum == ApiCode.fail
+
+
+class TestNetSessionCopyFiles:
+    @responses.activate
+    def test_copy_files_async_success(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {"taskId": 1475675}},
+            status=200,
+        )
+        session = NetSession()
+        file_list = [{"FileId": 1, "FileName": "a.txt", "Type": 0, "DriveId": 0}]
+        result = session.copy_files_async(file_list, 99)
+        assert result.code == 0
+        assert result.api_code_enum == ApiCode.success
+        assert result.data == 1475675
+        import json as _json
+
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["targetFileId"] == 99
+        assert body["fileList"] == file_list
+
+    @responses.activate
+    def test_copy_files_async_taskID_uppercase(self):
+        """兼容响应字段为 taskID（大写）的情况。"""
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {"taskID": "abc123"}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 0)
+        assert result.code == 0
+        assert result.data == "abc123"
+
+    @responses.activate
+    def test_copy_files_async_failure(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 5066, "message": "文件不存在"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 999}], 99)
+        assert result.code == 5066
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "文件不存在"
+
+    @responses.activate
+    def test_copy_files_async_missing_task_id(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            json={"code": 0, "message": "ok", "data": {}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 99)
+        assert result.code == -1
+        assert "任务" in result.msg
+
+    @responses.activate
+    def test_copy_files_async_network_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/async",
+            body=requests.exceptions.Timeout("request timed out"),
+        )
+        session = NetSession()
+        result = session.copy_files_async([{"FileId": 1}], 99)
+        assert result.code == -1
+        assert result.api_code_enum == ApiCode.fail
+
+    @responses.activate
+    def test_copy_file_task_success(self):
+        responses.get(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/task",
+            json={"code": 0, "message": "ok", "data": {"status": 2, "failMsg": ""}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_file_task(1475675)
+        assert result.code == 0
+        assert result.data["status"] == 2
+        assert "taskId=1475675" in responses.calls[0].request.url
+
+    @responses.activate
+    def test_copy_file_task_failure(self):
+        responses.get(
+            "https://www.123pan.cn/b/api/restful/goapi/v1/file/copy/task",
+            json={"code": 429, "message": "请求过于频繁"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.copy_file_task(1)
+        assert result.code == 429
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "请求过于频繁"
+
+
+class TestNetSessionTrash:
+    """删除/恢复（trash_file）请求格式回归测试。
+
+    服务器仅接受 fileTrashInfoList 为 [{"FileId": X}] 列表；
+    传完整文件信息 dict 时服务器返回 code=0 但静默忽略（文件不会被删除）。
+    """
+
+    TRASH_URL = "https://www.123pan.cn/a/api/file/trash"
+
+    def _assert_body(self):
+        import json as _json
+
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["driveId"] == 0
+        assert body["operation"] is True
+        assert body["fileTrashInfoList"] == [{"FileId": 123}]
+
+    @responses.activate
+    def test_trash_file_dict_extracts_fileid(self):
+        """传完整文件 dict 时，请求体只发送 [{"FileId": X}]。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 123}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({
+            "FileId": 123, "FileName": "a.txt", "Size": 10,
+            "S3KeyFlag": "x", "Type": 0, "Etag": "e", "ParentFileId": 0,
+        })
+        assert result.code == 0
+        self._assert_body()
+
+    @responses.activate
+    def test_trash_file_model_extracts_fileid(self):
+        """传 FileItemModel 时同样只发送 [{"FileId": X}]。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 456}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        from src.app.api.model import FileItemModel
+
+        model = FileItemModel.from_dict({
+            "FileId": 456, "FileName": "b.txt", "Type": 0, "Size": 5,
+            "Etag": "", "S3KeyFlag": "", "ParentFileId": 0,
+        })
+        session = NetSession()
+        result = session.trash_file(model)
+        assert result.code == 0
+
+        import json as _json
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["fileTrashInfoList"] == [{"FileId": 456}]
+        assert body["operation"] is True
+
+    @responses.activate
+    def test_trash_file_restore_operation_false(self):
+        """恢复操作 operation=False 透传。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 789}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({"FileId": 789, "FileName": "c.txt"},
+                                    operation=False)
+        assert result.code == 0
+
+        import json as _json
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["fileTrashInfoList"] == [{"FileId": 789}]
+        assert body["operation"] is False
+
+    @responses.activate
+    def test_trash_file_missing_fileid(self):
+        """缺少 FileId 时返回错误，不发起请求。"""
+        session = NetSession()
+        result = session.trash_file({"FileName": "no_id.txt"})
+        assert result.code == -1
+        assert "FileId" in result.msg
+        assert len(responses.calls) == 0
+
+    @responses.activate
+    def test_trash_file_server_error(self):
+        """服务器返回错误码时透传 message。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 4000, "message": "参数错误"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({"FileId": 1})
+        assert result.code == 4000
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "参数错误"

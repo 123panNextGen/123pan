@@ -17,6 +17,7 @@ from ..api.session import NetSession
 from ..service.auth_service import AuthService
 from ..service.download_service import DownloadService
 from ..service.file_service import FileService
+from ..service.offline_service import OfflineService
 from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
 from .const import all_device_type, all_os_versions, VERSION
@@ -47,6 +48,7 @@ class Pan123:
         self._download = DownloadService(self._session)
         self._upload = UploadService(self._session)
         self._share = ShareService(self._session)
+        self._offline = OfflineService(self._session)
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -211,11 +213,39 @@ class Pan123:
     def link_by_fileDetail(self, file_detail, showlink=True):
         return self._download.link_by_fileDetail(file_detail, showlink)
 
-    def delete_file(self, file, by_num=True, operation=True):
-        self._file.delete_file(self.list, file, by_num, operation)
+    def delete_file(self, file, by_num=True, operation=True, parent_file_id=None):
+        """删除或恢复文件。
+
+        Args:
+            file: 文件索引（by_num=True）或文件信息字典（by_num=False）
+            by_num: True 表示 file 为 pan.list 中的索引
+            operation: True 删除 / False 恢复
+            parent_file_id: 所属目录 ID，用于删除成功后使该目录的本地缓存失效
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.delete_file(
+            self.list, file, by_num, operation, parent_file_id=parent_file_id
+        )
 
     def rename_file(self, file_id, new_name):
         return self._file.rename_file(file_id, new_name)
+
+    def copy_file(self, file_id_list, target_parent_id, source_parent_id=None):
+        """复制文件/文件夹到目标目录。
+
+        Args:
+            file_id_list: 文件 ID 列表
+            target_parent_id: 目标目录 ID（0 表示根目录）
+            source_parent_id: 源目录 ID（可选，用于构造完整的 fileList）
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.copy_files(
+            file_id_list, target_parent_id, source_parent_id
+        )
 
     def move_file(self, file_id_list, target_parent_id):
         """移动文件/文件夹到目标目录。
@@ -236,11 +266,51 @@ class Pan123:
         """从回收站永久删除指定文件"""
         return self._file.permanent_delete_files(file_id_list)
 
-    def up_load(self, file_path, resume_info=None, session_callback=None):
+    def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
+                num_threads=1, progress_callback=None, validation_callback=None):
         return self._upload.up_load(
             file_path, self.parent_file_id,
-            resume_info=resume_info, session_callback=session_callback,
+            task=task, resume_info=resume_info, session_callback=session_callback,
+            num_threads=num_threads, progress_callback=progress_callback,
+            validation_callback=validation_callback,
         )
+
+    def mark_dir_dirty(self, dir_id):
+        """标记目录缓存为脏，下次浏览时强制从服务器刷新。"""
+        self._file.mark_dir_dirty(dir_id)
+
+    def create_folder(self, dirname, parent_file_id):
+        """创建文件夹（简化版，不依赖当前列表）。
+
+        Returns:
+            (FileId, error_msg)，成功时 error_msg 为空字符串
+        """
+        return self._file.create_folder(dirname, parent_file_id)
+
+    # ---- 离线下载 / 秒传导入 ----
+
+    def offline_resolve(self, urls):
+        """解析离线下载链接。"""
+        return self._offline.resolve(urls)
+
+    def offline_submit(self, resources):
+        """提交离线下载任务。"""
+        return self._offline.submit(resources)
+
+    def offline_parse_rapid(self, text):
+        """解析秒传数据（JSON 或文本链接）。"""
+        return self._offline.parse_rapid_data(text)
+
+    def offline_rapid_transfer(self, files, parent_dir_id, progress_callback=None,
+                               cancel=None):
+        """秒传导入：创建目录结构并逐个秒传文件。"""
+        return self._offline.rapid_transfer(
+            files, parent_dir_id, progress_callback=progress_callback, cancel=cancel
+        )
+
+    def offline_build_rapid(self, files):
+        """生成标准秒传数据（JSON + 文本链接）。"""
+        return self._offline.build_rapid_payload(files)
 
     def mkdir(self, dirname, remakedir=False):
         file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
@@ -264,8 +334,9 @@ class Pan123:
 
     # ---- Session 配置（门面方法） ----
 
-    def set_download_multi_thread(self, enabled):
-        self._download.set_multi_thread(enabled)
+    def set_download_multi_thread(self, enabled, num_threads=4):
+        """启用/关闭多线程分片下载，并设置每个文件的下载线程数。"""
+        self._download.set_multi_thread(enabled, num_threads)
 
     def set_download_speed_limit(self, kbps):
         self._download.set_download_speed_limit(kbps)
@@ -280,9 +351,9 @@ class Pan123:
         self._download.clear_proxy()
 
     def download_file(self, url, file_path, file_size, progress_callback=None,
-                      resume_offset=0):
+                      resume_offset=0, cancel_event=None):
         return self._download.download_file(
-            url, file_path, file_size, progress_callback, resume_offset
+            url, file_path, file_size, progress_callback, resume_offset, cancel_event
         )
 
 

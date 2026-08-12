@@ -8,13 +8,13 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QVBoxLayout,
     QWidget,
+    QLabel,
     QTableWidgetItem,
 )
 
@@ -25,10 +25,10 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from PyQt6.QtCore import QThreadPool
+from PySide6.QtCore import QThreadPool, Qt
 
 from ..common.style_sheet import StyleSheet
-from ..common.utils import format_file_size
+from ..common.utils import configure_resizable_header, format_file_size
 from ..common.log import get_logger
 from ..common.i18n import tr
 from ..tasks.file_tasks import (
@@ -130,18 +130,31 @@ class TrashInterface(QWidget):
             vertical_header.hide()
         self.trashTable.setBorderRadius(8)
         self.trashTable.setBorderVisible(True)
-        header = self.trashTable.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，名称列吸收多余宽度
+        configure_resizable_header(
+            self.trashTable,
+            stretch_column=0,
+            default_widths={0: 300, 1: 100, 2: 120},
+        )
         self.listLayout.addWidget(self.trashTable)
+
+        # 空回收站提示（覆盖在表格上）
+        self.emptyLabel = QLabel(tr("trash.state_empty", "回收站为空"), self.listFrame)
+        self.emptyLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.emptyLabel.setStyleSheet("color: gray; font-size: 14px;")
+        self.emptyLabel.hide()
 
         self.mainLayout.addWidget(self.listFrame, 1)
 
     def __initWidget(self):
         StyleSheet.VIEW_INTERFACE.apply(self)
         self.__connectSignalToSlot()
+
+    def resizeEvent(self, event):
+        """保持空状态提示与列表区域同步。"""
+        super().resizeEvent(event)
+        if getattr(self, "emptyLabel", None) is not None and not self.emptyLabel.isHidden():
+            self.emptyLabel.setGeometry(self.listFrame.rect())
 
     def showEvent(self, event):
         """页面显示时自动刷新回收站列表"""
@@ -181,7 +194,11 @@ class TrashInterface(QWidget):
 
     def __updateTrashTableUI(self):
         """更新回收站表格"""
-        self.trashTable.setRowCount(len(self._trash_items))
+        count = len(self._trash_items)
+        self.trashTable.setRowCount(count)
+        self.emptyLabel.setVisible(count == 0)
+        if count == 0:
+            self.emptyLabel.setGeometry(self.listFrame.rect())
         folder_icon, file_icon = _cached_icons()
         self.trashTable.setUpdatesEnabled(False)
         try:

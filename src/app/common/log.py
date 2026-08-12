@@ -87,6 +87,9 @@ def get_logger(name: str = "123pan"):
 def set_log_level(level_name_or_int):
     """动态调整日志等级。
 
+    会同步更新所有已存在 logger 的级别（否则运行时切换对已创建的
+    logger 不生效），以及共享 handler 的过滤级别。
+
     Args:
         level_name_or_int: 字符串（"DEBUG"/"INFO"/"WARNING"/"ERROR"/"CRITICAL"）
                           或 logging 等级常量（logging.DEBUG 等）。
@@ -104,8 +107,9 @@ def set_log_level(level_name_or_int):
 
     _current_level = level
 
-    root_logger = logging.getLogger("123pan")
-    root_logger.setLevel(level)
+    # 更新全部已创建 logger 的级别（含非 "123pan" 前缀的子 logger）
+    for name in list(logging.Logger.manager.loggerDict):
+        logging.getLogger(name).setLevel(level)
     for handler in _get_handlers():
         handler.setLevel(level)
 

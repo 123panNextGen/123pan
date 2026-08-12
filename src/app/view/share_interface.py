@@ -8,13 +8,12 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, QThreadPool
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -32,6 +31,7 @@ from qfluentwidgets import (
 from ..common.style_sheet import StyleSheet
 from ..common.log import get_logger
 from ..common.i18n import tr
+from ..common.utils import configure_resizable_header
 from ..tasks.file_tasks import (
     DeleteSharesTask,
     LoadShareListsTask,
@@ -145,16 +145,12 @@ class ShareInterface(QWidget):
             vertical_header.hide()
         table.setBorderRadius(8)
         table.setBorderVisible(True)
-        header = table.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        # 所有列可交互调整列宽，分享名称列吸收多余宽度
+        configure_resizable_header(
+            table,
+            stretch_column=0,
+            default_widths={0: 260, 1: 60, 2: 80, 3: 80, 4: 80, 5: 110, 6: 80, 7: 160},
+        )
 
         layout.addWidget(table)
         return frame

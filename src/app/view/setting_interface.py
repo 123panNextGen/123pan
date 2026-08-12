@@ -10,9 +10,9 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThreadPool, QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThreadPool, QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
     QWidget,
     QLabel,
     QFileDialog,
@@ -107,7 +107,7 @@ class _OpacityCard(SettingCard):
 
     def __init__(self, icon, title, content, value=100, parent=None):
         super().__init__(icon, title, content, parent)
-        from PyQt6.QtWidgets import QSlider
+        from PySide6.QtWidgets import QSlider
 
         self.slider = QSlider(Qt.Orientation.Horizontal, self)
         self.slider.setRange(30, 100)
@@ -224,6 +224,28 @@ class SettingInterface(ScrollArea):
         )
         self.multiThreadCard.setChecked(
             ConfigManager.get_setting("multiThreadDownload", True)
+        )
+
+        self.downloadThreadCountCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("settings.download_threads", "下载线程数"),
+            tr("settings.download_threads_desc", "每个下载任务使用的分片线程数（1-16）"),
+            ConfigManager.get_setting("downloadThreadCount", 4),
+            self.downloadGroup,
+            min_val=1,
+            max_val=16,
+            step=1,
+        )
+
+        self.uploadThreadCountCard = _SpinBoxCard(
+            FIF.SPEED_HIGH,
+            tr("settings.upload_threads", "上传线程数"),
+            tr("settings.upload_threads_desc", "每个上传任务并行上传的分片数（1=顺序上传）"),
+            ConfigManager.get_setting("uploadThreadCount", 1),
+            self.downloadGroup,
+            min_val=1,
+            max_val=16,
+            step=1,
         )
 
         self.downloadSpeedCard = _SpeedLimitCard(
@@ -352,6 +374,45 @@ class SettingInterface(ScrollArea):
             parent=self.personalGroup,
         )
 
+        # 主题模式：跟随系统 / 浅色 / 深色
+        self.themeModeCard = _ComboCard(
+            FIF.PALETTE,
+            tr("settings.theme_mode", "主题模式"),
+            tr("settings.theme_mode_desc", "切换应用深浅色主题，可选择跟随系统"),
+            texts=[
+                tr("settings.theme_auto", "跟随系统"),
+                tr("settings.theme_light", "浅色"),
+                tr("settings.theme_dark", "深色"),
+            ],
+            current_index={
+                "auto": 0, "light": 1, "dark": 2,
+            }.get(ConfigManager.get_setting("themeMode", "auto"), 0),
+            parent=self.personalGroup,
+        )
+
+        # ---- 系统托盘组 ----
+        self.trayGroup = SettingCardGroup(tr("系统托盘"), self.scrollWidget)
+
+        self.closeToTrayCard = SwitchSettingCard(
+            FIF.CLOSE,
+            tr("关闭窗口时最小化到托盘"),
+            tr("关闭窗口后应用在后台继续运行（同步任务不受影响）"),
+            parent=self.trayGroup,
+        )
+        self.closeToTrayCard.setChecked(
+            ConfigManager.get_setting("closeToTray", False)
+        )
+
+        self.startMinimizedCard = SwitchSettingCard(
+            FIF.MINIMIZE,
+            tr("启动时最小化到托盘"),
+            tr("登录后自动最小化到系统托盘，在后台执行同步任务"),
+            parent=self.trayGroup,
+        )
+        self.startMinimizedCard.setChecked(
+            ConfigManager.get_setting("startMinimized", False)
+        )
+
         # ---- 调试组 ----
         self.debugGroup = SettingCardGroup(tr("调试"), self.scrollWidget)
 
@@ -421,7 +482,6 @@ class SettingInterface(ScrollArea):
 
     def __initWidget(self):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setViewportMargins(0, 20, 0, 20)
         self.setWidget(self.scrollWidget)
         self.setWidgetResizable(True)
         self.setObjectName("settingInterface")
@@ -443,6 +503,8 @@ class SettingInterface(ScrollArea):
         self.downloadGroup.addSettingCard(self.downloadFolderCard)
         self.downloadGroup.addSettingCard(self.askDownloadLocationCard)
         self.downloadGroup.addSettingCard(self.multiThreadCard)
+        self.downloadGroup.addSettingCard(self.downloadThreadCountCard)
+        self.downloadGroup.addSettingCard(self.uploadThreadCountCard)
         self.downloadGroup.addSettingCard(self.downloadSpeedCard)
         self.downloadGroup.addSettingCard(self.uploadSpeedCard)
         self.downloadGroup.addSettingCard(self.maxConcurrentUploadCard)
@@ -460,6 +522,11 @@ class SettingInterface(ScrollArea):
         self.personalGroup.addSettingCard(self.micaCard)
         self.personalGroup.addSettingCard(self.opacityCard)
         self.personalGroup.addSettingCard(self.languageCard)
+        self.personalGroup.addSettingCard(self.themeModeCard)
+
+        # 系统托盘组
+        self.trayGroup.addSettingCard(self.closeToTrayCard)
+        self.trayGroup.addSettingCard(self.startMinimizedCard)
 
         # 调试组
         self.debugGroup.addSettingCard(self.logLevelCard)
@@ -476,6 +543,7 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.downloadGroup)
         self.expandLayout.addWidget(self.proxyGroup)
         self.expandLayout.addWidget(self.personalGroup)
+        self.expandLayout.addWidget(self.trayGroup)
         self.expandLayout.addWidget(self.debugGroup)
         self.expandLayout.addWidget(self.aboutGroup)
 
@@ -490,6 +558,36 @@ class SettingInterface(ScrollArea):
             parent=self,
         )
 
+    def __onThemeModeChanged(self, text):
+        """主题模式切换（跟随系统/浅色/深色）。"""
+        mapping = {
+            tr("settings.theme_auto", "跟随系统"): "auto",
+            tr("settings.theme_light", "浅色"): "light",
+            tr("settings.theme_dark", "深色"): "dark",
+        }
+        mode = mapping.get(text, "auto")
+        ConfigManager.set_setting("themeMode", mode)
+        self._apply_theme(mode)
+        logger.info("主题模式切换为: %s", mode)
+
+    @staticmethod
+    def _apply_theme(mode):
+        """应用主题模式（qfluentwidgets 全局）。"""
+        try:
+            from qfluentwidgets import Theme, setTheme
+            from qfluentwidgets.common.style_sheet import updateStyleSheet
+
+            theme_map = {
+                "auto": Theme.AUTO,
+                "light": Theme.LIGHT,
+                "dark": Theme.DARK,
+            }
+            theme = theme_map.get(mode, Theme.AUTO)
+            # setTheme 内部：qconfig.set(themeMode, theme) + updateStyleSheet + 完成信号
+            setTheme(theme)
+        except Exception as e:
+            logger.error("切换主题失败: %s", e)
+
     def __onOpacityChanged(self, val):
         """窗口透明度变更"""
         ConfigManager.set_setting("windowOpacity", val)
@@ -498,6 +596,16 @@ class SettingInterface(ScrollArea):
         if w and hasattr(w, "set_window_opacity"):
             w.set_window_opacity(val)
         logger.info("窗口透明度: %d%%", val)
+
+    def __onCloseToTrayChanged(self, checked):
+        """关闭窗口时是否最小化到托盘"""
+        ConfigManager.set_setting("closeToTray", checked)
+        logger.info("关闭时最小化到托盘: %s", "开启" if checked else "关闭")
+
+    def __onStartMinimizedChanged(self, checked):
+        """启动时是否最小化到托盘"""
+        ConfigManager.set_setting("startMinimized", checked)
+        logger.info("启动时最小化到托盘: %s", "开启" if checked else "关闭")
 
     def __onClearCacheClicked(self):
         """清理缓存（临时文件和下载残留）"""
@@ -629,8 +737,22 @@ class SettingInterface(ScrollArea):
         ConfigManager.set_setting("multiThreadDownload", checked)
         mw = self.window()
         if mw and hasattr(mw, "pan"):
-            mw.pan.set_download_multi_thread(checked)
+            num_threads = ConfigManager.get_setting("downloadThreadCount", 4)
+            mw.pan.set_download_multi_thread(checked, num_threads)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
+
+    def __onDownloadThreadsChanged(self, val):
+        ConfigManager.set_setting("downloadThreadCount", val)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_download_multi_thread(
+                ConfigManager.get_setting("multiThreadDownload", True), val
+            )
+        logger.info("下载线程数: %d", val)
+
+    def __onUploadThreadsChanged(self, val):
+        ConfigManager.set_setting("uploadThreadCount", val)
+        logger.info("上传线程数: %d", val)
 
     def __onDownloadSpeedChanged(self, val):
         ConfigManager.set_setting("downloadSpeedLimit", val)
@@ -722,6 +844,12 @@ class SettingInterface(ScrollArea):
             self.__onAskDownloadLocationChanged
         )
         self.multiThreadCard.checkedChanged.connect(self.__onMultiThreadChanged)
+        self.downloadThreadCountCard.spinBox.valueChanged.connect(
+            self.__onDownloadThreadsChanged
+        )
+        self.uploadThreadCountCard.spinBox.valueChanged.connect(
+            self.__onUploadThreadsChanged
+        )
         self.downloadSpeedCard.spinBox.valueChanged.connect(
             self.__onDownloadSpeedChanged
         )
@@ -765,7 +893,18 @@ class SettingInterface(ScrollArea):
         self.languageCard.comboBox.currentTextChanged.connect(
             self.__onLanguageChanged
         )
+        self.themeModeCard.comboBox.currentTextChanged.connect(
+            self.__onThemeModeChanged
+        )
         self.opacityCard.slider.valueChanged.connect(self.__onOpacityChanged)
+
+        # 系统托盘
+        self.closeToTrayCard.checkedChanged.connect(
+            self.__onCloseToTrayChanged
+        )
+        self.startMinimizedCard.checkedChanged.connect(
+            self.__onStartMinimizedChanged
+        )
 
         # 关于
         self.aboutCard.clicked.connect(

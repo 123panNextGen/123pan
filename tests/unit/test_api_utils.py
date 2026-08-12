@@ -34,3 +34,59 @@ class TestFormatFileSize:
     def test_tb(self):
         result = format_file_size(1099511627776)
         assert "TB" in result
+
+
+class TestConfigureResizableHeader:
+    """可交互调整列宽配置。"""
+
+    def _make(self):
+        from PySide6.QtWidgets import QApplication, QHeaderView
+
+        from qfluentwidgets import TableWidget
+
+        from src.app.common.utils import configure_resizable_header
+
+        _app = QApplication.instance() or QApplication([])
+        table = TableWidget()
+        table.setColumnCount(4)
+        table.resize(600, 300)
+        table.show()
+        QApplication.processEvents()
+        stretch = configure_resizable_header(
+            table, stretch_column=0, default_widths={0: 200, 1: 80}
+        )
+        QApplication.processEvents()
+        return table, stretch
+
+    def test_interactive_resize_mode(self):
+        """所有列可交互调整。"""
+        from PySide6.QtWidgets import QHeaderView
+
+        table, _ = self._make()
+        header = table.horizontalHeader()
+        for i in range(header.count()):
+            assert (
+                header.sectionResizeMode(i) == QHeaderView.ResizeMode.Interactive
+            )
+
+    def test_default_widths_applied(self):
+        """默认列宽生效。"""
+        table, _ = self._make()
+        header = table.horizontalHeader()
+        assert header.sectionSize(1) == 80, f"col1={header.sectionSize(1)}"
+        # 列0 为吸收多余宽度的 stretch 列，可能大于默认值，但不应小于
+        assert header.sectionSize(0) >= 200, f"col0={header.sectionSize(0)}"
+
+    def test_stretch_fills_extra_width(self):
+        """stretch 列吸收多余宽度。"""
+        table, stretch = self._make()
+        header = table.horizontalHeader()
+        # 人为扩大视口后调用 stretch
+        before = header.sectionSize(0)
+        table.resize(900, 300)
+        table.show()
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+        stretch()
+        assert header.sectionSize(0) > before

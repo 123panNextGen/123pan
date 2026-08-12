@@ -11,8 +11,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QUrl, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QUrl, QTimer
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -27,7 +27,7 @@ from ..common.log import get_logger
 logger = get_logger(__name__)
 
 try:
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+    from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
     _HAS_MULTIMEDIA = True
 except ImportError:
     _HAS_MULTIMEDIA = False
@@ -51,7 +51,7 @@ class AudioPreviewWidget(QWidget):
         self._position_timer.setInterval(200)
 
         if not _HAS_MULTIMEDIA:
-            self._show_error("PyQt6 多媒体模块不可用，无法预览音频。")
+            self._show_error("PySide6 多媒体模块不可用，无法预览音频。")
             return
 
         self._setup_ui()

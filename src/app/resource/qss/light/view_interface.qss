@@ -1,4 +1,5 @@
 CloudInterface, TrashInterface, ShareInterface, #scrollWidget {
+    background-color: transparent;
 }
 
 #frame {

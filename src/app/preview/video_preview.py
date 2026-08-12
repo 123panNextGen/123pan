@@ -8,8 +8,8 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -25,13 +25,13 @@ logger = get_logger(__name__)
 
 # 尝试导入 Qt Multimedia 模块
 try:
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-    from PyQt6.QtMultimediaWidgets import QVideoWidget
+    from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+    from PySide6.QtMultimediaWidgets import QVideoWidget
 
     _HAS_MULTIMEDIA = True
 except ImportError:
     _HAS_MULTIMEDIA = False
-    logger.warning("PyQt6.QtMultimediaWidgets 不可用，视频预览将被禁用")
+    logger.warning("PySide6.QtMultimediaWidgets 不可用，视频预览将被禁用")
 
 
 class VideoPreviewWidget(QWidget):
@@ -51,7 +51,7 @@ class VideoPreviewWidget(QWidget):
         self._slider_dragging = False
 
         if not _HAS_MULTIMEDIA:
-            self._show_error("PyQt6 多媒体模块不可用，无法预览视频。")
+            self._show_error("PySide6 多媒体模块不可用，无法预览视频。")
             return
 
         self._setup_ui()

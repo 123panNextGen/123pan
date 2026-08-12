@@ -14,7 +14,7 @@ from pathlib import Path
 
 # 版本信息
 YEAR = 2026
-VERSION = "3.3.2"
+VERSION = "4.0.0"
 ABOUT_URL = "https://github.com/123panNextGen/123pan"
 
 # 日志保留天数
@@ -22,9 +22,9 @@ LOG_RETENTION_DAYS = 7
 
 # 配置文件目录
 if platform.system() == "Windows":
-    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan"
+    CONFIG_DIR = Path(os.environ.get("APPDATA", "")) / "123pan-ng"
 else:
-    CONFIG_DIR = Path.home() / ".config" / "123pan"
+    CONFIG_DIR = Path.home() / ".config" / "123pan-ng"
 
 # 设备伪装数据
 from ..data.devices import all_device_type, all_os_versions  # noqa: E402, F401

@@ -79,6 +79,8 @@ class Database:
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # 供 ConfigManager 存放设置项内存缓存；连接重置时随实例一起重建
+            self._settings_cache = {}
             self._create_tables()
 
     def _create_tables(self):
@@ -133,6 +135,43 @@ class Database:
                     status      TEXT NOT NULL,
                     created_at  TEXT NOT NULL,
                     finished_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS sync_jobs (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name             TEXT NOT NULL,
+                    local_path       TEXT NOT NULL,
+                    remote_dir_id    INTEGER NOT NULL DEFAULT 0,
+                    remote_dir_name  TEXT NOT NULL DEFAULT '',
+                    direction        TEXT NOT NULL DEFAULT 'upload',
+                    interval_seconds INTEGER NOT NULL DEFAULT 0,
+                    enabled          INTEGER NOT NULL DEFAULT 1,
+                    delete_remote    INTEGER NOT NULL DEFAULT 0,
+                    last_run_at      TEXT NOT NULL DEFAULT '',
+                    created_at       TEXT NOT NULL,
+                    updated_at       TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS sync_history (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id      INTEGER NOT NULL DEFAULT 0,
+                    job_name    TEXT NOT NULL DEFAULT '',
+                    started_at  TEXT NOT NULL,
+                    finished_at TEXT NOT NULL DEFAULT '',
+                    added       INTEGER NOT NULL DEFAULT 0,
+                    updated     INTEGER NOT NULL DEFAULT 0,
+                    deleted     INTEGER NOT NULL DEFAULT 0,
+                    failed      INTEGER NOT NULL DEFAULT 0,
+                    status      TEXT NOT NULL DEFAULT 'completed',
+                    message     TEXT NOT NULL DEFAULT ''
+                );
+
+                CREATE TABLE IF NOT EXISTS sync_fingerprints (
+                    job_id   INTEGER NOT NULL,
+                    rel_path TEXT NOT NULL,
+                    size     INTEGER NOT NULL DEFAULT 0,
+                    mtime    INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (job_id, rel_path)
                 );
                 """
             )

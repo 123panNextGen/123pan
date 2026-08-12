@@ -13,8 +13,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -38,9 +38,9 @@ logger = get_logger(__name__)
 class _DownloadPreviewThread(QThread):
     """后台线程：下载文件到临时目录。"""
 
-    progress = pyqtSignal(int)  # 0-100
-    finished = pyqtSignal(str, str)  # (local_path, error_message)
-    status = pyqtSignal(str)
+    progress = Signal(int)  # 0-100
+    finished = Signal(str, str)  # (local_path, error_message)
+    status = Signal(str)
 
     def __init__(self, pan, file_info):
         super().__init__()
@@ -256,7 +256,7 @@ class PreviewDialog(QDialog):
 
     def _auto_resize(self):
         """根据屏幕大小自动调整窗口。"""
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
             screen_size = screen.availableSize()
@@ -266,13 +266,19 @@ class PreviewDialog(QDialog):
             )
 
     def reject(self):
-        """关闭对话框时清理资源。"""
-        self._cleanup()
         super().reject()
 
     def closeEvent(self, event):
-        self._cleanup()
         super().closeEvent(event)
+
+    def done(self, result):
+        """所有关闭路径（accept/reject/close）统一清理预览资源。
+
+        避免下载线程在对话框销毁时仍在运行而触发
+        "QThread: Destroyed while thread is still running"。
+        """
+        self._cleanup()
+        super().done(result)
 
     def _cleanup(self):
         """清理预览资源。"""
