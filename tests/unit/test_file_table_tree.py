@@ -175,6 +175,44 @@ class TestFileTreeManager:
         mgr.update_folders(0, [{"FileId": 10, "FileName": "子目录"}])
         assert root.childCount() == count_after_first
 
+    def test_update_folders_removes_deleted(self, qapp):
+        """删除后目录树必须移除服务器上已不存在的文件夹节点。"""
+        mgr = FileTreeManager(QTreeWidget())
+        mgr.init_tree()
+        mgr.update_folders(0, [
+            {"FileId": 10, "FileName": "子目录"},
+            {"FileId": 11, "FileName": "将被删除"},
+        ])
+        assert mgr.find_item(11) is not None
+
+        # 第二次刷新：11 已不在列表中（删除场景）
+        mgr.update_folders(0, [{"FileId": 10, "FileName": "子目录"}])
+        assert mgr.find_item(10) is not None
+        assert mgr.find_item(11) is None
+        assert mgr.find_item(0).childCount() == 1  # 仅剩占位符 + 子目录
+
+    def test_update_folders_removes_only_gone(self, qapp):
+        """仅移除消失的节点，保留其余节点。"""
+        mgr = FileTreeManager(QTreeWidget())
+        mgr.init_tree()
+        mgr.update_folders(0, [
+            {"FileId": 10, "FileName": "保留"},
+            {"FileId": 11, "FileName": "删除A"},
+            {"FileId": 12, "FileName": "删除B"},
+        ])
+        mgr.update_folders(0, [{"FileId": 10, "FileName": "保留"}])
+        assert mgr.find_item(10) is not None
+        assert mgr.find_item(11) is None
+        assert mgr.find_item(12) is None
+
+    def test_update_folders_renames_existing(self, qapp):
+        """重命名后目录树节点文本同步更新。"""
+        mgr = FileTreeManager(QTreeWidget())
+        mgr.init_tree()
+        mgr.update_folders(0, [{"FileId": 10, "FileName": "旧名字"}])
+        mgr.update_folders(0, [{"FileId": 10, "FileName": "新名字"}])
+        assert mgr.find_item(10).text(0) == "新名字"
+
     def test_build_path_stack(self, qapp):
         mgr = FileTreeManager(QTreeWidget())
         mgr.init_tree()

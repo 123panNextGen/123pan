@@ -145,7 +145,19 @@ class FileTreeManager:
     # ---- 增量更新 ----
 
     def update_folders(self, dir_id, folder_items):
-        """创建/重命名/删除操作后，增量刷新指定目录的子文件夹节点。"""
+        """创建/重命名/删除操作后，增量刷新指定目录的子文件夹节点。
+
+        folder_items 来自服务器强制刷新的完整子文件夹列表（权威数据）：
+        - 已存在且仍存在的节点：按需更新名称（重命名场景）
+        - 新增的节点：追加并附带占位符（懒加载）
+        - 已不在列表中的节点：移除（删除场景，否则目录树残留已删文件夹）
+
+        folder_items 为 None 表示数据刷新失败，不做任何变更，
+        避免把已加载的树节点误清空。
+        """
+        if folder_items is None:
+            return
+
         current_item = self.find_item(dir_id)
         if current_item is None:
             return
@@ -157,6 +169,15 @@ class FileTreeManager:
                 current_item.removeChild(child)
                 break
 
+        # 收集新数据中的有效文件夹 ID
+        new_ids = set()
+        new_names = {}
+        for folder in folder_items:
+            file_id = int(folder.get("FileId", 0))
+            if file_id:
+                new_ids.add(file_id)
+                new_names[file_id] = folder.get("FileName", "")
+
         # 记录已有子节点
         existing_items = {}
         for i in range(current_item.childCount()):
@@ -166,11 +187,23 @@ class FileTreeManager:
                 existing_items[file_id] = child
                 self.item_cache[file_id] = child
 
-        # 添加新的文件夹
+        # 移除服务器上已不存在的文件夹节点（删除操作后同步目录树）
+        for file_id, child in list(existing_items.items()):
+            if file_id not in new_ids:
+                current_item.removeChild(child)
+                self.item_cache.pop(file_id, None)
+
+        # 更新已有节点名称（重命名场景）并添加新的文件夹
         for folder in folder_items:
             file_id = int(folder.get("FileId", 0))
             file_name = folder.get("FileName", "")
-            if file_id in existing_items:
+            if not file_id:
+                continue
+
+            child = existing_items.get(file_id)
+            if child is not None:
+                if child.text(0) != file_name:
+                    child.setText(0, file_name)
                 continue
 
             child = QTreeWidgetItem([file_name])

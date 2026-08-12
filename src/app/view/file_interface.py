@@ -458,6 +458,8 @@ class FileInterface(FileActionsMixin, QWidget):
 
         仅供 QRunnable 的 run() 方法调用。
         返回 (items, folder_items) 元组。
+        folder_items 为 None 表示刷新失败（调用方不应据此更新目录树，
+        避免把已加载的树节点误清空）。
         """
         cached_state = (self.pan.file_page, self.pan.total, self.pan.all_file)
         self.pan.file_page = 0
@@ -466,19 +468,22 @@ class FileInterface(FileActionsMixin, QWidget):
                 dir_id, save=False, all=True, limit=100,
                 force_refresh=force_refresh,
             )
+            if code != 0:
+                logger.warning("重新加载目录数据失败: dir_id=%s, code=%s", dir_id, code)
+                return [], None
             folder_items = []
-            if code == 0:
-                for item in items:
-                    if int(item.get("Type", 0)) == 1:
-                        folder_items.append(
-                            {
-                                "FileId": item.get("FileId"),
-                                "FileName": item.get("FileName"),
-                            }
-                        )
+            for item in items:
+                if int(item.get("Type", 0)) == 1:
+                    folder_items.append(
+                        {
+                            "FileId": item.get("FileId"),
+                            "FileName": item.get("FileName"),
+                        }
+                    )
             return items, folder_items
         except Exception:
-            return [], []
+            logger.exception("重新加载目录数据异常: dir_id=%s", dir_id)
+            return [], None
         finally:
             self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
 
