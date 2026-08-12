@@ -518,3 +518,104 @@ class TestNetSessionCopyFiles:
         assert result.code == 429
         assert result.api_code_enum == ApiCode.fail
         assert result.msg == "请求过于频繁"
+
+
+class TestNetSessionTrash:
+    """删除/恢复（trash_file）请求格式回归测试。
+
+    服务器仅接受 fileTrashInfoList 为 [{"FileId": X}] 列表；
+    传完整文件信息 dict 时服务器返回 code=0 但静默忽略（文件不会被删除）。
+    """
+
+    TRASH_URL = "https://www.123pan.cn/a/api/file/trash"
+
+    def _assert_body(self):
+        import json as _json
+
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["driveId"] == 0
+        assert body["operation"] is True
+        assert body["fileTrashInfoList"] == [{"FileId": 123}]
+
+    @responses.activate
+    def test_trash_file_dict_extracts_fileid(self):
+        """传完整文件 dict 时，请求体只发送 [{"FileId": X}]。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 123}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({
+            "FileId": 123, "FileName": "a.txt", "Size": 10,
+            "S3KeyFlag": "x", "Type": 0, "Etag": "e", "ParentFileId": 0,
+        })
+        assert result.code == 0
+        self._assert_body()
+
+    @responses.activate
+    def test_trash_file_model_extracts_fileid(self):
+        """传 FileItemModel 时同样只发送 [{"FileId": X}]。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 456}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        from src.app.api.model import FileItemModel
+
+        model = FileItemModel.from_dict({
+            "FileId": 456, "FileName": "b.txt", "Type": 0, "Size": 5,
+            "Etag": "", "S3KeyFlag": "", "ParentFileId": 0,
+        })
+        session = NetSession()
+        result = session.trash_file(model)
+        assert result.code == 0
+
+        import json as _json
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["fileTrashInfoList"] == [{"FileId": 456}]
+        assert body["operation"] is True
+
+    @responses.activate
+    def test_trash_file_restore_operation_false(self):
+        """恢复操作 operation=False 透传。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 0, "message": "ok",
+                  "data": {"InfoList": [{"FileId": 789}], "AbnormalFileIdList": None}},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({"FileId": 789, "FileName": "c.txt"},
+                                    operation=False)
+        assert result.code == 0
+
+        import json as _json
+        body = _json.loads(responses.calls[0].request.body)
+        assert body["fileTrashInfoList"] == [{"FileId": 789}]
+        assert body["operation"] is False
+
+    @responses.activate
+    def test_trash_file_missing_fileid(self):
+        """缺少 FileId 时返回错误，不发起请求。"""
+        session = NetSession()
+        result = session.trash_file({"FileName": "no_id.txt"})
+        assert result.code == -1
+        assert "FileId" in result.msg
+        assert len(responses.calls) == 0
+
+    @responses.activate
+    def test_trash_file_server_error(self):
+        """服务器返回错误码时透传 message。"""
+        responses.post(
+            self.TRASH_URL,
+            json={"code": 4000, "message": "参数错误"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.trash_file({"FileId": 1})
+        assert result.code == 4000
+        assert result.api_code_enum == ApiCode.fail
+        assert result.msg == "参数错误"

@@ -203,20 +203,28 @@ class FileSessionMixin:
     ) -> ApiReturnModel:
         url = urljoin(BASE_URL, "/a/api/file/trash")
         if isinstance(file_info, FileItemModel):
-            payload = file_info.to_json()
+            file_id = file_info.file_id
+            file_name = file_info.file_name
         else:
-            payload = file_info
+            file_id = file_info.get("FileId", file_info.get("fileId"))
+            file_name = file_info.get("FileName", file_info.get("fileName", "?"))
+        if file_id is None:
+            logger.error("删除/恢复失败: 文件信息缺少 FileId")
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg="文件信息缺少 FileId",
+            )
+        # 服务器仅接受 fileTrashInfoList 为 [{"FileId": X}] 列表。
+        # 传完整文件信息 dict（或单 dict 不包列表）时，服务器返回 code=0
+        # 但静默忽略（InfoList 为空），文件不会被真正删除/恢复。
         data = {
             "driveId": 0,
-            "fileTrashInfoList": payload,
+            "fileTrashInfoList": [{"FileId": int(file_id)}],
             "operation": operation,
         }
         op_name = "删除" if operation else "恢复"
-        file_name = (
-            payload.get("FileName", payload.get("fileName", "?"))
-            if isinstance(payload, dict)
-            else "?"
-        )
         t0 = time.monotonic()
         try:
             resp = self._http.post(url, json=data, timeout=10)
