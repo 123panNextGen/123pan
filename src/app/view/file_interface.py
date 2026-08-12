@@ -57,7 +57,11 @@ from ..tasks.file_tasks import connect_tracked
 
 logger = get_logger(__name__)
 # noinspection PyUnresolvedReferences
-class FileInterface(QWidget, FileActionsMixin):
+# 注意：FileActionsMixin 必须排在 QWidget 之前。
+# PySide6 的 QWidget 暴露了 C++ 虚拟方法 dragEnterEvent/dragMoveEvent/dropEvent
+# （默认忽略事件），若 QWidget 排在前面，MRO 会遮蔽 FileActionsMixin 中的同名实现，
+# 导致拖拽上传完全失效。
+class FileInterface(FileActionsMixin, QWidget):
     """文件页面（仅浏览）"""
 
     def __init__(self, parent=None):

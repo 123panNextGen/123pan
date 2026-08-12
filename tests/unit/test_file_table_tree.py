@@ -73,6 +73,21 @@ class TestFileTableManager:
         assert header.sectionSize(0) == 320
         panel.deleteLater()
 
+    def test_drag_drop_handlers_not_shadowed_by_qwidget(self, qapp):
+        """回归：FileActionsMixin 的拖拽事件不得被 QWidget 内建方法遮蔽。
+
+        PySide6 的 QWidget 暴露了 C++ 虚拟方法 dragEnterEvent/dragMoveEvent/
+        dropEvent（默认忽略事件）。若 FileInterface 基类顺序为
+        (QWidget, FileActionsMixin)，MRO 会命中 QWidget 的实现，
+        导致拖拽上传完全失效。FileActionsMixin 必须排在 QWidget 之前。
+        """
+        from src.app.view.file_actions import FileActionsMixin
+        from src.app.view.file_interface import FileInterface
+
+        assert FileInterface.dragEnterEvent == FileActionsMixin.dragEnterEvent
+        assert FileInterface.dragMoveEvent == FileActionsMixin.dragMoveEvent
+        assert FileInterface.dropEvent == FileActionsMixin.dropEvent
+
     def test_sort_folders_first(self, qapp):
         table = TableWidget()
         table.setColumnCount(4)

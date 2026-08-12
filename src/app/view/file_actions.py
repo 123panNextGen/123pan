@@ -224,6 +224,9 @@ class FileActionsMixin:
                 content=tr("file.drop_warn_content", "只支持拖放文件或文件夹"),
                 parent=self,
             )
+            return
+        # 接受拖放，让拖拽源（如系统文件管理器）确认本次放置成功
+        event.acceptProposedAction()
 
     def _addUploadTasks(self, file_paths):
         """添加上传任务（共用方法）"""
