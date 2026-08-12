@@ -213,8 +213,21 @@ class Pan123:
     def link_by_fileDetail(self, file_detail, showlink=True):
         return self._download.link_by_fileDetail(file_detail, showlink)
 
-    def delete_file(self, file, by_num=True, operation=True):
-        self._file.delete_file(self.list, file, by_num, operation)
+    def delete_file(self, file, by_num=True, operation=True, parent_file_id=None):
+        """删除或恢复文件。
+
+        Args:
+            file: 文件索引（by_num=True）或文件信息字典（by_num=False）
+            by_num: True 表示 file 为 pan.list 中的索引
+            operation: True 删除 / False 恢复
+            parent_file_id: 所属目录 ID，用于删除成功后使该目录的本地缓存失效
+
+        Returns:
+            (success, msg)
+        """
+        return self._file.delete_file(
+            self.list, file, by_num, operation, parent_file_id=parent_file_id
+        )
 
     def rename_file(self, file_id, new_name):
         return self._file.rename_file(file_id, new_name)

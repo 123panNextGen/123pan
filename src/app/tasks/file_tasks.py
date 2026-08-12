@@ -451,35 +451,54 @@ class DeleteFileTask(QRunnable):
         self.signals = signals
         self._fi = file_interface
 
+    def _find_file_index(self):
+        """在 pan.list 中查找目标文件索引，未找到返回 None。"""
+        for i, file in enumerate(self.pan.list):
+            if str(file.get("FileId")) == str(self.file_id):
+                return i
+        return None
+
     def run(self):
         try:
             logger.info("删除文件: name=%s, id=%s", self.file_name, self.file_id)
-            success = False
-            for i, file in enumerate(self.pan.list):
-                if str(file.get("FileId")) == str(self.file_id):
-                    self.pan.delete_file(i, by_num=True, operation=True)
-                    success = True
-                    break
-
-            if not success:
-                logger.debug("文件未在当前列表中找到，尝试刷新目录")
+            # 先尝试在内存列表中找到目标文件
+            file_index = self._find_file_index()
+            if file_index is None:
+                # 文件不在内存列表（列表按 save=False 加载，pan.list 常为空），
+                # 强制从服务器刷新后再查一次，避免本地缓存残留旧数据导致找不到
+                logger.debug("文件未在当前列表中找到，强制刷新目录")
                 code, files = self.pan.get_dir_by_id(
-                    self.current_dir_id, save=True, all=True, limit=1000
+                    self.current_dir_id, save=True, all=True, limit=1000,
+                    force_refresh=True,
                 )
                 if code == 0:
-                    for i, file in enumerate(self.pan.list):
-                        if str(file.get("FileId")) == str(self.file_id):
-                            self.pan.delete_file(i, by_num=True, operation=True)
-                            success = True
-                            break
+                    file_index = self._find_file_index()
+                else:
+                    self.signals.finished.emit(
+                        False, self.file_name, "", "获取文件列表失败", [], []
+                    )
+                    return
 
-            if success:
-                logger.debug("删除成功: %s", self.file_name)
-                items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
-                self.signals.finished.emit(True, self.file_name, "", "", items, folder_items)
-            else:
+            if file_index is None:
                 logger.warning("删除失败: 文件未找到 %s", self.file_name)
                 self.signals.finished.emit(False, self.file_name, "", "", [], [])
+                return
+
+            success, error_msg = self.pan.delete_file(
+                file_index, by_num=True, operation=True,
+                parent_file_id=self.current_dir_id,
+            )
+            if not success:
+                logger.warning("删除失败: %s (%s)", self.file_name, error_msg)
+                self.signals.finished.emit(False, self.file_name, "", error_msg, [], [])
+                return
+
+            logger.debug("删除成功: %s", self.file_name)
+            # 删除后强制刷新目录（不走缓存），确保界面显示服务器最新状态
+            items, folder_items = self._fi._reload_dir_data(
+                self.current_dir_id, force_refresh=True
+            )
+            self.signals.finished.emit(True, self.file_name, "", "", items, folder_items)
         except Exception as e:
             logger.error("删除异常: %s: %s", self.file_name, e)
             self.signals.finished.emit(False, self.file_name, "", str(e), [], [])
@@ -629,13 +648,19 @@ class BatchDeleteTask(QRunnable):
             names = [name for _, name in self.file_infos]
             logger.info("批量删除文件: %s", names)
 
-            # 先获取完整文件列表
+            # 先获取完整文件列表（强制刷新，避免本地缓存残留旧数据）
             code, files = self.pan.get_dir_by_id(
-                self.current_dir_id, save=True, all=True, limit=1000
+                self.current_dir_id, save=True, all=True, limit=1000,
+                force_refresh=True,
             )
             if code != 0:
                 self.signals.finished.emit(False, "", "", "获取文件列表失败", [], [])
                 return
+
+            # 以 FileId 建立索引，O(1) 定位待删文件
+            index_by_id = {
+                str(f.get("FileId")): i for i, f in enumerate(self.pan.list)
+            }
 
             success_count = 0
             fail_count = 0
@@ -643,26 +668,35 @@ class BatchDeleteTask(QRunnable):
 
             for file_id, file_name in self.file_infos:
                 try:
-                    # 在 pan.list 中查找并删除
-                    deleted = False
-                    for i, file in enumerate(self.pan.list):
-                        if str(file.get("FileId")) == str(file_id):
-                            self.pan.delete_file(i, by_num=True, operation=True)
-                            deleted = True
-                            break
-
-                    if deleted:
+                    i = index_by_id.get(str(file_id))
+                    if i is None:
+                        fail_count += 1
+                        logger.warning(
+                            "批量删除中未找到文件: %s (id=%s)", file_name, file_id
+                        )
+                        continue
+                    ok, msg = self.pan.delete_file(
+                        i, by_num=True, operation=True,
+                        parent_file_id=self.current_dir_id,
+                    )
+                    if ok:
                         success_count += 1
                     else:
                         fail_count += 1
-                        logger.warning("批量删除中未找到文件: %s (id=%s)", file_name, file_id)
+                        last_error = msg
+                        logger.warning(
+                            "批量删除失败: %s (id=%s), msg=%s",
+                            file_name, file_id, msg,
+                        )
                 except Exception as e:
                     fail_count += 1
                     last_error = str(e)
                     logger.error("批量删除 %s 失败: %s", file_name, e)
 
-            # 重新加载目录
-            items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
+            # 强制刷新目录（不走缓存），确保界面显示服务器最新状态
+            items, folder_items = self._fi._reload_dir_data(
+                self.current_dir_id, force_refresh=True
+            )
             msg = f"成功 {success_count} 个"
             if fail_count > 0:
                 msg += f"，失败 {fail_count} 个"
