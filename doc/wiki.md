@@ -552,7 +552,7 @@ QThreadPool.globalInstance().start(task)
 
 ## 12. 测试
 
-项目当前包含 **323 个测试函数**（33 个测试文件，其中 31 个单元测试 + 2 个集成测试）。
+项目当前包含 **328 个测试函数**（33 个测试文件，其中 31 个单元测试 + 2 个集成测试）。
 
 ### 12.1 运行测试
 
@@ -761,6 +761,7 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 11. **空 QSS 规则陷阱**：`SettingInterface, #scrollWidget {}` 这类空规则会触发 Qt 样式引擎 `autoFillBackground`，用默认浅色调色板绘制背景（暗色主题下为 `#efefef` 浅灰），与全局主题产生明显色差。qfluentwidgets 通过 QSS 主题化而非 QPalette，必须显式写 `background-color: transparent` 才能让页面跟随全局主题。修改 QSS 后需重新编译 `resource.py`（`pyside6-rcc`）。
 12. **PySide6 QWidget 遮蔽 mixin 拖拽事件**：PySide6 的 `QWidget` 暴露了 C++ 虚拟方法 `dragEnterEvent`/`dragMoveEvent`/`dropEvent`（默认忽略事件）。类定义必须写成 `class FileInterface(FileActionsMixin, QWidget)`（**mixin 在前**），否则 MRO 命中 QWidget 的实现，拖拽上传完全失效且无报错。`dropEvent` 末尾必须 `event.acceptProposedAction()` 让系统拖拽源确认放置成功。回归测试见 `test_file_table_tree.py::test_drag_drop_handlers_not_shadowed_by_qwidget`。
 13. **删除必须校验结果并强制刷新**：删除任务要检查 `delete_file` 返回的 `(success, msg)`，并透传 `parent_file_id` 使目录缓存失效；删除后刷新列表必须 `force_refresh=True`（否则走缓存，被删文件仍显示，用户误以为删除失败）。
+14. **trash 接口 `fileTrashInfoList` 必须是 `[{"FileId": X}]` 列表**：`/a/api/file/trash` 只接受 FileId 列表。传完整文件信息 dict（无论单 dict 还是 `[dict]`）时服务器返回 `code=0` 但静默忽略（响应 `data.InfoList` 为空），文件不会被真正删除——表现为"删除成功但文件仍在"。已实测验证（2026-08-12），`trash_file` 统一提取 `FileId` 构造 `[{"FileId": X}]`。回归测试见 `tests/integration/test_session.py::TestNetSessionTrash`。
 
 ---
 
