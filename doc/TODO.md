@@ -32,6 +32,7 @@
 - [x] 修复拖拽文件上传不生效（PySide6 QWidget 遮蔽 FileActionsMixin 拖拽事件，mixin 需排在 QWidget 之前）
 - [x] 修复删除文件无效（trash 接口 `fileTrashInfoList` 需 `[{"FileId": X}]`，此前传完整文件 dict 被服务器静默忽略）
 - [x] 修复删除后界面不刷新（删除未校验 API 结果 / 缓存未失效 / 刷新未强制走服务器）
+- [x] 修复删除后左侧目录树不同步（`update_folders` 未移除已删除的文件夹节点）
 - [x] 缩短文件列表缓存 TTL（30 分钟 → 5 分钟），其他客户端删除后无需手动重建数据库
 
 ## 删除
