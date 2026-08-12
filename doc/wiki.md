@@ -138,8 +138,8 @@ src/
       icons.py               # 图标共享缓存
 tests/
   conftest.py                # tmp_config_dir / tmp_db fixture
-  unit/                      # 纯逻辑测试（22 个文件，覆盖各模块）
-  integration/               # mock HTTP 集成测试（responses）
+  unit/                      # 纯逻辑测试（31 个文件，覆盖各模块）
+  integration/               # mock HTTP 集成测试（responses，2 个文件）
 script/
   test.sh / lint.sh / build.sh
 ```
@@ -242,7 +242,7 @@ flowchart TD
 | --- | --- | --- |
 | `config` | 设置项 `(key, value)` + `currentAccount` | JSON 序列化存储 |
 | `accounts` | 已保存账户 | 密码以 `enc:` 前缀加密存储 |
-| `dir_cache` | 目录列表缓存 | `FileListDB` 使用，TTL 30 分钟 |
+| `dir_cache` | 目录列表缓存 | `FileListDB` 使用，TTL 5 分钟 |
 | `transfer_tasks` | 活动传输任务 | 断点续传支撑 |
 | `transfer_history` | 传输历史 | 完成/失败/取消 |
 | `sync_jobs` | 同步任务配置 | 方向/间隔/是否删除远端 |
@@ -259,6 +259,8 @@ flowchart TD
 
 - 读取目录优先走缓存：`cached_all` 完整 → 直接返回；不完整且非全量 → 返回已有；全量 → 请求补全。
 - `mark_dirty(dir_id)` / `mark_all_dirty()` 使缓存失效（删除/移动/同步后调用）。
+- 缓存 TTL **5 分钟**（`DEFAULT_CACHE_TTL_SECONDS`）：过期后自动从服务器刷新，用于检测其他客户端（网页/手机端）的增删改。TTL 不宜过大，否则界面长期显示陈旧列表。
+- 删除/移动等写操作成功后必须 `mark_dirty(parent_dir)`，且界面刷新要走 `force_refresh=True`（跳过缓存），否则被删文件仍会显示。
 - 内存缓存上限 20 个目录（FIFO 淘汰），避免浏览目录过多内存膨胀。
 
 ---
@@ -290,7 +292,7 @@ pan = Pan123(authorization=...)                # 仅凭 token 构造（扫码验
 | `get_dir(save, force_refresh)` | 当前目录列表（分页状态在门面维护） |
 | `get_dir_by_id(file_id, save, all, limit, force_refresh)` | 指定目录；`code==2` 自动重登录重试 |
 | `link_by_fileDetail(file_detail)` | 获取下载链接 |
-| `delete_file(file, by_num, operation)` | 删除/恢复文件（操作 `pan.list`） |
+| `delete_file(file, by_num, operation, parent_file_id)` | 删除/恢复文件（操作 `pan.list`），返回 `(success, msg)`；`parent_file_id` 用于删除成功后使目录缓存失效 |
 | `rename_file(file_id, new_name)` | 重命名 |
 | `move_file(file_id_list, target_parent_id)` | 移动文件 |
 | `share(file_id_list, share_pwd)` | 创建分享链接 |
@@ -327,7 +329,7 @@ session.close()
 | Service | 构造 | 关键方法 |
 | --- | --- | --- |
 | `AuthService(session)` | 认证 | `login` / `save_file` / `read_ini` / `get_user_info` / `get_device_list` / `qr_*` / `load_saved_device` / `sync_to_session` |
-| `FileService(session)` | 文件 | `get_dir_by_id` / `mkdir` / `create_folder` / `delete_file` / `rename_file` / `move_files` / `recycle` / `permanent_delete_files` / `share` / `get_all_things` / `download_dir` |
+| `FileService(session)` | 文件 | `get_dir_by_id` / `mark_dir_dirty` / `mkdir` / `create_folder` / `delete_file` / `rename_file` / `copy_files` / `move_files` / `recycle` / `permanent_delete_files` / `share` |
 | `DownloadService(session)` | 下载 | `link_by_fileDetail` / `download_from_url` / `download_file` / `set_multi_thread` / `set_download_speed_limit` / `set_proxy` |
 | `UploadService(session)` | 上传 | `up_load` / `compute_file_md5` / `set_upload_speed_limit` |
 | `ShareService(session)` | 分享 | `get_free_share_list` / `get_pay_share_list` / `delete_share`（`SHARE_API_BASE = https://api.123278.com`） |
@@ -550,7 +552,7 @@ QThreadPool.globalInstance().start(task)
 
 ## 12. 测试
 
-项目当前包含 **318 个测试函数**（34 个测试文件，其中 31 个单元测试 + 3 个集成测试）。
+项目当前包含 **323 个测试函数**（33 个测试文件，其中 31 个单元测试 + 2 个集成测试）。
 
 ### 12.1 运行测试
 
@@ -590,6 +592,15 @@ tests/
     test_download_retry.py  # 下载限流（429）识别与退避重试
     test_upload_resume.py   # 续传校验 + 上传续传
     test_upload_parallel.py # 上传并行分片
+    test_upload_folder.py   # 文件夹上传扫描/建目录
+    test_upload_refresh.py  # 上传后缓存刷新
+    test_upload_validation.py  # 上传前 MD5 校验进度
+    test_file_delete.py     # 删除任务（结果校验 + 强制刷新 + parent_file_id 透传）
+    test_offline_service.py # 离线下载解析/提交
+    test_offline_dialog.py  # 离线下载对话框（offscreen）
+    test_rapid_generate.py  # 秒传生成↔解析往返
+    test_rapid_export_dialog.py  # 秒传导出对话框
+    test_theme_mode.py      # 深浅色主题切换
     test_sync_service.py    # 本地索引/变更计算/run_sync
     test_sync_manager.py    # 调度器
   integration/              # mock HTTP（responses，不发起真实请求）
@@ -748,6 +759,8 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 9. **非 ASCII 路径打包崩溃**：打包版必须放纯 ASCII 路径。
 10. **信号测试**：传真实信号类，不传 MagicMock；Qt 测试文件尽量分开运行。
 11. **空 QSS 规则陷阱**：`SettingInterface, #scrollWidget {}` 这类空规则会触发 Qt 样式引擎 `autoFillBackground`，用默认浅色调色板绘制背景（暗色主题下为 `#efefef` 浅灰），与全局主题产生明显色差。qfluentwidgets 通过 QSS 主题化而非 QPalette，必须显式写 `background-color: transparent` 才能让页面跟随全局主题。修改 QSS 后需重新编译 `resource.py`（`pyside6-rcc`）。
+12. **PySide6 QWidget 遮蔽 mixin 拖拽事件**：PySide6 的 `QWidget` 暴露了 C++ 虚拟方法 `dragEnterEvent`/`dragMoveEvent`/`dropEvent`（默认忽略事件）。类定义必须写成 `class FileInterface(FileActionsMixin, QWidget)`（**mixin 在前**），否则 MRO 命中 QWidget 的实现，拖拽上传完全失效且无报错。`dropEvent` 末尾必须 `event.acceptProposedAction()` 让系统拖拽源确认放置成功。回归测试见 `test_file_table_tree.py::test_drag_drop_handlers_not_shadowed_by_qwidget`。
+13. **删除必须校验结果并强制刷新**：删除任务要检查 `delete_file` 返回的 `(success, msg)`，并透传 `parent_file_id` 使目录缓存失效；删除后刷新列表必须 `force_refresh=True`（否则走缓存，被删文件仍显示，用户误以为删除失败）。
 
 ---
 
