@@ -211,3 +211,5 @@ __marimo__/
 #.trae/
 
 123pan.dist/
+/deploy-gui
+/launcher

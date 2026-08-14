@@ -5,6 +5,7 @@
 
 ## 目录
 
+- [目录](#目录)
 - [1. 技术栈与依赖](#1-技术栈与依赖)
 - [2. 快速开始](#2-快速开始)
 - [3. 项目架构](#3-项目架构)
@@ -21,6 +22,7 @@
 - [14. 构建打包（Nuitka）](#14-构建打包nuitka)
 - [15. 日志](#15-日志)
 - [16. 常见问题与陷阱](#16-常见问题与陷阱)
+- [附：相关文档](#附相关文档)
 
 ---
 
@@ -75,8 +77,8 @@ uv run src/123pan.py
 
 ```
 src/
-  123pan.py                  # 入口：初始化日志/i18n/主题，创建 QApplication 与 MainWindow
   app/
+    __main__.py              # 入口：初始化日志/i18n/主题，创建 QApplication 与 MainWindow
     api/                     # API 层：HTTP 请求 + 数据模型，无业务逻辑
       session.py             # NetSession（FileSessionMixin + DownloadEngine 组合）
       session_file.py        # FileSessionMixin —— 文件/目录端点
