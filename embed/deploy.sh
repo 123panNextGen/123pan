@@ -62,10 +62,9 @@ for entry in \
     rm -rf "Lib/site-packages/PySide6/${entry}"
 done
 # WebEngine resources
-rm -rf Lib/site-packages/PySide6/resources/*.{pak,bin} \
+rm -rf Lib/site-packages/PySide6/resources \
     "Lib/site-packages/PySide6/translations/qtwebengine_locales"
 rm -rf Lib/site-packages/PySide6/Qt6WebEngine*.dll
-rm -rf Lib/site-packages/PySide6/Qt6WebView*.dll
 rm -rf Lib/site-packages/PySide6/QtWebEngine*.pyd
 # Qt63D
 rm -rf Lib/site-packages/PySide6/Qt63D*.dll
@@ -108,6 +107,10 @@ rm -rf Lib/site-packages/PySide6/Qt*VirtualKeyboard*.{dll,pyd}
 rm -rf Lib/site-packages/PySide6/Qt*WebChannel*.{dll,pyd}
 rm -rf Lib/site-packages/PySide6/Qt*WebSockets*.{dll,pyd}
 rm -rf Lib/site-packages/PySide6/Qt*ShaderTools*.{dll,pyd}
+rm -rf Lib/site-packages/PySide6/Qt*DBus*.{dll,pyd}
+rm -rf Lib/site-packages/PySide6/Qt*Lab*.{dll,pyd}
+rm -rf Lib/site-packages/PySide6/Qt*Concurrent*.{dll,pyd}
+rm -rf Lib/site-packages/PySide6/Qt*WebView*.{dll,pyd}
 
 # python win, pywin32 docs: 6 MiB
 rm -rf Lib/site-packages/pythonwin
@@ -119,7 +122,7 @@ rm -rf Lib/site-packages/PySide6/metatypes/
 for entry in assetimporters canbus designer generic vectorimageformats webview \
     geometryloaders geoservices networkinformation platforminputcontexts \
     position qmllint qmltooling renderers renderplugins sceneparsers \
-    scxmldatamodel sensors sqldrivers styles texttospeech tls; do
+    scxmldatamodel sensors sqldrivers texttospeech; do
     rm -rf Lib/site-packages/PySide6/plugins/"${entry}"
 done
 
