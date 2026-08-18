@@ -766,36 +766,40 @@ class TransferInterface(QWidget, TransferTableMixin):
         return max(queue, key=lambda t: t.priority)
 
     def __start_next_pending_upload(self):
-        """从待处理上传队列中启动下一个任务（高优先级优先）。"""
-        if not self._pending_upload_queue:
-            return
-        if self._active_upload_count >= self._max_concurrent_uploads:
-            return
-
-        task = self._pick_next_pending(self._pending_upload_queue)
-        if task is None:
-            return
-        self._pending_upload_queue.remove(task)
-        if task.status == tr("transfer.status_queued", "排队中"):
-            task.status = tr("transfer.status_waiting", "等待中")
-        self.__start_upload_thread(task)
-        self.__update_upload_table()
+        """填满空闲上传槽位，每次选择最高优先级任务。"""
+        started = False
+        while (
+            self._pending_upload_queue
+            and self._active_upload_count < self._max_concurrent_uploads
+        ):
+            task = self._pick_next_pending(self._pending_upload_queue)
+            if task is None:
+                break
+            self._pending_upload_queue.remove(task)
+            if task.status == tr("transfer.status_queued", "排队中"):
+                task.status = tr("transfer.status_waiting", "等待中")
+            self.__start_upload_thread(task)
+            started = True
+        if started:
+            self.__update_upload_table()
 
     def __start_next_pending_download(self):
-        """从待处理下载队列中启动下一个任务（高优先级优先）。"""
-        if not self._pending_download_queue:
-            return
-        if self._active_download_count >= self._max_concurrent_downloads:
-            return
-
-        task = self._pick_next_pending(self._pending_download_queue)
-        if task is None:
-            return
-        self._pending_download_queue.remove(task)
-        if task.status == tr("transfer.status_queued", "排队中"):
-            task.status = tr("transfer.status_waiting", "等待中")
-        self.__start_download_thread(task)
-        self.__update_download_table()
+        """填满空闲下载槽位，每次选择最高优先级任务。"""
+        started = False
+        while (
+            self._pending_download_queue
+            and self._active_download_count < self._max_concurrent_downloads
+        ):
+            task = self._pick_next_pending(self._pending_download_queue)
+            if task is None:
+                break
+            self._pending_download_queue.remove(task)
+            if task.status == tr("transfer.status_queued", "排队中"):
+                task.status = tr("transfer.status_waiting", "等待中")
+            self.__start_download_thread(task)
+            started = True
+        if started:
+            self.__update_download_table()
 
     def _process_pending_queues(self):
         """处理两个待处理队列（当并发限制变更时调用）。"""

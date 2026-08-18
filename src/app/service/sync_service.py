@@ -61,6 +61,11 @@ class SyncService:
             return index
 
         for dirpath, dirnames, filenames in os.walk(root):
+            # 不进入符号链接目录，避免同步根目录之外的内容。
+            dirnames[:] = [
+                name for name in dirnames
+                if not (Path(dirpath) / name).is_symlink()
+            ]
             dir_rel = os.path.relpath(dirpath, root)
             dir_rel = "" if dir_rel == "." else dir_rel.replace(os.sep, "/")
 
@@ -80,6 +85,9 @@ class SyncService:
 
             for f in filenames:
                 full = Path(dirpath) / f
+                # 符号链接文件可能指向同步根目录之外，禁止上传其目标内容。
+                if full.is_symlink():
+                    continue
                 rel = f"{dir_rel}/{f}" if dir_rel else f
                 try:
                     st = full.stat()

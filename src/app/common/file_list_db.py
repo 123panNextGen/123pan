@@ -90,7 +90,12 @@ class FileListDB:
     def _cache_get(self, dir_id):
         """读取内存缓存，命中返回 (files, total, all_loaded, updated_at)。"""
         with self._lock:
-            return self._cache.get(dir_id)
+            cached = self._cache.get(dir_id)
+            if cached is not None:
+                # 命中后移到末尾，避免热点目录被 FIFO 淘汰。
+                self._cache.pop(dir_id)
+                self._cache[dir_id] = cached
+            return cached
 
     def _cache_discard(self, dir_id):
         with self._lock:
@@ -181,7 +186,7 @@ class FileListDB:
         )
         with self._lock:
             self._dirty_dirs.discard(key)
-            self._cache[key] = (files, int(total), bool(all_loaded), updated_at)
+        self._cache_put(key, files, int(total), bool(all_loaded), updated_at)
 
     def is_dirty(self, dir_id):
         """检查目录是否需要刷新（手动标记脏）。

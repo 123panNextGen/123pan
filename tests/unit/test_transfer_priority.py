@@ -79,11 +79,16 @@ class TestStartNextPending:
         ) as mock_start, patch.object(
             ti, "_TransferInterface__update_upload_table"
         ):
+            mock_start.side_effect = lambda task: setattr(
+                ti, "_active_upload_count", ti._active_upload_count + 1
+            )
             ti._TransferInterface__start_next_pending_upload()
 
-        mock_start.assert_called_once_with(high)
+        assert [call.args for call in mock_start.call_args_list] == [
+            (high,),
+            (low,),
+        ]
         assert high not in ti._pending_upload_queue
-        assert low in ti._pending_upload_queue
 
     def test_queued_status_set_to_waiting(self, tmp_db):
         ti = TransferInterface()
@@ -101,3 +106,27 @@ class TestStartNextPending:
 
         assert task.status == tr("transfer.status_waiting", "等待中")
         mock_start.assert_called_once_with(task)
+
+    def test_upload_fills_all_available_slots(self, tmp_db):
+        ti = TransferInterface()
+        ti._max_concurrent_uploads = 3
+        tasks = [
+            UploadTask(f"{name}.txt", 1, f"/tmp/{name}", 0)
+            for name in ("a", "b", "c", "d")
+        ]
+        pending = tasks[-1]
+        ti._pending_upload_queue = tasks
+
+        with patch.object(
+            ti, "_TransferInterface__start_upload_thread"
+        ) as mock_start, patch.object(
+            ti, "_TransferInterface__update_upload_table"
+        ):
+            mock_start.side_effect = lambda task: setattr(
+                ti, "_active_upload_count", ti._active_upload_count + 1
+            )
+            ti._TransferInterface__start_next_pending_upload()
+
+        assert mock_start.call_count == 3
+        assert ti._active_upload_count == 3
+        assert ti._pending_upload_queue == [pending]
