@@ -73,6 +73,16 @@ jobs:
             clang \
             ccache
 
+      - name: Install OpenSSL (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          vcpkg install openssl:arm64-windows
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\arm64-windows" >> $env:GITHUB_ENV
+          "OPENSSL_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\arm64-windows\include" >> $env:GITHUB_ENV
+          "OPENSSL_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\arm64-windows\lib" >> $env:GITHUB_ENV
+
       - name: Install dependencies
         env:
           UV_INDEX_URL: https://pypi.org/simple
