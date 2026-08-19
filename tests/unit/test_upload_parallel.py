@@ -184,6 +184,27 @@ class TestUploadParallel:
         assert not any("upload_complete" in u for u in urls)
         assert not any("s3_complete_multipart_upload" in u for u in urls)
 
+    def test_complete_failure_is_not_reported_as_success(self, tmp_path):
+        """服务端合并失败时抛错，不能继续确认上传完成。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = _mock_upload_session()
+        original_post = session.http.post.side_effect
+
+        def _post_side_effect(url, *args, **kwargs):
+            if "s3_complete_multipart_upload" in str(url):
+                return MockResponse({"code": 5001, "message": "merge failed"})
+            return original_post(url, *args, **kwargs)
+
+        session.http.post.side_effect = _post_side_effect
+        svc = UploadService(session)
+
+        with pytest.raises(RuntimeError, match="合并上传分片失败"):
+            svc.up_load(str(f), 0)
+
+        urls = [str(c.args[0]) for c in session.http.post.call_args_list]
+        assert not any("upload_complete" in url for url in urls)
+
 
 class TestFormatSpeed:
     def test_zero_or_negative_is_placeholder(self):

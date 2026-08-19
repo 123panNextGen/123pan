@@ -433,16 +433,23 @@ class UploadService:
             "uploadId": upload_id,
             "storageNode": storage_node,
         }
-        self._session.http.post(
+        parts_res = self._session.http.post(
             "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
             json=uploaded_comp_data,
             timeout=30,
         )
-        self._session.http.post(
+        parts_res_json = parts_res.json()
+        if parts_res_json.get("code", -1) != 0:
+            raise RuntimeError(f"上传分片列表确认失败: {parts_res_json}")
+
+        complete_res = self._session.http.post(
             "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload",
             json=uploaded_comp_data,
             timeout=30,
         )
+        complete_res_json = complete_res.json()
+        if complete_res_json.get("code", -1) != 0:
+            raise RuntimeError(f"合并上传分片失败: {complete_res_json}")
 
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
