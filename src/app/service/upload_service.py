@@ -17,6 +17,8 @@ from ..common.speed_limiter import SpeedLimiter
 
 logger = get_logger(__name__)
 
+_MD5_READ_SIZE = 1024 * 1024
+
 
 class UploadService:
     """上传服务。
@@ -56,13 +58,15 @@ class UploadService:
         fsize = Path(file_path).stat().st_size
         read_total = 0
         last_pct = -1
+        buffer = bytearray(_MD5_READ_SIZE)
+        view = memoryview(buffer)
         with open(file_path, "rb") as f:
             while True:
-                data = f.read(64 * 1024)
-                if not data:
+                read_size = f.readinto(buffer)
+                if not read_size:
                     break
-                md5.update(data)
-                read_total += len(data)
+                md5.update(view[:read_size])
+                read_total += read_size
                 if progress_callback and fsize > 0:
                     pct = min(99, int(read_total * 100 / fsize))
                     if pct != last_pct:

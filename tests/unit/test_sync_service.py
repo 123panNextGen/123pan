@@ -74,6 +74,23 @@ class TestBuildLocalIndex:
         index = svc.build_local_index(str(root))
         assert os.path.isabs(index["a.txt"]["abs"])
 
+    def test_skips_symlinks_outside_sync_root(self, tmp_path):
+        root = _local_root(tmp_path)
+        outside = tmp_path / "outside.txt"
+        outside.write_bytes(b"secret")
+        link = root / "outside.txt"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            import pytest
+
+            pytest.skip("当前文件系统不支持符号链接")
+
+        svc = _make_svc()
+        index = svc.build_local_index(str(root))
+
+        assert "outside.txt" not in index
+
 
 class TestComputeChanges:
     def test_first_sync_uploads_all_new(self, tmp_db, tmp_path):

@@ -13,8 +13,13 @@ the Free Software Foundation, either version 3 of the License, or
 - pan.delete_file 必须透传 parent_file_id，使目录缓存失效
 """
 
-from src.app.tasks.file_tasks import BatchDeleteTask, DeleteFileTask
-from src.app.tasks.signals import _OpFinishedSignals
+from src.app.tasks.file_tasks import (
+    BatchDeleteTask,
+    DeleteFileTask,
+    LoadFolderListTask,
+    RestoreTrashTask,
+)
+from src.app.tasks.signals import _FolderListSignals, _OpFinishedSignals, _TrashOpSignals
 
 
 class _MockPan:
@@ -147,3 +152,54 @@ class TestBatchDeleteTask:
         assert all(kwargs["parent_file_id"] == 10 for _, kwargs in pan.delete_calls)
         # 完成后强制刷新
         assert fi.reload_calls == [(10, True)]
+
+
+class TestBackgroundFileTasks:
+    def test_folder_loader_does_not_mutate_pan_browse_state(self):
+        """目录树后台加载必须不影响当前文件列表的分页状态。"""
+        pan = _MockPan([])
+        pan.file_page = 7
+        pan.total = 42
+        pan.all_file = True
+        pan.get_dir_by_id = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("目录树加载不应调用有状态 Pan123.get_dir_by_id")
+        )
+        pan._file = type("FileService", (), {
+            "get_dir_by_id": lambda _, *args, **kwargs: (
+                0,
+                [{"FileId": 1, "Type": 1}, {"FileId": 2, "Type": 0}],
+                2,
+                True,
+                1,
+            )
+        })()
+        signals = _FolderListSignals()
+        result = {}
+        signals.finished.connect(
+            lambda dir_id, folders, error: result.update(
+                dir_id=dir_id, folders=folders, error=error
+            )
+        )
+
+        LoadFolderListTask(pan, 10, signals).run()
+
+        assert result["dir_id"] == 10
+        assert result["folders"] == [{"FileId": 1, "Type": 1}]
+        assert result["error"] == ""
+        assert (pan.file_page, pan.total, pan.all_file) == (7, 42, True)
+
+    def test_restore_trash_reports_service_failure(self):
+        """回收站恢复接口失败时不得误报成功。"""
+        pan = _MockPan([])
+        pan._file = type("FileService", (), {
+            "delete_file": lambda *args, **kwargs: (False, "文件不存在")
+        })()
+        signals = _TrashOpSignals()
+        result = {}
+        signals.finished.connect(
+            lambda success, message: result.update(success=success, message=message)
+        )
+
+        RestoreTrashTask(pan, [{"FileId": 1}], [{"FileId": 1}], signals).run()
+
+        assert result == {"success": False, "message": "文件不存在"}

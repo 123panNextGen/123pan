@@ -200,25 +200,16 @@ class LoadFolderListTask(QRunnable):
 
     def run(self):
         try:
-            cached_state = (
-                self.pan.file_page,
-                self.pan.total,
-                self.pan.all_file,
+            code, items, _, _, _ = self.pan._file.get_dir_by_id(
+                self.dir_id, all=True, limit=100
             )
-            self.pan.file_page = 0
-            try:
-                code, items = self.pan.get_dir_by_id(
-                    self.dir_id, save=False, all=True, limit=100
-                )
-                if code != 0:
-                    self.signals.finished.emit(self.dir_id, [], "获取目录失败")
-                    return
-                folders = [
-                    i for i in items if int(i.get("Type", 0)) == 1
-                ]
-                self.signals.finished.emit(self.dir_id, folders, "")
-            finally:
-                self.pan.file_page, self.pan.total, self.pan.all_file = cached_state
+            if code != 0:
+                self.signals.finished.emit(self.dir_id, [], "获取目录失败")
+                return
+            folders = [
+                item for item in items if int(item.get("Type", 0)) == 1
+            ]
+            self.signals.finished.emit(self.dir_id, folders, "")
         except Exception as e:
             logger.error("加载目录失败: dir_id=%s, err=%s", self.dir_id, e)
             self.signals.finished.emit(self.dir_id, [], str(e))
@@ -342,14 +333,19 @@ class RestoreTrashTask(QRunnable):
         self.signals = signals
 
     def run(self):
+        restored = 0
         try:
             for file_info in self.selected:
-                self.pan._file.delete_file(
+                success, message = self.pan._file.delete_file(
                     self.trash_items, file_info, by_num=False, operation=False
                 )
+                if not success:
+                    self.signals.finished.emit(False, message or "恢复文件失败")
+                    return
+                restored += 1
             self.signals.finished.emit(True, "")
         except Exception as e:
-            logger.error("恢复文件失败: %s", e)
+            logger.error("恢复文件失败（已恢复 %d 个）: %s", restored, e)
             self.signals.finished.emit(False, str(e))
 
 
@@ -426,11 +422,10 @@ class CreateFolderTask(QRunnable):
         self._fi = file_interface
 
     def run(self):
+        current_parent_id = self.pan.parent_file_id
         try:
-            current_parent_id = self.pan.parent_file_id
             self.pan.parent_file_id = self.current_dir_id
             result = self.pan.mkdir(self.folder_name)
-            self.pan.parent_file_id = current_parent_id
 
             if result:
                 items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
@@ -439,6 +434,8 @@ class CreateFolderTask(QRunnable):
                 self.signals.finished.emit(False, self.folder_name, "", "", [], [])
         except Exception as e:
             self.signals.finished.emit(False, self.folder_name, "", str(e), [], [])
+        finally:
+            self.pan.parent_file_id = current_parent_id
 
 
 class DeleteFileTask(QRunnable):

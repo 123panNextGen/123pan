@@ -143,8 +143,6 @@ class UploadThread(QThread):
             ul_threads = ConfigManager.get_setting("uploadThreadCount", 1)
             logger.debug("上传分片线程数: %d", ul_threads)
 
-            current_parent_id = self.pan.parent_file_id
-            self.pan.parent_file_id = self.task.target_dir_id
             logger.debug("上传目标目录: %s", self.task.target_dir_id)
 
             # 断点续传：从持久化任务读取 S3 会话信息
@@ -209,8 +207,6 @@ class UploadThread(QThread):
                 validation_callback=_on_validation,
             )
             elapsed = time.monotonic() - t0
-
-            self.pan.parent_file_id = current_parent_id
 
             if self._cancelled:
                 self.task.speed = 0.0

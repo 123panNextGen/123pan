@@ -43,6 +43,19 @@ class TestFileListDB:
         assert files[0]["FileId"] == 1
         assert total == 1
 
+    def test_cache_hit_refreshes_lru_order(self, tmp_db, monkeypatch):
+        import src.app.common.file_list_db as fldb_mod
+
+        monkeypatch.setattr(fldb_mod, "_CACHE_MAX_ENTRIES", 2)
+        db = FileListDB()
+        db._cache.clear()
+        db.save_dir(1, [_file(1)])
+        db.save_dir(2, [_file(2)])
+        db.get_dir(1)
+        db.save_dir(3, [_file(3)])
+
+        assert list(db._cache) == ["1", "3"]
+
     def test_is_stale(self, tmp_db):
         from datetime import datetime, timedelta, timezone
 

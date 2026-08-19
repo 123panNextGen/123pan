@@ -335,6 +335,10 @@ class DownloadEngine:
                                         last_report_ts = now_ts
 
                 elapsed = time.monotonic() - t0
+                if downloaded != file_size:
+                    raise RuntimeError(
+                        f"下载大小不匹配: expected={file_size}, got={downloaded}"
+                    )
                 logger.info(
                     "单线程下载完成: %s (%.2f MB / %.1fs)",
                     file_path.name,
@@ -483,6 +487,12 @@ class DownloadEngine:
                                         if now - last_report[0] >= 0.1:
                                             _report_progress()
                                             last_report[0] = now
+                    expected_size = end - start + 1
+                    if chunk_downloaded != expected_size:
+                        raise RuntimeError(
+                            f"分片大小不匹配: expected={expected_size}, "
+                            f"got={chunk_downloaded}"
+                        )
                     return True
                 except DownloadCancelledError:
                     raise
