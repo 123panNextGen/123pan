@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 from pathlib import Path
+import sys
 
 from PySide6.QtCore import Qt, QThreadPool, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -362,6 +363,8 @@ class SettingInterface(ScrollArea):
             ConfigManager.get_setting("windowOpacity", 100),
             self.personalGroup,
         )
+        if sys.platform == "linux":
+            self.opacityCard.setEnabled(False)
 
         self.languageCard = _ComboCard(
             FIF.LANGUAGE,

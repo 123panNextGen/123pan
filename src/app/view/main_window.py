@@ -59,9 +59,9 @@ class MainWindow(FluentWindow):
         if sys.platform != "win32":
             self.setMicaEffectEnabled(False)
 
-        # 应用窗口透明度设置（100% 时不调用 setWindowOpacity，避免 Linux 平台无合成器警告）
+        # Linux 平台的 Qt 窗口插件可能不支持窗口透明度，避免触发插件警告。
         opacity = ConfigManager.get_setting("windowOpacity", 100)
-        if opacity < 100:
+        if sys.platform != "linux" and opacity < 100:
             self.set_window_opacity(opacity)
 
         self.pan = None
@@ -264,6 +264,8 @@ class MainWindow(FluentWindow):
             opacity_pct: 透明度百分比 (30-100)，100 为完全不透明。
         """
         opacity_pct = max(30, min(100, opacity_pct))
+        if sys.platform == "linux":
+            return
         self.setWindowOpacity(opacity_pct / 100.0)
         logger.debug("窗口透明度设置为: %d%%", opacity_pct)
 
