@@ -43,7 +43,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "cryptography", specifier = ">=46.0.2" },
     { name = "pyside6", specifier = ">=6.10" },
     { name = "pyside6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "qrcode", extras = ["pil"], specifier = ">=8.2" },
