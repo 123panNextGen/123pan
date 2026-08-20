@@ -15,7 +15,8 @@ import sys
 
 from qfluentwidgets import (
     NavigationItemPosition,
-    FluentWindow
+    FluentWindow,
+    FluentIcon as FIF,
 )
 from .file_interface import FileInterface
 from .login_window import LoginDialog
