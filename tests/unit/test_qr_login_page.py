@@ -85,6 +85,21 @@ class TestQRLoginPage:
         )
         stale_pan.close.assert_called_once()
 
+    def test_qr_generated_loads_pixmap(self):
+        page = self._make_page()
+        pan_temp = MagicMock()
+        page._on_qr_generated(
+            page._qr_flow_id,
+            {
+                "_pan_temp": pan_temp,
+                "uniID": "test-uni",
+                "url": "https://login.123pan.com/qr/test",
+            },
+        )
+        assert not page.qr_label.pixmap().isNull()
+        assert page.poll_timer.isActive()
+        page.stop_polling()
+
     def test_poll_error_consecutive_stops(self):
         page = self._make_page()
         page.poll_timer.start(1000)

@@ -15,6 +15,7 @@ import sys
 
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from qfluentwidgets import (
     FluentTranslator,
     Theme,
@@ -54,6 +55,7 @@ def main():
     )
     app = QtWidgets.QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
+    app.setWindowIcon(QIcon(":/123pan/logo.ico"))
 
     # 限制 Qt 全局像素图缓存（图标/图片缩放等），降低内存占用
     # 默认 20MB，图标通常很小，10MB 足够且可避免缓存无限膨胀

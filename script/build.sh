@@ -37,12 +37,16 @@ case "$(uname -s)" in
     ;;
   Darwin)
     OUT_NAME=123pan
-    EXTRA_ARGS=(--macos-create-app-bundle)
+    EXTRA_ARGS=(
+      --macos-create-app-bundle
+      --macos-app-icon="$project/logo.ico"
+    )
     ;;
   MINGW*|MSYS*|CYGWIN*)
     OUT_NAME=123pan.exe
     EXTRA_ARGS=(
       --windows-console-mode=disable
+      --windows-icon-from-ico="$project/logo.ico"
       --msvc=latest
       --static-libpython=no
     )
