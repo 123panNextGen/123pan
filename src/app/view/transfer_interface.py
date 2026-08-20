@@ -409,7 +409,7 @@ class TransferInterface(QWidget, TransferTableMixin):
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
         )
-        thread.finished.connect(
+        thread.completed.connect(
             lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
         )
         thread.error.connect(
@@ -484,7 +484,7 @@ class TransferInterface(QWidget, TransferTableMixin):
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
         )
-        thread.finished.connect(
+        thread.completed.connect(
             lambda t=task, th=thread: self.__on_thread_finished(t, th, "download")
         )
         thread.error.connect(
@@ -610,8 +610,8 @@ class TransferInterface(QWidget, TransferTableMixin):
         except TypeError:
             pass
         try:
-            thread.finished.disconnect()
-        except TypeError:
+            thread.completed.disconnect()
+        except (TypeError, RuntimeError):
             pass
         try:
             thread.error.disconnect()

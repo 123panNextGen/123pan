@@ -89,7 +89,7 @@ class UploadThread(QThread):
     # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
     progress_updated = Signal(int, float)
     status_updated = Signal(str)
-    finished = Signal()
+    completed = Signal()
     error = Signal(str)
 
     def __init__(self, task, pan):
@@ -216,7 +216,7 @@ class UploadThread(QThread):
             self.task.speed = 0.0
             self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-            self.finished.emit()
+            self.completed.emit()
             logger.info("上传完成: %s (%.1fs)", self.task.file_name, elapsed)
         except Exception as e:
             logger.error("上传失败: %s: %s", self.task.file_name, e)
@@ -230,7 +230,7 @@ class DownloadThread(QThread):
     # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
     progress_updated = Signal(int, float)
     status_updated = Signal(str)
-    finished = Signal()
+    completed = Signal()
     error = Signal(str)
 
     def __init__(self, task, pan):
@@ -355,7 +355,7 @@ class DownloadThread(QThread):
                     self.task.speed = 0.0
                     self.progress_updated.emit(100, 0.0)
                     self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-                    self.finished.emit()
+                    self.completed.emit()
                     return
 
             t0 = time.monotonic()
@@ -381,7 +381,7 @@ class DownloadThread(QThread):
             self.task.speed = 0.0
             self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-            self.finished.emit()
+            self.completed.emit()
             speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
             logger.info(
                 "下载完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
