@@ -58,6 +58,15 @@ class TestFolderSelectDialogSingle:
         assert dialog.selected_dir_id() == 0
         assert dialog.btn_ok.isEnabled()
 
+    def test_parent_dir_is_selectable(self, qapp, no_background):
+        dialog = FolderSelectDialog(
+            pan=MagicMock(), parent_dir=(12, "父目录")
+        )
+        parent = dialog._tree.topLevelItem(0)
+        dialog._tree.itemClicked.emit(parent, 0)
+        assert dialog.selected_dir_id() == 12
+        assert dialog.selected_dir_name() == "父目录"
+
 
 class TestFolderSelectDialogMulti:
     """多选模式（复制使用）：复选框勾选收集目标目录。"""
