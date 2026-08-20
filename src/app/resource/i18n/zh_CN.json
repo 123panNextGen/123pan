@@ -192,7 +192,7 @@
     "settings.download_threads": "下载线程数",
     "settings.download_threads_desc": "每个下载任务使用的分片线程数（1-16）",
     "settings.upload_threads": "上传线程数",
-    "settings.upload_threads_desc": "每个上传任务并行上传的分片数（1-16）",
+    "settings.upload_threads_desc": "每个上传任务并行上传的分片数（1-4）",
     "settings.dl_speed_limit": "下载限速",
     "settings.dl_speed_desc": "限制下载速度，0 表示不限制",
     "settings.ul_speed_limit": "上传限速",

@@ -34,6 +34,20 @@ class TestComputeFileMd5Progress:
         # 单调不减
         assert all(a <= b for a, b in zip(percents, percents[1:]))
 
+    def test_md5_cancel_stops_reading(self, tmp_path):
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * (1024 * 1024 * 4))
+        checks = []
+
+        result = UploadService.compute_file_md5(
+            str(f),
+            progress_callback=lambda percent: checks.append(percent),
+            cancel_check=lambda: bool(checks),
+        )
+
+        assert result is None
+        assert checks
+
     def test_progress_callback_not_spammy(self, tmp_path):
         """同一百分比只回调一次（避免高频信号）。"""
         svc = UploadService(MagicMock())

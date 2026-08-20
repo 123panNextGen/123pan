@@ -241,11 +241,11 @@ class SettingInterface(ScrollArea):
         self.uploadThreadCountCard = _SpinBoxCard(
             FIF.SPEED_HIGH,
             tr("settings.upload_threads", "上传线程数"),
-            tr("settings.upload_threads_desc", "每个上传任务并行上传的分片数（1=顺序上传）"),
+            tr("settings.upload_threads_desc", "每个上传任务并行上传的分片数（1-4）"),
             ConfigManager.get_setting("uploadThreadCount", 1),
             self.downloadGroup,
             min_val=1,
-            max_val=16,
+            max_val=4,
             step=1,
         )
 

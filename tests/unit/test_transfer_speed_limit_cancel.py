@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication
 from src.app.api.download_engine import DownloadCancelledError
 from src.app.api.session import NetSession
 from src.app.service.upload_service import UploadService
-from src.app.tasks.transfer_tasks import DownloadThread, UploadThread
+from src.app.tasks.transfer_tasks import DownloadThread, UploadTask, UploadThread
 
 _app = QApplication.instance() or QApplication([])
 
@@ -293,6 +293,11 @@ class TestTransferThreadControls:
         assert th.is_cancelled is False
         th.cancel()
         assert th.is_cancelled is True
+
+    def test_upload_speed_has_start_time(self):
+        task = UploadTask("a.txt", 10, "/tmp/a.txt", 0)
+        thread = UploadThread(task, MagicMock())
+        assert thread._speed_ts is not None
 
     def test_upload_thread_wait_if_paused(self):
         th, _, _ = self._upload_thread()
