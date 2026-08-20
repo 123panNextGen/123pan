@@ -12,6 +12,7 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 from PySide6.QtWidgets import QApplication
 
 from src.app.common.utils import format_speed
@@ -184,6 +185,24 @@ class TestUploadParallel:
         assert not any("upload_complete" in u for u in urls)
         assert not any("s3_complete_multipart_upload" in u for u in urls)
 
+    def test_upload_retries_transient_write_timeout(self, tmp_path):
+        """分片写超时后重试，成功后继续完成上传。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = _mock_upload_session()
+        session.transfer.put.side_effect = [
+            requests.exceptions.ConnectionError(
+                "Connection aborted: write timeout"
+            ),
+            None,
+        ]
+        svc = UploadService(session)
+
+        result = svc.up_load(str(f), 0)
+
+        assert result == 7
+        assert session.transfer.put.call_count == 2
+
     def test_complete_failure_is_not_reported_as_success(self, tmp_path):
         """服务端合并失败时抛错，不能继续确认上传完成。"""
         f = tmp_path / "f.bin"
@@ -277,6 +296,27 @@ class TestThreadCountPlumbing:
 
         kwargs = pan.up_load.call_args.kwargs
         assert kwargs.get("num_threads") == 3
+
+    def test_upload_thread_caps_config_thread_count(self, tmp_db):
+        """旧配置超过上限时，上传线程数最多为 4。"""
+        from src.app.common.config import ConfigManager
+        from src.app.tasks.transfer_tasks import UploadThread
+
+        ConfigManager.set_setting("uploadThreadCount", 16)
+        task = MagicMock()
+        task.file_name = "f.bin"
+        task.file_size = BLOCK
+        task.local_path = "/tmp/f.bin"
+        task.target_dir_id = 0
+        task.task_id = None
+        task.speed = 0.0
+        pan = MagicMock()
+
+        th = UploadThread(task, pan)
+        th.start()
+        th.wait(3000)
+
+        assert pan.up_load.call_args.kwargs.get("num_threads") == 4
 
     def test_download_thread_applies_config_thread_count(self, tmp_db):
         """DownloadThread 启动时读取 downloadThreadCount 并应用。"""

@@ -30,19 +30,32 @@ else
   JOBS=4
 fi
 
-if [ "$(uname -s)" = "Linux" ]; then
-  OUT_NAME=123pan
-  EXTRA_ARGS=(
-    --clang
-  )
-else
-  OUT_NAME=123pan.exe
-  EXTRA_ARGS=(
-    --windows-console-mode=disable
-    --msvc=latest
-    --static-libpython=no
-  )
-fi
+case "$(uname -s)" in
+  Linux)
+    OUT_NAME=123pan
+    EXTRA_ARGS=(--clang)
+    ;;
+  Darwin)
+    OUT_NAME=123pan
+    EXTRA_ARGS=(
+      --macos-create-app-bundle
+      --macos-app-icon="$project/logo.ico"
+    )
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    OUT_NAME=123pan.exe
+    EXTRA_ARGS=(
+      --windows-console-mode=disable
+      --windows-icon-from-ico="$project/logo.ico"
+      --msvc=latest
+      --static-libpython=no
+    )
+    ;;
+  *)
+    echo "不支持的构建平台: $(uname -s)" >&2
+    exit 1
+    ;;
+esac
 
 NOFOLLOW=(
   pytest unittest pdb doctest test

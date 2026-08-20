@@ -573,6 +573,7 @@ class FileActionsMixin:
             parent=self,
             multi_select=True,
             title=tr("file.copy_title", "选择目标文件夹（可多选）"),
+            parent_dir=self.path_stack[-2] if len(self.path_stack) > 1 else None,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -654,7 +655,10 @@ class FileActionsMixin:
 
         # 不能移动到当前目录自身
         dialog = FolderSelectDialog(
-            self.pan, exclude_dir_ids=(self.current_dir_id,), parent=self
+            self.pan,
+            exclude_dir_ids=(self.current_dir_id,),
+            parent=self,
+            parent_dir=self.path_stack[-2] if len(self.path_stack) > 1 else None,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

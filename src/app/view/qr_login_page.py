@@ -163,7 +163,7 @@ class QRLoginPage(QWidget):
         try:
             qr_img = qrcode.make(qr_content, box_size=5, border=2)
             buf = io.BytesIO()
-            qr_img.save(buf, format="PNG")
+            qr_img.get_image().convert("RGBA").save(buf, format="PNG")
             pixmap = QPixmap()
             if not pixmap.loadFromData(buf.getvalue()):
                 raise RuntimeError("二维码图片加载失败")

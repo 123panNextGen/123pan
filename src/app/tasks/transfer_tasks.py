@@ -37,8 +37,8 @@ def _measure_speed(speed_ts, speed_bytes, current_speed, bytes_done):
     if speed_ts is None:
         return 0.0, now, bytes_done
     dt = now - speed_ts
-    if dt >= 0.5:
-        speed = (bytes_done - speed_bytes) / dt
+    if dt >= 0.5 or (speed_bytes == 0 and bytes_done > 0):
+        speed = (bytes_done - speed_bytes) / max(dt, 0.001)
         return max(speed, 0.0), now, bytes_done
     return current_speed, speed_ts, speed_bytes
 
@@ -89,7 +89,7 @@ class UploadThread(QThread):
     # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
     progress_updated = Signal(int, float)
     status_updated = Signal(str)
-    finished = Signal()
+    completed = Signal()
     error = Signal(str)
 
     def __init__(self, task, pan):
@@ -100,7 +100,7 @@ class UploadThread(QThread):
         self._pause_event.set()  # 初始状态：不暂停
         self._cancelled = False
         # 速度测量状态
-        self._speed_ts = None
+        self._speed_ts = time.monotonic()
         self._speed_bytes = 0
 
     @property
@@ -131,7 +131,6 @@ class UploadThread(QThread):
     def run(self):
         try:
             self._pause_event.wait()  # 检查是否立即暂停
-            self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
             logger.info(
                 "上传线程启动: %s (%.2f MB)",
                 self.task.file_name,
@@ -140,7 +139,9 @@ class UploadThread(QThread):
 
             ul_limit = ConfigManager.get_setting("uploadSpeedLimit", 0)
             self.pan.set_upload_speed_limit(ul_limit)
-            ul_threads = ConfigManager.get_setting("uploadThreadCount", 1)
+            ul_threads = max(
+                1, min(int(ConfigManager.get_setting("uploadThreadCount", 1)), 4)
+            )
             logger.debug("上传分片线程数: %d", ul_threads)
 
             logger.debug("上传目标目录: %s", self.task.target_dir_id)
@@ -187,6 +188,7 @@ class UploadThread(QThread):
                 """MD5 校验进度回调：显示 '校验中 xx%'，完成后切回上传中。"""
                 if self._cancelled:
                     return
+                self.progress_updated.emit(percent, 0.0)
                 if percent >= 100:
                     self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
                 else:
@@ -216,7 +218,7 @@ class UploadThread(QThread):
             self.task.speed = 0.0
             self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-            self.finished.emit()
+            self.completed.emit()
             logger.info("上传完成: %s (%.1fs)", self.task.file_name, elapsed)
         except Exception as e:
             logger.error("上传失败: %s: %s", self.task.file_name, e)
@@ -230,7 +232,7 @@ class DownloadThread(QThread):
     # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
     progress_updated = Signal(int, float)
     status_updated = Signal(str)
-    finished = Signal()
+    completed = Signal()
     error = Signal(str)
 
     def __init__(self, task, pan):
@@ -355,7 +357,7 @@ class DownloadThread(QThread):
                     self.task.speed = 0.0
                     self.progress_updated.emit(100, 0.0)
                     self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-                    self.finished.emit()
+                    self.completed.emit()
                     return
 
             t0 = time.monotonic()
@@ -381,7 +383,7 @@ class DownloadThread(QThread):
             self.task.speed = 0.0
             self.progress_updated.emit(100, 0.0)
             self.status_updated.emit(tr("transfer.status_completed", "已完成"))
-            self.finished.emit()
+            self.completed.emit()
             speed = file_size / 1024 / 1024 / elapsed if elapsed > 0 else 0
             logger.info(
                 "下载完成: %s (%.2f MB / %.1fs / %.1f MB/s)",

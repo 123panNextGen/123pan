@@ -43,7 +43,15 @@ class FolderSelectDialog(QDialog):
     通过 Pan123 门面加载目录列表，遵循 View 层不直接访问 NetSession 的约束。
     """
 
-    def __init__(self, pan, exclude_dir_ids=(), parent=None, multi_select=False, title=None):
+    def __init__(
+        self,
+        pan,
+        exclude_dir_ids=(),
+        parent=None,
+        multi_select=False,
+        title=None,
+        parent_dir=None,
+    ):
         super().__init__(parent)
         self._pan = pan
         self._exclude_dir_ids = set(int(x) for x in exclude_dir_ids)
@@ -78,6 +86,7 @@ class FolderSelectDialog(QDialog):
         layout.addWidget(self._tree)
 
         # 根目录
+        self.__build_parent(parent_dir)
         self.__build_root()
 
         h = QHBoxLayout()
@@ -101,6 +110,25 @@ class FolderSelectDialog(QDialog):
         self._tree.addTopLevelItem(root)
         self.__add_placeholder(root)
         self._tree.expandItem(root)
+
+    def __build_parent(self, parent_dir):
+        """在目录树顶部提供当前目录的直接上级目录。"""
+        if not parent_dir:
+            return
+        dir_id, dir_name = parent_dir
+        if (
+            dir_id is None
+            or int(dir_id) == 0
+            or int(dir_id) in self._exclude_dir_ids
+        ):
+            return
+        item = QTreeWidgetItem([dir_name or tr("file.parent_dir", "上级目录")])
+        item.setIcon(0, _folder_icon())
+        item.setData(0, Qt.ItemDataRole.UserRole, int(dir_id))
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+        if self._multi_select:
+            self.__set_checkable(item)
+        self._tree.addTopLevelItem(item)
 
     @staticmethod
     def __add_placeholder(parent_item):

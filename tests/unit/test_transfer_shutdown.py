@@ -43,8 +43,8 @@ class TestShutdown:
 
         up.cancel.assert_called_once_with()
         dl.cancel.assert_called_once_with()
-        up.wait.assert_called_once_with(5000)
-        dl.wait.assert_called_once_with(5000)
+        up.wait.assert_called_once_with(15000)
+        dl.wait.assert_called_once_with(15000)
         assert ti.upload_threads == []
         assert ti.download_threads == []
 

@@ -39,6 +39,12 @@ jobs:
           - os: ubuntu-24.04-arm
             arch: arm64
             python_arch: arm64
+          - os: macos-26-intel
+            arch: x64
+            python_arch: x64
+          - os: macos-26
+            arch: arm64
+            python_arch: arm64
 
     steps:
       - name: Checkout repository
@@ -128,6 +134,18 @@ jobs:
           name: 123pan-linux-${{ matrix.arch }}
           path: 123pan-linux-${{ matrix.arch }}.zip
 
+      - name: Package macOS build
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent 123pan.app "123pan-macos-${{ matrix.arch }}.zip"
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: 123pan-macos-${{ matrix.arch }}
+          path: 123pan-macos-${{ matrix.arch }}.zip
+
   release:
     name: Create GitHub Release
     needs: build
@@ -160,6 +178,18 @@ jobs:
           name: 123pan-linux-arm64
           path: ./artifacts/linux-arm64
 
+      - name: Download macOS x64 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: 123pan-macos-x64
+          path: ./artifacts/macos-x64
+
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: 123pan-macos-arm64
+          path: ./artifacts/macos-arm64
+
       - name: Set version for manual trigger
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -178,6 +208,8 @@ jobs:
           files: |
             ./artifacts/windows-x64/123pan-windows-x64.zip
             ./artifacts/windows-arm64/123pan-windows-arm64.zip
+            ./artifacts/macos-x64/123pan-macos-x64.zip
+            ./artifacts/macos-arm64/123pan-macos-arm64.zip
             ./artifacts/linux-x64/123pan-linux-x64.zip
             ./artifacts/linux-arm64/123pan-linux-arm64.zip
           prerelease: ${{ github.event.inputs.prerelease || false }}

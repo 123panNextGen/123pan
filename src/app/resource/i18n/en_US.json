@@ -192,7 +192,7 @@
     "settings.download_threads": "Download Threads",
     "settings.download_threads_desc": "Number of chunk threads per download task (1-16)",
     "settings.upload_threads": "Upload Threads",
-    "settings.upload_threads_desc": "Number of parallel chunk uploads per upload task (1-16)",
+    "settings.upload_threads_desc": "Number of parallel chunk uploads per upload task (1-4)",
     "settings.dl_speed_limit": "Download Speed Limit",
     "settings.dl_speed_desc": "Limit download speed, 0 means unlimited",
     "settings.ul_speed_limit": "Upload Speed Limit",

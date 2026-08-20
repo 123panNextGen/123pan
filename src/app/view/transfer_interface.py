@@ -56,6 +56,7 @@ logger = get_logger(__name__)
 
 # 默认最大并发传输数
 _DEFAULT_MAX_CONCURRENT = 3
+_THREAD_CANCEL_WAIT_MS = 15000
 
 
 class TransferInterface(QWidget, TransferTableMixin):
@@ -138,7 +139,7 @@ class TransferInterface(QWidget, TransferTableMixin):
         # 3. 等待线程真正结束（超时兜底，避免卡死退出）
         for thread in threads:
             if thread.isRunning():
-                thread.wait(5000)
+                thread.wait(_THREAD_CANCEL_WAIT_MS)
         self.upload_threads.clear()
         self.download_threads.clear()
 
@@ -401,6 +402,10 @@ class TransferInterface(QWidget, TransferTableMixin):
     def __start_upload_thread(self, task):
         """启动单个上传线程。"""
         thread = UploadThread(task, self.pan)
+        # MD5 校验可能耗时，启动线程前先给出明确的非空状态和初始进度。
+        task.status = tr("transfer.status_validating", "校验中") + " 0%"
+        task.progress = 0
+        self.__update_upload_table()
         thread.progress_updated.connect(
             lambda progress, speed, t=task: self.__update_task_progress(
                 t, progress, speed
@@ -409,7 +414,7 @@ class TransferInterface(QWidget, TransferTableMixin):
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
         )
-        thread.finished.connect(
+        thread.completed.connect(
             lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
         )
         thread.error.connect(
@@ -484,7 +489,7 @@ class TransferInterface(QWidget, TransferTableMixin):
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
         )
-        thread.finished.connect(
+        thread.completed.connect(
             lambda t=task, th=thread: self.__on_thread_finished(t, th, "download")
         )
         thread.error.connect(
@@ -610,8 +615,8 @@ class TransferInterface(QWidget, TransferTableMixin):
         except TypeError:
             pass
         try:
-            thread.finished.disconnect()
-        except TypeError:
+            thread.completed.disconnect()
+        except (TypeError, RuntimeError):
             pass
         try:
             thread.error.disconnect()
@@ -622,7 +627,7 @@ class TransferInterface(QWidget, TransferTableMixin):
             thread_list.remove(thread)
         if not thread.isFinished():
             thread.quit()
-            thread.wait(3000)
+            thread.wait(_THREAD_CANCEL_WAIT_MS)
 
     def __clearCompletedTasks(self):
         """清除所有已完成/已取消/失败的任务"""
@@ -717,6 +722,7 @@ class TransferInterface(QWidget, TransferTableMixin):
                 thread_found = False
                 for t in list(self.upload_threads):
                     if t.task is task:
+                        t.cancel()
                         self.__cleanup_thread(t, "upload")
                         self._active_upload_count -= 1
                         thread_found = True
@@ -734,6 +740,7 @@ class TransferInterface(QWidget, TransferTableMixin):
                 thread_found = False
                 for t in list(self.download_threads):
                     if t.task is task:
+                        t.cancel()
                         self.__cleanup_thread(t, "download")
                         self._active_download_count -= 1
                         thread_found = True

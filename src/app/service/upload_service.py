@@ -12,12 +12,18 @@ import hashlib
 import time
 from pathlib import Path
 
+import requests
+
 from ..common.log import get_logger
 from ..common.speed_limiter import SpeedLimiter
 
 logger = get_logger(__name__)
 
 _MD5_READ_SIZE = 1024 * 1024
+_UPLOAD_REQUEST_TIMEOUT = 15
+_UPLOAD_PART_TIMEOUT = 120
+_UPLOAD_PART_RETRIES = 5
+_MAX_UPLOAD_THREADS = 4
 
 
 class UploadService:
@@ -30,6 +36,7 @@ class UploadService:
         self._session = session
         # 上传限速器由本服务持有并消费（下载限速器由 session 持有）
         self._limiter = None
+        self._upload_speed_limit_kbps = 0
 
     def set_upload_speed_limit(self, kbps: int):
         """设置上传速度限制（KB/s），0 为不限速。
@@ -39,11 +46,13 @@ class UploadService:
         """
         if kbps > 0:
             self._limiter = SpeedLimiter(kbps)
+            self._upload_speed_limit_kbps = kbps
         else:
             self._limiter = None
+            self._upload_speed_limit_kbps = 0
 
     @staticmethod
-    def compute_file_md5(file_path, progress_callback=None):
+    def compute_file_md5(file_path, progress_callback=None, cancel_check=None):
         """计算文件MD5值。
 
         Args:
@@ -62,6 +71,8 @@ class UploadService:
         view = memoryview(buffer)
         with open(file_path, "rb") as f:
             while True:
+                if cancel_check and cancel_check():
+                    return None
                 read_size = f.readinto(buffer)
                 if not read_size:
                     break
@@ -115,7 +126,7 @@ class UploadService:
         get_link_res = self._session.http.post(
             "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
             json=get_link_data,
-            timeout=30,
+            timeout=_UPLOAD_REQUEST_TIMEOUT,
         )
         get_link_res_json = get_link_res.json()
         res_code_up = get_link_res_json.get("code", -1)
@@ -141,6 +152,45 @@ class UploadService:
             raise RuntimeError(f"获取分片 {part_number} 预签名 URL 失败")
         return urls[part_number]
 
+    def _put_part_with_retry(self, upload_url, data, task=None):
+        """上传分片并重试临时网络错误。"""
+        last_error = None
+        timeout = _UPLOAD_PART_TIMEOUT
+        if self._upload_speed_limit_kbps > 0:
+            limited_seconds = len(data) / (self._upload_speed_limit_kbps * 1024)
+            timeout = max(timeout, int(limited_seconds * 3))
+        for attempt in range(1, _UPLOAD_PART_RETRIES + 1):
+            if task and task.is_cancelled:
+                return False
+            try:
+                self._session.transfer.put(
+                    upload_url, data=data, timeout=timeout
+                )
+                return True
+            except (
+                requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+                TimeoutError,
+                ConnectionError,
+            ) as error:
+                last_error = error
+                if attempt == _UPLOAD_PART_RETRIES:
+                    break
+                delay = min(2 ** (attempt - 1), 4)
+                logger.warning(
+                    "上传分片网络异常，第 %d/%d 次重试，等待 %ds: %s",
+                    attempt,
+                    _UPLOAD_PART_RETRIES,
+                    delay,
+                    error,
+                )
+                deadline = time.monotonic() + delay
+                while time.monotonic() < deadline:
+                    if task and task.is_cancelled:
+                        return False
+                    time.sleep(min(0.1, deadline - time.monotonic()))
+        raise last_error
+
     def up_load(
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
         resume_info=None, session_callback=None, num_threads=1,
@@ -165,6 +215,7 @@ class UploadService:
             str: "已取消" 如果被取消
         """
         file_path = file_path.replace('"', "").replace("\\", "/")
+        num_threads = max(1, min(int(num_threads), _MAX_UPLOAD_THREADS))
         file_path_obj = Path(file_path)
         file_name = file_path_obj.name
         if not file_path_obj.exists():
@@ -195,8 +246,12 @@ class UploadService:
             logger.info("上传断点续传: %s (upload_id=%s)", file_name, upload_id)
         else:
             readable_hash = self.compute_file_md5(
-                file_path, progress_callback=validation_callback
+                file_path,
+                progress_callback=validation_callback,
+                cancel_check=lambda: bool(task and task.is_cancelled),
             )
+            if readable_hash is None:
+                return "已取消"
             logger.debug("文件 MD5 计算完成: %s", readable_hash)
 
             list_up_request = {
@@ -212,7 +267,7 @@ class UploadService:
             up_res = self._session.http.post(
                 "https://www.123pan.cn/b/api/file/upload_request",
                 json=list_up_request,
-                timeout=30,
+                timeout=_UPLOAD_REQUEST_TIMEOUT,
             )
             up_res_json = up_res.json()
             res_code_up = up_res_json.get("code", -1)
@@ -221,7 +276,7 @@ class UploadService:
                 up_res = self._session.http.post(
                     "https://www.123pan.cn/b/api/file/upload_request",
                     json=list_up_request,
-                    timeout=30,
+                    timeout=_UPLOAD_REQUEST_TIMEOUT,
                 )
                 up_res_json = up_res.json()
                 res_code_up = up_res_json.get("code", -1)
@@ -373,9 +428,18 @@ class UploadService:
                 if self._limiter:
                     wait = self._limiter.consume(len(data))
                     if wait > 0:
-                        time.sleep(wait)
+                        deadline = time.monotonic() + wait
+                        while True:
+                            if _cancelled():
+                                return
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                break
+                            time.sleep(min(remaining, 0.1))
 
-                self._session.transfer.put(upload_url, data=data, timeout=60)
+                if not self._put_part_with_retry(upload_url, data, task):
+                    cancel_flag[0] = True
+                    return
 
                 with progress_lock:
                     total_sent[0] += len(data)
@@ -417,12 +481,20 @@ class UploadService:
                     if self._limiter:
                         wait = self._limiter.consume(len(data))
                         if wait > 0:
-                            time.sleep(wait)
+                            deadline = time.monotonic() + wait
+                            while True:
+                                if _cancelled():
+                                    return "已取消"
+                                remaining = deadline - time.monotonic()
+                                if remaining <= 0:
+                                    break
+                                time.sleep(min(remaining, 0.1))
 
                     upload_url = self._fetch_single_presigned_url(
                         bucket, upload_key, upload_id, storage_node, part_number
                     )
-                    self._session.transfer.put(upload_url, data=data, timeout=60)
+                    if not self._put_part_with_retry(upload_url, data, task):
+                        return "已取消"
                     total_sent[0] += len(data)
                     _report_progress()
                     part_number += 1

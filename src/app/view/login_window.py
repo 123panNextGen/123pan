@@ -52,8 +52,6 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("login.title", "登录123云盘"))
-        from qfluentwidgets import FluentIcon as FIF
-        self.setWindowIcon(FIF.CLOUD.icon())
         # 使用最小尺寸替代固定尺寸，兼容高 DPI 显示器
         # 高度需容纳二维码页面（200px 二维码 + 状态 + 复选框），
         # 过小会导致布局压缩时二维码与下方状态文字重叠。
