@@ -118,6 +118,7 @@ class Pan123:
         code = self._auth.login()
         if code == 200:
             self.authorization = self._auth.authorization
+            self._sync_to_session()
             self.save_file()
         return code
 
@@ -272,7 +273,7 @@ class Pan123:
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
-            validation_callback=validation_callback,
+            validation_callback=validation_callback, refresh_session=self.login,
         )
 
     def mark_dir_dirty(self, dir_id):

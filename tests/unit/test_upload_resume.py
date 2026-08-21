@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 from unittest.mock import MagicMock
 
+from src.app.common.api import Pan123
 from src.app.service.upload_service import UploadService
 
 BLOCK = 5242880
@@ -168,3 +169,60 @@ class TestUploadResume:
         info = callback.call_args[0][0]
         assert info["upload_id"] == "nu"
         assert info["file_size"] == f.stat().st_size
+
+    def test_retries_transfer_list_after_session_refresh(self, tmp_path):
+        """续传查询分片时令牌过期，重新登录后应重试当前请求。"""
+        f = tmp_path / "expired.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = self._mock_session()
+        calls = 0
+
+        def _post_side_effect(url, *args, **kwargs):
+            nonlocal calls
+            if "s3_list_upload_parts" in str(url):
+                calls += 1
+                if calls == 1:
+                    return MockResponse({
+                        "code": -1,
+                        "data": None,
+                        "message": "非法请求(session_expired)",
+                    })
+            return self._mock_session().http.post.side_effect(url, *args, **kwargs)
+
+        session.http.post.side_effect = _post_side_effect
+        svc = UploadService(session)
+        resume_info = {
+            "bucket": "b", "storage_node": "s", "upload_key": "k",
+            "upload_id": "u", "up_file_id": 9,
+            "file_mtime": f.stat().st_mtime, "file_size": f.stat().st_size,
+        }
+        refresh_session = MagicMock(return_value=200)
+
+        assert svc.up_load(
+            str(f), 0, resume_info=resume_info, refresh_session=refresh_session
+        ) == 9
+        refresh_session.assert_called_once_with()
+        assert calls >= 2
+
+
+class TestPanLoginSessionSync:
+    def test_login_updates_session_before_upload_retry(self):
+        """重新登录后必须把新 token 写回 NetSession 请求头。"""
+        pan = Pan123.__new__(Pan123)
+        pan.user_name = "user"
+        pan.password = "password"
+        pan.authorization = "expired-token"
+        pan.devicetype = "phone"
+        pan.osversion = "Android 14"
+        pan.loginuuid = "login-uuid"
+        pan.stay_logged_in = True
+        pan._auth = MagicMock()
+        pan._auth.login.return_value = 200
+        pan._auth.authorization = "fresh-token"
+        pan._sync_to_session = MagicMock()
+        pan.save_file = MagicMock()
+
+        assert pan.login() == 200
+        assert pan.authorization == "fresh-token"
+        pan._sync_to_session.assert_called_once_with()
+        pan.save_file.assert_called_once_with()
