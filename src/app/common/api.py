@@ -101,6 +101,8 @@ class Pan123:
         self._auth.authorization = self.authorization
         self._auth.stay_logged_in = self.stay_logged_in
         self._auth.sync_to_session()
+        self._file.set_account(self.user_name)
+        self._offline.set_account(self.user_name)
 
     def _sync_from_auth(self):
         self.devicetype = self._auth.devicetype

@@ -28,9 +28,17 @@ class FileService:
     不持有可变状态，所有状态由调用方（Pan123）管理。
     """
 
-    def __init__(self, session):
+    def __init__(self, session, account_name=None):
         self._session = session
-        self._db = FileListDB()
+        self._db = FileListDB(account_name)
+
+    def set_account(self, account_name):
+        """切换到指定账户的文件列表缓存。"""
+        self._db = FileListDB(account_name)
+
+    def mark_all_dirs_dirty(self):
+        """标记当前账户的全部目录缓存为脏。"""
+        self._db.mark_all_dirty()
 
     def get_dir_by_id(self, file_id, page=0, list_len=0, all=False, limit=100,
                       force_refresh=False):

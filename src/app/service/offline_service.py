@@ -11,7 +11,6 @@ the Free Software Foundation, either version 3 of the License, or
 import json
 
 from ..api.constants import OFFLINE_BASE_URL
-from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 from .file_service import FileService
 from .upload_service import UploadService
@@ -43,6 +42,9 @@ class OfflineService:
         self._session = session
         self._upload = UploadService(session)
         self._file = FileService(session)
+
+    def set_account(self, account_name):
+        self._file.set_account(account_name)
 
     # ---- 离线下载 ----
 
@@ -292,7 +294,7 @@ class OfflineService:
 
         # 秒传可能改变了云端结构，标记缓存失效
         if success:
-            FileListDB().mark_all_dirty()
+            self._file.mark_all_dirs_dirty()
         return {"success": success, "failed": failed}
 
     # ---- 秒传数据生成（导出） ----

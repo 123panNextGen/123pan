@@ -11,7 +11,6 @@ the Free Software Foundation, either version 3 of the License, or
 import os
 from pathlib import Path
 
-from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 from ..common.sync_store import SyncStore
 from .file_service import FileService
@@ -36,11 +35,14 @@ class SyncService:
     - 不持有 Qt 依赖，可由后台线程调用
     """
 
-    def __init__(self, session):
+    def __init__(self, session, account_name=None):
         self._session = session
         self._upload = UploadService(session)
-        self._file = FileService(session)
+        self._file = FileService(session, account_name)
         self._store = SyncStore()
+
+    def set_account(self, account_name):
+        self._file.set_account(account_name)
 
     # ---- 索引构建 ----
 
@@ -329,7 +331,7 @@ class SyncService:
                     stats["failed"] += 1
 
         # 同步可能改变了云端结构，标记缓存失效
-        FileListDB().mark_all_dirty()
+        self._file.mark_all_dirs_dirty()
 
         logger.info(
             "同步完成: job=%s, 新增=%d, 更新=%d, 删除=%d, 失败=%d",

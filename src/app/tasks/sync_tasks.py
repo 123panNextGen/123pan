@@ -68,7 +68,7 @@ class SyncRunThread(QThread):
                 self.signals.status.emit(job_id, phase_text)
 
         try:
-            service = SyncService(self._pan._session)
+            service = SyncService(self._pan._session, self._pan.user_name)
             success, stats = service.run_sync(
                 self._job, progress_callback=_progress, cancel=self
             )
