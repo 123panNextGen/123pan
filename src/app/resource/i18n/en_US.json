@@ -191,7 +191,7 @@
     "settings.multi_thread": "Multi-threaded Download",
     "settings.multi_thread_desc": "Use multi-threaded chunked download for faster speed",
     "settings.client_simulation": "Client Simulation",
-    "settings.client_simulation_desc": "Simulate Android client headers for API compatibility",
+    "settings.client_simulation_desc": "Use Android client headers when enabled and Web client headers when disabled",
     "settings.error_backoff_retry": "Error Backoff Retry",
     "settings.error_backoff_retry_desc": "Wait and retry after temporary transfer errors or rate limits",
     "settings.download_threads": "Download Threads",

@@ -296,7 +296,7 @@ class SettingInterface(ScrollArea):
             tr("settings.client_simulation", "客户端模拟"),
             tr(
                 "settings.client_simulation_desc",
-                "模拟 Android 客户端请求头以保持接口兼容性",
+                "开启时模拟 Android 客户端，关闭时使用 Web 客户端请求头",
             ),
             parent=self.networkBehaviorGroup,
         )

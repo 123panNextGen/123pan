@@ -26,6 +26,14 @@ CLIENT_SIMULATION_HEADERS = {
 	"app-version": "61",
 	"x-app-version": "2.4.0",
 }
+WEB_CLIENT_HEADERS = {
+	"platform": "web",
+	"app-version": "3",
+	"user-agent": (
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+		"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+	),
+}
 CLIENT_SIMULATION_DYNAMIC_HEADERS = (
 	"user-agent",
 	"osversion",

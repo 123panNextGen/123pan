@@ -47,10 +47,13 @@ class TestNetSessionSetters:
         assert session.headers["platform"] == "android"
 
         session.set_client_simulation(False)
-        assert "platform" not in session.headers
+        assert session.headers["platform"] == "web"
+        assert session.headers["app-version"] == "3"
         assert "devicename" not in session.headers
-        assert "app-version" not in session.headers
         assert "x-app-version" not in session.headers
+        assert "osversion" not in session.headers
+        assert "devicetype" not in session.headers
+        assert not session.headers.get("user-agent", "").startswith("123pan/")
         assert session.headers["content-type"] == "application/json"
         assert session.headers["authorization"] == "Bearer test_token"
         assert "loginuuid" in session.headers
