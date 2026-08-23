@@ -20,6 +20,7 @@ from ..service.file_service import FileService
 from ..service.offline_service import OfflineService
 from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
+from .config import ConfigManager
 from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
 
@@ -49,6 +50,12 @@ class Pan123:
         self._upload = UploadService(self._session)
         self._share = ShareService(self._session)
         self._offline = OfflineService(self._session)
+        self.set_client_simulation(
+            ConfigManager.get_setting("clientSimulationEnabled", True)
+        )
+        self.set_error_backoff_retry(
+            ConfigManager.get_setting("errorBackoffRetryEnabled", True)
+        )
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -340,6 +347,13 @@ class Pan123:
     def set_download_multi_thread(self, enabled, num_threads=4):
         """启用/关闭多线程分片下载，并设置每个文件的下载线程数。"""
         self._download.set_multi_thread(enabled, num_threads)
+
+    def set_client_simulation(self, enabled):
+        self._session.set_client_simulation(enabled)
+
+    def set_error_backoff_retry(self, enabled):
+        self._session.set_error_backoff_retry(enabled)
+        self._upload.set_error_backoff_retry(enabled)
 
     def set_download_speed_limit(self, kbps):
         self._download.set_download_speed_limit(kbps)

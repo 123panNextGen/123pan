@@ -35,9 +35,13 @@ class UploadService:
 
     def __init__(self, session):
         self._session = session
+        self._error_backoff_retry_enabled = True
         # 上传限速器由本服务持有并消费（下载限速器由 session 持有）
         self._limiter = None
         self._upload_speed_limit_kbps = 0
+
+    def set_error_backoff_retry(self, enabled):
+        self._error_backoff_retry_enabled = enabled
 
     def set_upload_speed_limit(self, kbps: int):
         """设置上传速度限制（KB/s），0 为不限速。
@@ -186,7 +190,8 @@ class UploadService:
         if self._upload_speed_limit_kbps > 0:
             limited_seconds = len(data) / (self._upload_speed_limit_kbps * 1024)
             timeout = max(timeout, int(limited_seconds * 3))
-        for attempt in range(1, _UPLOAD_PART_RETRIES + 1):
+        max_attempts = _UPLOAD_PART_RETRIES if self._error_backoff_retry_enabled else 1
+        for attempt in range(1, max_attempts + 1):
             if task and task.is_cancelled:
                 return False
             try:
@@ -201,13 +206,13 @@ class UploadService:
                 ConnectionError,
             ) as error:
                 last_error = error
-                if attempt == _UPLOAD_PART_RETRIES:
+                if attempt == max_attempts:
                     break
                 delay = min(2 ** (attempt - 1), 4)
                 logger.warning(
                     "上传分片网络异常，第 %d/%d 次重试，等待 %ds: %s",
                     attempt,
-                    _UPLOAD_PART_RETRIES,
+                    max_attempts,
                     delay,
                     error,
                 )

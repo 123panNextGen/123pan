@@ -50,6 +50,8 @@ def _get_default_settings():
         "defaultDownloadPath": str(Path.home() / "Downloads"),
         "askDownloadLocation": True,
         "multiThreadDownload": True,
+        "clientSimulationEnabled": True,
+        "errorBackoffRetryEnabled": True,
         "downloadThreadCount": 4,   # 每个下载任务的分片线程数
         "uploadThreadCount": 1,     # 每个上传任务并行上传的分片数（1=顺序上传）
         "downloadSpeedLimit": 0,
