@@ -21,6 +21,7 @@ from .constants import (
     CLIENT_SIMULATION_HEADERS,
     FALLBACK_BASE_URL,
     LOGIN_BASE_URL,
+    WEB_CLIENT_HEADERS,
 )
 from .download_engine import  DownloadEngine
 from .session_file import FileSessionMixin
@@ -148,14 +149,17 @@ class NetSession(FileSessionMixin, DownloadEngine):
         self._num_threads = max(1, min(num_threads, 16))
 
     def set_client_simulation(self, enabled: bool):
-        """启用或关闭 Android 客户端请求头模拟。"""
+        """在 Android 与 Web 客户端请求头之间切换。"""
         self._client_simulation_enabled = enabled
-        if enabled:
-            self._http.headers.update(CLIENT_SIMULATION_HEADERS)
-            self._update_headers()
-            return
-        for name in (*CLIENT_SIMULATION_HEADERS, *CLIENT_SIMULATION_DYNAMIC_HEADERS):
+        mode_headers = CLIENT_SIMULATION_HEADERS if enabled else WEB_CLIENT_HEADERS
+        for name in (
+            *CLIENT_SIMULATION_HEADERS,
+            *WEB_CLIENT_HEADERS,
+            *CLIENT_SIMULATION_DYNAMIC_HEADERS,
+        ):
             self._http.headers.pop(name, None)
+        self._http.headers.update(mode_headers)
+        self._update_headers()
 
     def set_error_backoff_retry(self, enabled: bool):
         """启用或关闭传输错误的退避重试。"""

@@ -191,7 +191,7 @@
     "settings.multi_thread": "多线程下载",
     "settings.multi_thread_desc": "启用多线程分片下载以提升下载速度",
     "settings.client_simulation": "客户端模拟",
-    "settings.client_simulation_desc": "模拟 Android 客户端请求头以保持接口兼容性",
+    "settings.client_simulation_desc": "开启时模拟 Android 客户端，关闭时使用 Web 客户端请求头",
     "settings.error_backoff_retry": "错误退避重试",
     "settings.error_backoff_retry_desc": "传输发生临时网络错误或限流时等待并自动重试",
     "settings.download_threads": "下载线程数",
