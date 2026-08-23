@@ -35,6 +35,39 @@ class TestNetSessionSetters:
         session.set_multi_thread(True, 0)
         assert session._num_threads == 1
 
+    @responses.activate
+    def test_set_client_simulation(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/user/sign_in",
+            json={"code": 200, "data": {"token": "test_token"}},
+            status=200,
+        )
+        session = NetSession()
+        session.login("test_user", "test_pass")
+        assert session.headers["platform"] == "android"
+
+        session.set_client_simulation(False)
+        assert "platform" not in session.headers
+        assert "devicename" not in session.headers
+        assert "app-version" not in session.headers
+        assert "x-app-version" not in session.headers
+        assert session.headers["content-type"] == "application/json"
+        assert session.headers["authorization"] == "Bearer test_token"
+        assert "loginuuid" in session.headers
+
+        session.set_client_simulation(True)
+        assert session.headers["platform"] == "android"
+        assert session.headers["devicename"] == "Xiaomi"
+        assert "osversion" in session.headers
+        assert "devicetype" in session.headers
+
+    def test_set_error_backoff_retry(self):
+        session = NetSession()
+        assert session._error_backoff_retry_enabled is True
+
+        session.set_error_backoff_retry(False)
+        assert session._error_backoff_retry_enabled is False
+
     def test_set_speed_limiter(self):
         session = NetSession()
         limiter = object()

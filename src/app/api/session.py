@@ -15,7 +15,13 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from .constants import BASE_URL, FALLBACK_BASE_URL, LOGIN_BASE_URL
+from .constants import (
+    BASE_URL,
+    CLIENT_SIMULATION_DYNAMIC_HEADERS,
+    CLIENT_SIMULATION_HEADERS,
+    FALLBACK_BASE_URL,
+    LOGIN_BASE_URL,
+)
 from .download_engine import  DownloadEngine
 from .session_file import FileSessionMixin
 from .model import (
@@ -67,14 +73,13 @@ class NetSession(FileSessionMixin, DownloadEngine):
     def __init__(self):
         self._user_info: Optional[UserInfoModel] = None
         self._http = _ApiSession()
+        self._client_simulation_enabled = True
+        self._error_backoff_retry_enabled = True
         self._http.headers.update(
             {
                 "accept-encoding": "gzip",
                 "content-type": "application/json",
-                "platform": "android",
-                "devicename": "Xiaomi",
-                "app-version": "61",
-                "x-app-version": "2.4.0",
+                **CLIENT_SIMULATION_HEADERS,
             }
         )
 
@@ -141,6 +146,20 @@ class NetSession(FileSessionMixin, DownloadEngine):
         """
         self._multi_thread_enabled = enabled
         self._num_threads = max(1, min(num_threads, 16))
+
+    def set_client_simulation(self, enabled: bool):
+        """启用或关闭 Android 客户端请求头模拟。"""
+        self._client_simulation_enabled = enabled
+        if enabled:
+            self._http.headers.update(CLIENT_SIMULATION_HEADERS)
+            self._update_headers()
+            return
+        for name in (*CLIENT_SIMULATION_HEADERS, *CLIENT_SIMULATION_DYNAMIC_HEADERS):
+            self._http.headers.pop(name, None)
+
+    def set_error_backoff_retry(self, enabled: bool):
+        """启用或关闭传输错误的退避重试。"""
+        self._error_backoff_retry_enabled = enabled
 
     def set_speed_limiter(self, limiter, is_upload: bool = False):
         """设置速度限制器。
@@ -223,7 +242,7 @@ class NetSession(FileSessionMixin, DownloadEngine):
         """构建设备伪装请求头。"""
         device = self._user_info.device if self._user_info else None
         headers: dict[str, str] = {}
-        if device:
+        if self._client_simulation_enabled and device:
             headers["user-agent"] = f"123pan/v2.4.0({device.os};Xiaomi)"
             headers["osversion"] = device.os
             headers["devicetype"] = device.type

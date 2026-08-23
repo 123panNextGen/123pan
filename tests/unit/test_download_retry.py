@@ -58,6 +58,29 @@ class TestDownloadSingleRetry:
     """单线程路径对限流（429）的退避重试。"""
 
     @responses.activate
+    def test_single_does_not_retry_when_backoff_disabled(self, tmp_path):
+        session = NetSession()
+        session.set_error_backoff_retry(False)
+        file_path = tmp_path / "no-retry.bin"
+        calls = {"n": 0}
+
+        def cb(request):
+            calls["n"] += 1
+            return (429, {}, "")
+
+        responses.add_callback(
+            responses.GET,
+            "https://cdn.example.com/no-retry.bin",
+            callback=cb,
+        )
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            session._download_single(
+                "https://cdn.example.com/no-retry.bin", file_path, 4
+            )
+        assert calls["n"] == 1
+
+    @responses.activate
     def test_single_retries_on_429_then_succeeds(self, tmp_path, monkeypatch):
         """遇 429 时按退避重试，最终成功。"""
         monkeypatch.setattr(de, "_throttle_backoff", lambda exc, attempt: 0)
@@ -117,6 +140,35 @@ class TestDownloadSingleRetry:
 
 class TestMultithreadFallback:
     """多线程分片失败时的单线程回退。"""
+
+    def test_chunk_failure_does_not_fallback_when_retry_disabled(
+        self, tmp_path, monkeypatch
+    ):
+        session = NetSession()
+        session.set_error_backoff_retry(False)
+        file_path = tmp_path / "no-fallback.bin"
+        calls = {"single": 0}
+
+        monkeypatch.setattr(session, "_resolve_json_redirect_url", lambda url: "")
+        monkeypatch.setattr(session, "_check_range_support", lambda url: True)
+        monkeypatch.setattr(
+            session,
+            "_download_chunked",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("429")),
+        )
+        monkeypatch.setattr(
+            session,
+            "_download_single",
+            lambda *args, **kwargs: calls.update(single=calls["single"] + 1),
+        )
+
+        with pytest.raises(RuntimeError, match="429"):
+            session.download_file_multithread(
+                "https://cdn.example.com/no-fallback.bin",
+                file_path,
+                6 * 1024 * 1024,
+            )
+        assert calls["single"] == 0
 
     def test_chunk_failure_falls_back_single(self, tmp_path, monkeypatch):
         """分片持续失败（如 429）时回退单线程，而非整体失败。"""

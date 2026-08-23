@@ -19,3 +19,15 @@ FALLBACK_BASE_URL = "https://api.123278.com"
 LOGIN_BASE_URL = "https://login.123pan.com"
 # 离线下载专用域名（解析/提交任务，固定使用 api.123278.com）
 OFFLINE_BASE_URL = "https://api.123278.com"
+
+CLIENT_SIMULATION_HEADERS = {
+	"platform": "android",
+	"devicename": "Xiaomi",
+	"app-version": "61",
+	"x-app-version": "2.4.0",
+}
+CLIENT_SIMULATION_DYNAMIC_HEADERS = (
+	"user-agent",
+	"osversion",
+	"devicetype",
+)

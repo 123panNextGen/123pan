@@ -22,6 +22,8 @@ class TestConfigManager:
         assert config["accounts"] == {}
         assert config["settings"]["downloadSpeedLimit"] == 0
         assert config["settings"]["multiThreadDownload"] is True
+        assert config["settings"]["clientSimulationEnabled"] is True
+        assert config["settings"]["errorBackoffRetryEnabled"] is True
 
     def test_save_and_load_config(self, tmp_db):
         """保存后能正确加载。"""
