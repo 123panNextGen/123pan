@@ -97,6 +97,11 @@ jobs:
         run: |
           uv sync --group build --group lint
 
+      - name: Check Source
+        run: |
+          bash ./script/test.sh
+        shell: bash
+
       - name: Build with Nuitka
         env:
           BUILD_ARCH: ${{ matrix.arch }}
@@ -120,6 +125,11 @@ jobs:
         run: |
           zip -9 -r "123pan-linux-${{ matrix.arch }}.zip" 123pan.dist
 
+      - name: Package macOS build
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent 123pan.app "123pan-macos-${{ matrix.arch }}.zip"          
+
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
@@ -133,11 +143,6 @@ jobs:
         with:
           name: 123pan-linux-${{ matrix.arch }}
           path: 123pan-linux-${{ matrix.arch }}.zip
-
-      - name: Package macOS build
-        if: runner.os == 'macOS'
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent 123pan.app "123pan-macos-${{ matrix.arch }}.zip"
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
