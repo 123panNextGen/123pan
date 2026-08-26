@@ -8,13 +8,21 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import pytest
+from types import SimpleNamespace
 from PySide6.QtWidgets import QApplication, QLabel, QTreeWidget
 
 from qfluentwidgets import TableWidget
 
 from src.app.view.file_table import FileTableManager, format_date_text
 from src.app.view.file_tree import FileTreeManager
+from src.app.api.model import ApiCode, ApiReturnModel
+from src.app.tasks.file_tasks import CheckDownloadTrafficTask
+from src.app.tasks.signals import _DownloadTrafficSignals
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +95,83 @@ class TestFileTableManager:
         assert FileInterface.dragEnterEvent == FileActionsMixin.dragEnterEvent
         assert FileInterface.dragMoveEvent == FileActionsMixin.dragMoveEvent
         assert FileInterface.dropEvent == FileActionsMixin.dropEvent
+
+    def test_download_traffic_confirmation(self, qapp, mocker):
+        from src.app.view.file_interface import FileInterface
+
+        panel = FileInterface()
+        panel._download_traffic_checking = True
+        panel.downloadButton.setEnabled(False)
+        items = [
+            {"file_id": 42, "file_name": "demo.bin", "file_size": 1024**3}
+        ]
+        message_box = mocker.patch("src.app.view.file_actions.MessageBox")
+        message_box.return_value.exec.return_value = True
+        queue_downloads = mocker.patch.object(panel, "_queueDownloadItems")
+
+        panel._onDownloadTrafficChecked(
+            {
+                "originalRemainTraffic": 5 * 1024**3,
+                "originalFileSize": 1024**3,
+                "clientFileSize": 512 * 1024**2,
+                "isTrafficExceeded": False,
+                "isBlocked": False,
+            },
+            "",
+            items,
+        )
+
+        content = message_box.call_args.args[1]
+        assert "5.0 GB" in content
+        assert "1.0 GB" in content
+        assert "4.0 GB" in content
+        assert "-1.0 GB" not in content
+        assert "512.0 MB" in content
+        assert panel.downloadButton.isEnabled()
+        queue_downloads.assert_called_once_with(items)
+        panel.deleteLater()
+
+    def test_download_traffic_confirmation_handles_negative_remaining(self, qapp, mocker):
+        from src.app.view.file_interface import FileInterface
+
+        panel = FileInterface()
+        message_box = mocker.patch("src.app.view.file_actions.MessageBox")
+        message_box.return_value.exec.return_value = False
+
+        panel._onDownloadTrafficChecked(
+            {
+                "originalRemainTraffic": 492 * 1024**2,
+                "originalFileSize": 14 * 1024**3,
+                "clientFileSize": 7 * 1024**3,
+                "isTrafficExceeded": False,
+                "isBlocked": False,
+            },
+            "",
+            [{"file_id": 42, "file_name": "demo.bin", "file_size": 14 * 1024**3}],
+        )
+
+        content = message_box.call_args.args[1]
+        assert "下载后预计剩余原始流量：-13.52 GB" in content
+        assert "本次下载预计会超出剩余流量。" in content
+        panel.deleteLater()
+
+    def test_vip_download_skips_traffic_check(self, qapp):
+        pan = SimpleNamespace(
+            get_user_info=lambda: ApiReturnModel(
+                code=0, api_code=0, api_code_enum=ApiCode.success, msg="",
+                data=SimpleNamespace(vip=True),
+            ),
+            check_download_traffic=lambda _: (_ for _ in ()).throw(
+                AssertionError("VIP 不应调用流量检查接口")
+            ),
+        )
+        received = []
+        signals = _DownloadTrafficSignals()
+        signals.finished.connect(lambda data, error: received.append((data, error)))
+
+        CheckDownloadTrafficTask(pan, [42], signals).run()
+
+        assert received == [({"unlimited": True}, "")]
 
     def test_sort_folders_first(self, qapp):
         table = TableWidget()

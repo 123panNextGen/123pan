@@ -22,12 +22,14 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import InfoBar
+from qfluentwidgets import InfoBar, MessageBox
 
 from ..common.i18n import tr
 from ..common.log import get_logger
+from ..common.utils import format_file_size
 from ..tasks.file_tasks import (
     BatchDeleteTask,
+    CheckDownloadTrafficTask,
     CreateFolderTask,
     CreateShareTask,
     DeleteFileTask,
@@ -41,6 +43,7 @@ from ..tasks.file_tasks import (
 )
 from ..tasks.signals import (
     _DownloadLinkSignals,
+    _DownloadTrafficSignals,
     _GenerateRapidSignals,
     _OpFinishedSignals,
     _ShareCreateSignals,
@@ -254,11 +257,120 @@ class FileActionsMixin:
 
     def _downloadFile(self):
         """下载文件（支持批量）"""
+        if self._download_traffic_checking:
+            return
+
         selected_rows = self._getSelectedRows()
         if not selected_rows:
             InfoBar.warning(title=tr("file.msg_download_error", "下载错误"), content=tr("file.msg_select_file_download", "请选择要下载的文件"), parent=self)
             return
 
+        download_items = []
+        for row in selected_rows:
+            name_item = self.fileTable.item(row, 0)
+            file_id = name_item.data(Qt.ItemDataRole.UserRole)
+            file_name = name_item.text()
+            file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
+            file_info = self._findFileById(file_id)
+            file_size = int(file_info.get("Size", 0) or 0) if file_info else 0
+            download_items.append(
+                {
+                    "file_id": int(file_id),
+                    "file_name": file_name + ".zip" if file_type == 1 else file_name,
+                    "file_size": file_size,
+                }
+            )
+
+        self._download_traffic_checking = True
+        self.downloadButton.setEnabled(False)
+        self.downloadButton.setText(tr("file.download_checking", "正在检查流量..."))
+        signals = _DownloadTrafficSignals()
+        task = CheckDownloadTrafficTask(
+            self.pan, [item["file_id"] for item in download_items], signals
+        )
+        connect_tracked(
+            self,
+            signals,
+            "finished",
+            lambda data, error: self._onDownloadTrafficChecked(
+                data, error, download_items
+            ),
+            task,
+        )
+        QThreadPool.globalInstance().start(task)
+
+    def _onDownloadTrafficChecked(self, data, error, download_items):
+        """显示流量信息并由用户二次确认下载。"""
+        self._download_traffic_checking = False
+        self.downloadButton.setEnabled(True)
+        self.downloadButton.setText(tr("file.download", "下载"))
+
+        if error or not isinstance(data, dict):
+            reason = (error or tr("file.traffic_unknown", "未知")).replace("\n", " ")
+            content = tr(
+                "file.traffic_check_failed_confirm",
+                "无法获取剩余下载流量：{}\n\n是否仍要继续下载？",
+            ).format(reason[:200])
+        elif data.get("unlimited"):
+            self._queueDownloadItems(download_items)
+            return
+        else:
+            original_remain_traffic = data.get("originalRemainTraffic")
+            original_file_size = data.get("originalFileSize")
+            estimated_remain_traffic = self._subtractTraffic(
+                original_remain_traffic, original_file_size
+            )
+            content = tr(
+                "file.traffic_confirm_details",
+                "所选项目：{} 个\n当前剩余原始文件流量：{}\n本次原始文件大小：{}\n下载后预计剩余原始流量：{}\n客户端预计计费流量：{}",
+            ).format(
+                len(download_items),
+                self._formatTrafficValue(original_remain_traffic),
+                self._formatTrafficValue(original_file_size),
+                self._formatTrafficValue(estimated_remain_traffic),
+                self._formatTrafficValue(data.get("clientFileSize")),
+            )
+            if data.get("isTrafficExceeded") or (
+                estimated_remain_traffic is not None
+                and estimated_remain_traffic < 0
+            ):
+                content += tr(
+                    "file.traffic_exceeded_warning",
+                    "\n\n本次下载预计会超出剩余流量。",
+                )
+            if data.get("isBlocked"):
+                content += tr(
+                    "file.traffic_blocked_warning",
+                    "\n服务器可能会限制本次下载。",
+                )
+            content += tr("file.traffic_confirm_continue", "\n\n是否继续下载？")
+
+        box = MessageBox(tr("file.traffic_confirm_title", "确认下载"), content, self)
+        if box.exec():
+            self._queueDownloadItems(download_items)
+
+    @staticmethod
+    def _formatTrafficValue(value):
+        if value is None or value == "":
+            return tr("file.traffic_unknown", "未知")
+        try:
+            numeric_value = int(value)
+            sign = "-" if numeric_value < 0 else ""
+            return sign + format_file_size(abs(numeric_value))
+        except (TypeError, ValueError):
+            return str(value)
+
+    @staticmethod
+    def _subtractTraffic(remain_traffic, file_size):
+        if remain_traffic is None or file_size is None:
+            return None
+        try:
+            return int(remain_traffic) - int(file_size)
+        except (TypeError, ValueError):
+            return None
+
+    def _queueDownloadItems(self, download_items):
+        """选择保存位置并添加下载任务。"""
         from app.common.config import ConfigManager
 
         ask_download_location = ConfigManager.get_setting("askDownloadLocation", True)
@@ -267,7 +379,7 @@ class FileActionsMixin:
         )
 
         # 批量下载时：如果"每次询问"，先选目录；如果不询问，统一使用默认目录
-        if ask_download_location and len(selected_rows) > 1:
+        if ask_download_location and len(download_items) > 1:
             save_dir = QFileDialog.getExistingDirectory(
                 self, tr("file.download_dir_title", "选择下载保存目录"), default_download_path
             )
@@ -278,14 +390,10 @@ class FileActionsMixin:
             save_dir = default_download_path
 
         count = 0
-        for row in selected_rows:
-            name_item = self.fileTable.item(row, 0)
-            file_id = name_item.data(Qt.ItemDataRole.UserRole)
-            file_name = name_item.text()
-            file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
-
-            if file_type == 1:
-                file_name = file_name + ".zip"
+        for item in download_items:
+            file_id = item["file_id"]
+            file_name = item["file_name"]
+            file_size = item["file_size"]
 
             if ask_download_location:
                 save_path, _ = QFileDialog.getSaveFileName(
@@ -295,9 +403,6 @@ class FileActionsMixin:
                     continue
             else:
                 save_path = str(Path(save_dir) / file_name)
-
-            file_info = self._findFileById(file_id)
-            file_size = int(file_info.get("Size", 0) or 0) if file_info else 0
 
             if self.transfer_interface:
                 self.transfer_interface.add_download_task(

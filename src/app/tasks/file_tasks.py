@@ -20,6 +20,7 @@ from .signals import (
     _DeleteSharesSignals,
     _DeviceListSignals,
     _DownloadLinkSignals,
+    _DownloadTrafficSignals,
     _FolderListSignals,
     _GenerateRapidSignals,
     _LoadListSignals,
@@ -386,6 +387,36 @@ class GetDownloadLinkTask(QRunnable):
         except Exception as e:
             logger.error("获取下载链接失败: %s", e)
             self.signals.finished.emit("", str(e))
+
+
+class CheckDownloadTrafficTask(QRunnable):
+    """后台检查所选文件的下载流量。"""
+
+    def __init__(self, pan, file_ids, signals: _DownloadTrafficSignals):
+        super().__init__()
+        self.pan = pan
+        self.file_ids = file_ids
+        self.signals = signals
+
+    def run(self):
+        try:
+            user_info = self.pan.get_user_info()
+            if (
+                user_info.code == 0
+                and user_info.data is not None
+                and getattr(user_info.data, "vip", False)
+            ):
+                self.signals.finished.emit({"unlimited": True}, "")
+                return
+
+            result = self.pan.check_download_traffic(self.file_ids)
+            if result.code == 0:
+                self.signals.finished.emit(result.data, "")
+            else:
+                self.signals.finished.emit(None, result.msg or "检查下载流量失败")
+        except Exception as e:
+            logger.error("检查下载流量失败: %s", e)
+            self.signals.finished.emit(None, str(e))
 
 
 class CreateShareTask(QRunnable):

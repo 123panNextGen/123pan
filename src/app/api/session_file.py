@@ -322,6 +322,46 @@ class FileSessionMixin:
     # 下载流量限制错误码（返回时需走 URL 重写绕过）
     _DOWNLOAD_LIMIT_CODES = frozenset({5113, 5114})
 
+    def check_download_traffic(self, file_ids):
+        """检查所选文件的下载流量。"""
+        url = urljoin(BASE_URL, "/b/api/file/download/traffic/check")
+        try:
+            resp = self._http.post(url, json={"fids": file_ids}, timeout=10)
+        except requests.RequestException as e:
+            logger.warning("检查下载流量失败: file_ids=%s, err=%s", file_ids, e)
+            return ApiReturnModel(
+                code=-1,
+                api_code=-1,
+                api_code_enum=ApiCode.fail,
+                msg=str(e),
+            )
+
+        body, error = self._safe_json(resp)
+        if error:
+            return error
+        code = body.get("code", -1)
+        msg = body.get("message", body.get("msg", ""))
+        if code != 0:
+            logger.warning(
+                "检查下载流量失败: file_ids=%s, code=%s, msg=%s",
+                file_ids,
+                code,
+                msg,
+            )
+            return ApiReturnModel(
+                code=code,
+                api_code=code,
+                api_code_enum=ApiCode.fail,
+                msg=msg,
+            )
+        return ApiReturnModel(
+            code=0,
+            api_code=200,
+            api_code_enum=ApiCode.success,
+            msg=msg,
+            data=body.get("data") or {},
+        )
+
     def get_file_link(
         self, file_info: dict | FileItemModel
     ) -> ApiReturnModel:  # pylint: disable=protected-access

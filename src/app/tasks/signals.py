@@ -79,6 +79,11 @@ class _DownloadLinkSignals(QObject):
     finished = Signal(str, str)  # (url, error)
 
 
+class _DownloadTrafficSignals(QObject):
+    """下载流量检查完成信号。"""
+    finished = Signal(object, str)  # (traffic_data, error)
+
+
 class _ShareCreateSignals(QObject):
     """分享链接创建完成信号。"""
     finished = Signal(str, str)  # (url, error)

@@ -223,6 +223,9 @@ class Pan123:
     def link_by_fileDetail(self, file_detail, showlink=True):
         return self._download.link_by_fileDetail(file_detail, showlink)
 
+    def check_download_traffic(self, file_ids):
+        return self._download.check_download_traffic(file_ids)
+
     def delete_file(self, file, by_num=True, operation=True, parent_file_id=None):
         """删除或恢复文件。
 

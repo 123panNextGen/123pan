@@ -80,6 +80,7 @@ class FileInterface(FileActionsMixin, QWidget):
         self._loading = False
         # 持有后台任务引用，防止任务/信号被 GC 回收导致 RuntimeError
         self._pending_tasks = []
+        self._download_traffic_checking = False
 
         # 搜索防抖：300ms 内无新输入才执行过滤，避免每键都重建表格
         self._search_timer = QTimer(self)
