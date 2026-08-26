@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import io
+import json
 
 import requests
 import responses
@@ -34,6 +35,42 @@ class TestNetSessionSetters:
 
         session.set_multi_thread(True, 0)
         assert session._num_threads == 1
+
+    @responses.activate
+    def test_set_client_simulation(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/user/sign_in",
+            json={"code": 200, "data": {"token": "test_token"}},
+            status=200,
+        )
+        session = NetSession()
+        session.login("test_user", "test_pass")
+        assert session.headers["platform"] == "android"
+
+        session.set_client_simulation(False)
+        assert session.headers["platform"] == "web"
+        assert session.headers["app-version"] == "3"
+        assert "devicename" not in session.headers
+        assert "x-app-version" not in session.headers
+        assert "osversion" not in session.headers
+        assert "devicetype" not in session.headers
+        assert not session.headers.get("user-agent", "").startswith("123pan/")
+        assert session.headers["content-type"] == "application/json"
+        assert session.headers["authorization"] == "Bearer test_token"
+        assert "loginuuid" in session.headers
+
+        session.set_client_simulation(True)
+        assert session.headers["platform"] == "android"
+        assert session.headers["devicename"] == "Xiaomi"
+        assert "osversion" in session.headers
+        assert "devicetype" in session.headers
+
+    def test_set_error_backoff_retry(self):
+        session = NetSession()
+        assert session._error_backoff_retry_enabled is True
+
+        session.set_error_backoff_retry(False)
+        assert session._error_backoff_retry_enabled is False
 
     def test_set_speed_limiter(self):
         session = NetSession()
@@ -273,6 +310,42 @@ class TestNetSessionHttp:
         result = session.get_file_link(file_info)
         assert result.code == 0
         assert result.data == "https://resolved.example.com/file"
+
+    @responses.activate
+    def test_check_download_traffic(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/download/traffic/check",
+            json={
+                "code": 0,
+                "data": {
+                    "originalRemainTraffic": 5 * 1024**3,
+                    "originalFileSize": 1024**3,
+                    "clientFileSize": 512 * 1024**2,
+                    "isTrafficExceeded": False,
+                    "isBlocked": False,
+                },
+            },
+            status=200,
+        )
+        session = NetSession()
+        result = session.check_download_traffic([42, 43])
+
+        assert result.code == 0
+        assert result.data["originalRemainTraffic"] == 5 * 1024**3
+        assert json.loads(responses.calls[0].request.body) == {"fids": [42, 43]}
+
+    @responses.activate
+    def test_check_download_traffic_api_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/download/traffic/check",
+            json={"code": 401, "message": "cookie token is empty"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.check_download_traffic([42])
+
+        assert result.code == 401
+        assert result.msg == "cookie token is empty"
 
     @responses.activate
     def test_get_file_link_network_error(self):

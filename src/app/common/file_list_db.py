@@ -8,6 +8,7 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 """
 
+import hashlib
 import json
 import threading
 from datetime import datetime, timedelta, timezone
@@ -37,7 +38,7 @@ _CACHE_MAX_ENTRIES = 20
 class FileListDB:
     """本地文件列表缓存（SQLite 存储）。
 
-    表结构（dir_cache）：
+    每个账户使用独立的数据表（dir_cache_<account_hash>）：
         dir_id     TEXT PRIMARY KEY  -- 目录 ID
         files      TEXT              -- 文件信息 JSON 数组
         total      INTEGER           -- 文件总数
@@ -57,24 +58,78 @@ class FileListDB:
     """
 
     _instance = None
+    _instances = {}
     _lock = threading.Lock()
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    def __new__(cls, account_name=None):
+        account_name = cls._resolve_account_name(account_name)
+        with cls._lock:
+            if cls._instance is None:
+                cls._instances = {}
+                cls._instance = True
+            instance = cls._instances.get(account_name)
+            if instance is None:
+                instance = super().__new__(cls)
+                instance._initialized = False
+                instance._account_name = account_name
+                cls._instances[account_name] = instance
+            return instance
 
-    def __init__(self):
+    def __init__(self, account_name=None):
         if self._initialized:
             return
         self._initialized = True
+        account_hash = hashlib.sha256(self._account_name.encode("utf-8")).hexdigest()
+        self.table_name = f"dir_cache_{account_hash}"
         self._dirty_dirs = set()
         # 内存缓存：dir_id(str) -> (files, total, all_loaded, updated_at)
         # 避免每次浏览目录都重复 json.loads 全量列表
         self._cache = {}
         self._db = Database()
-        self._migrate_legacy_json()
+        self._create_table()
+        self._migrate_shared_cache()
+        if self._account_name != "__default__":
+            self._migrate_legacy_json()
+
+    @staticmethod
+    def _resolve_account_name(account_name):
+        if account_name is None:
+            from .config import ConfigManager
+
+            account_name = ConfigManager.get_current_account_name()
+        return str(account_name or "__default__")
+
+    def _create_table(self):
+        self._db.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                dir_id     TEXT PRIMARY KEY,
+                files      TEXT NOT NULL DEFAULT '[]',
+                total      INTEGER NOT NULL DEFAULT 0,
+                all_loaded INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+
+    def _migrate_shared_cache(self):
+        """首次使用账户缓存时接管旧版共享表数据。"""
+        if self._account_name == "__default__":
+            return
+        row = self._db.query_one("SELECT COUNT(*) AS count FROM dir_cache")
+        if not row or row["count"] == 0:
+            return
+        target = self._db.query_one(
+            f"SELECT COUNT(*) AS count FROM {self.table_name}"
+        )
+        if target and target["count"] == 0:
+            self._db.execute(
+                f"INSERT OR REPLACE INTO {self.table_name}"
+                " (dir_id, files, total, all_loaded, updated_at)"
+                " SELECT dir_id, files, total, all_loaded, updated_at FROM dir_cache"
+            )
+            self._db.execute("DELETE FROM dir_cache")
+            logger.info("旧版共享文件列表缓存已迁移到账户独立表")
 
     # ---- 内存缓存 ----
 
@@ -111,7 +166,7 @@ class FileListDB:
             dirs = data.get("dirs", {})
             for dir_key, dir_data in dirs.items():
                 self._db.execute(
-                    "INSERT OR REPLACE INTO dir_cache"
+                    f"INSERT OR REPLACE INTO {self.table_name}"
                     " (dir_id, files, total, all_loaded, updated_at)"
                     " VALUES (?, ?, ?, ?, ?)",
                     (
@@ -146,7 +201,8 @@ class FileListDB:
             return list(cached[0]), cached[1], cached[2]
 
         row = self._db.query_one(
-            "SELECT files, total, all_loaded, updated_at FROM dir_cache WHERE dir_id = ?",
+            f"SELECT files, total, all_loaded, updated_at FROM {self.table_name}"
+            " WHERE dir_id = ?",
             (key,),
         )
         if row is None:
@@ -173,7 +229,7 @@ class FileListDB:
         key = str(dir_id)
         updated_at = datetime.now(timezone.utc).isoformat()
         self._db.execute(
-            "INSERT OR REPLACE INTO dir_cache"
+            f"INSERT OR REPLACE INTO {self.table_name}"
             " (dir_id, files, total, all_loaded, updated_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (
@@ -219,7 +275,8 @@ class FileListDB:
         # 注意：必须查询数据库（而非内存缓存），因为要检测外部进程对
         # 数据库的直接修改（如其他客户端操作导致的数据变更）。
         row = self._db.query_one(
-            "SELECT updated_at FROM dir_cache WHERE dir_id = ?", (str(dir_id),)
+            f"SELECT updated_at FROM {self.table_name} WHERE dir_id = ?",
+            (str(dir_id),),
         )
         if row is None:
             return True  # 无缓存视为过期
@@ -245,7 +302,7 @@ class FileListDB:
 
     def mark_all_dirty(self):
         """标记所有目录需要强制刷新。"""
-        rows = self._db.query("SELECT dir_id FROM dir_cache")
+        rows = self._db.query(f"SELECT dir_id FROM {self.table_name}")
         with self._lock:
             for row in rows:
                 self._dirty_dirs.add(row["dir_id"])
@@ -296,7 +353,7 @@ class FileListDB:
         """从数据库中删除指定目录。"""
         key = str(dir_id)
         self._db.execute(
-            "DELETE FROM dir_cache WHERE dir_id = ?", (key,)
+            f"DELETE FROM {self.table_name} WHERE dir_id = ?", (key,)
         )
         with self._lock:
             self._dirty_dirs.discard(key)
@@ -304,7 +361,7 @@ class FileListDB:
 
     def delete_db(self):
         """清空文件列表缓存（保留其他表数据）。"""
-        self._db.execute("DELETE FROM dir_cache")
+        self._db.execute(f"DELETE FROM {self.table_name}")
         with self._lock:
             self._dirty_dirs.clear()
             self._cache.clear()
@@ -316,7 +373,7 @@ class FileListDB:
         Returns:
             (目录数, 总文件数) 元组
         """
-        rows = self._db.query("SELECT files FROM dir_cache")
+        rows = self._db.query(f"SELECT files FROM {self.table_name}")
         file_count = 0
         for row in rows:
             try:

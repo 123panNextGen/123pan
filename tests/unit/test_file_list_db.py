@@ -43,6 +43,43 @@ class TestFileListDB:
         assert files[0]["FileId"] == 1
         assert total == 1
 
+    def test_accounts_use_separate_tables(self, tmp_db):
+        first = FileListDB("first@example.com")
+        second = FileListDB("second@example.com")
+
+        first.save_dir(0, [_file(1, "first.txt")], total=1)
+        second.save_dir(0, [_file(2, "second.txt")], total=1)
+
+        assert first.get_dir(0)[0][0]["FileName"] == "first.txt"
+        assert second.get_dir(0)[0][0]["FileName"] == "second.txt"
+        tables = {
+            row["name"]
+            for row in Database().query(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert first.table_name != second.table_name
+        assert first.table_name in tables
+        assert second.table_name in tables
+        assert "first" not in first.table_name
+
+    def test_shared_cache_migrates_to_first_account_only(self, tmp_db):
+        Database().execute(
+            "INSERT INTO dir_cache"
+            " (dir_id, files, total, all_loaded, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ("0", json.dumps([_file(1)]), 1, 1, "2024-01-01T00:00:00+00:00"),
+        )
+
+        default = FileListDB()
+        first = FileListDB("first@example.com")
+        second = FileListDB("second@example.com")
+
+        assert default.get_dir(0) == (None, 0, False)
+        assert first.get_dir(0)[0][0]["FileId"] == 1
+        assert second.get_dir(0) == (None, 0, False)
+        assert Database().query_one("SELECT * FROM dir_cache") is None
+
     def test_cache_hit_refreshes_lru_order(self, tmp_db, monkeypatch):
         import src.app.common.file_list_db as fldb_mod
 
@@ -69,7 +106,8 @@ class TestFileListDB:
         # 手动改旧 updated_at 后视为过期
         old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         Database().execute(
-            "UPDATE dir_cache SET updated_at = ? WHERE dir_id = ?", (old, "0")
+            f"UPDATE {db.table_name} SET updated_at = ? WHERE dir_id = ?",
+            (old, "0"),
         )
         assert db.is_stale(0) is True
 
@@ -162,7 +200,7 @@ class TestFileListDB:
 
         # 强制重建 FileListDB 单例触发迁移
         fldb_mod.FileListDB._instance = None
-        db = FileListDB()
+        db = FileListDB("legacy@example.com")
 
         files, total, all_loaded = db.get_dir(0)
         assert total == 1

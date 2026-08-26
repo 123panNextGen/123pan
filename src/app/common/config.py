@@ -50,6 +50,8 @@ def _get_default_settings():
         "defaultDownloadPath": str(Path.home() / "Downloads"),
         "askDownloadLocation": True,
         "multiThreadDownload": True,
+        "clientSimulationEnabled": True,
+        "errorBackoffRetryEnabled": True,
         "downloadThreadCount": 4,   # 每个下载任务的分片线程数
         "uploadThreadCount": 1,     # 每个上传任务并行上传的分片数（1=顺序上传）
         "downloadSpeedLimit": 0,
@@ -70,6 +72,22 @@ def _get_default_settings():
         "closeToTray": False,      # 关闭窗口时最小化到系统托盘
         "startMinimized": False,   # 启动登录后最小化到托盘（后台同步）
     }
+
+
+def _encrypt_secret(value):
+    if not value or value.startswith("enc:"):
+        return value
+    from .credential import encrypt_credential
+
+    return encrypt_credential(value)
+
+
+def _decrypt_secret(value):
+    if value and value.startswith("enc:"):
+        from .credential import decrypt_credential
+
+        return decrypt_credential(value)
+    return value
 
 
 class ConfigManager:
@@ -155,14 +173,16 @@ class ConfigManager:
     @staticmethod
     def _save_account_row(user_name, info):
         """写入一条账户记录（内部方法）。"""
+        password = _encrypt_secret(info.get("passWord", ""))
+        authorization = _encrypt_secret(info.get("authorization", ""))
         Database().execute(
             "INSERT OR REPLACE INTO accounts"
             " (user_name, pass_word, authorization, device_type, os_version, loginuuid)"
             " VALUES (?, ?, ?, ?, ?, ?)",
             (
                 user_name,
-                info.get("passWord", ""),
-                info.get("authorization", ""),
+                password,
+                authorization,
                 info.get("deviceType", ""),
                 info.get("osVersion", ""),
                 info.get("loginuuid", ""),
@@ -265,18 +285,12 @@ class ConfigManager:
             return {}
         account = {
             "userName": row["user_name"],
-            "passWord": row["pass_word"],
-            "authorization": row["authorization"],
+            "passWord": _decrypt_secret(row["pass_word"]),
+            "authorization": _decrypt_secret(row["authorization"]),
             "deviceType": row["device_type"],
             "osVersion": row["os_version"],
             "loginuuid": row["loginuuid"],
         }
-        if account.get("passWord", "").startswith("enc:"):
-            from .credential import decrypt_credential
-
-            account = dict(account)
-            account["passWord"] = decrypt_credential(account["passWord"])
-            logger.debug("账号密码已解密")
         return account
 
     @staticmethod
@@ -291,13 +305,6 @@ class ConfigManager:
     @staticmethod
     def save_account(user_name, account_info, set_current=True):
         info = dict(account_info)
-        pwd = info.get("passWord", "")
-        if pwd and not pwd.startswith("enc:"):
-            from .credential import encrypt_credential
-
-            info["passWord"] = encrypt_credential(pwd)
-            logger.debug("账号密码已加密存储")
-
         ConfigManager._save_account_row(user_name, info)
         if set_current:
             ConfigManager.set_setting("currentAccount", user_name)
@@ -334,8 +341,14 @@ class ConfigManager:
                 val = json.loads(row["value"])
             except (ValueError, TypeError):
                 val = row["value"]
+            if key == "proxyPassword":
+                val = _decrypt_secret(val)
             cache[key] = val
-            logger.debug("读取设置 %s = %s (DB)", key, val)
+            logger.debug(
+                "读取设置 %s%s (DB)",
+                key,
+                "（已隐藏）" if key == "proxyPassword" else f" = {val}",
+            )
             return val
         # 未存储时回退到默认设置，再回退到调用方默认值
         defaults = _get_default_settings()
@@ -347,11 +360,16 @@ class ConfigManager:
 
     @staticmethod
     def set_setting(key, value):
+        stored_value = _encrypt_secret(value) if key == "proxyPassword" else value
         ConfigManager._get_db().execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
-            (key, json.dumps(value, ensure_ascii=False)),
+            (key, json.dumps(stored_value, ensure_ascii=False)),
         )
         # 同步更新内存缓存，保证读写一致
         ConfigManager._settings_cache()[key] = value
-        logger.info("设置变更: %s = %s", key, value)
+        logger.info(
+            "设置变更: %s%s",
+            key,
+            "（已隐藏）" if key == "proxyPassword" else f" = {value}",
+        )
         return True

@@ -44,6 +44,10 @@ class DownloadService:
             logger.info("获取下载链接成功: %s", redirect_url)
         return redirect_url
 
+    def check_download_traffic(self, file_ids):
+        """检查所选文件的剩余下载流量。"""
+        return self._session.check_download_traffic(file_ids)
+
     def set_multi_thread(self, enabled: bool, num_threads: int = 4):
         """启用或禁用多线程下载。
 
@@ -85,5 +89,4 @@ class DownloadService:
         return self._session.download_file_multithread(
             url, file_path, file_size, progress_callback, resume_offset, cancel_event
         )
-
 

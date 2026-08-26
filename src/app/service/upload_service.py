@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import hashlib
+import threading
 import time
 from pathlib import Path
 
@@ -34,9 +35,13 @@ class UploadService:
 
     def __init__(self, session):
         self._session = session
+        self._error_backoff_retry_enabled = True
         # 上传限速器由本服务持有并消费（下载限速器由 session 持有）
         self._limiter = None
         self._upload_speed_limit_kbps = 0
+
+    def set_error_backoff_retry(self, enabled):
+        self._error_backoff_retry_enabled = enabled
 
     def set_upload_speed_limit(self, kbps: int):
         """设置上传速度限制（KB/s），0 为不限速。
@@ -50,6 +55,30 @@ class UploadService:
         else:
             self._limiter = None
             self._upload_speed_limit_kbps = 0
+
+    @staticmethod
+    def _is_session_expired(response_data):
+        """判断 API 响应是否表示登录会话已过期。"""
+        return "session_expired" in str(response_data.get("message", ""))
+
+    def _post_with_session_retry(
+        self, refresh_session, refresh_state, url, json, timeout
+    ):
+        """发起鉴权请求；会话过期时重新登录并重试一次。"""
+        response = self._session.http.post(url, json=json, timeout=timeout)
+        response_data = response.json()
+        if not refresh_session or not self._is_session_expired(response_data):
+            return response, response_data
+
+        with refresh_state["lock"]:
+            if not refresh_state["attempted"]:
+                refresh_state["attempted"] = True
+                refresh_state["succeeded"] = refresh_session() == 200
+            if not refresh_state["succeeded"]:
+                return response, response_data
+
+        response = self._session.http.post(url, json=json, timeout=timeout)
+        return response, response.json()
 
     @staticmethod
     def compute_file_md5(file_path, progress_callback=None, cancel_check=None):
@@ -108,7 +137,8 @@ class UploadService:
         return resume_info
 
     def _fetch_presigned_urls(
-        self, bucket, upload_key, upload_id, storage_node, start, end
+        self, bucket, upload_key, upload_id, storage_node, start, end,
+        refresh_session=None, refresh_state=None,
     ):
         """批量获取 [start, end) 分片的预签名 URL。
 
@@ -123,12 +153,11 @@ class UploadService:
             "uploadId": upload_id,
             "StorageNode": storage_node,
         }
-        get_link_res = self._session.http.post(
+        get_link_res, get_link_res_json = self._post_with_session_retry(
+            refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
-            json=get_link_data,
-            timeout=_UPLOAD_REQUEST_TIMEOUT,
+            get_link_data, _UPLOAD_REQUEST_TIMEOUT,
         )
-        get_link_res_json = get_link_res.json()
         res_code_up = get_link_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"获取链接失败: {get_link_res_json}")
@@ -142,11 +171,13 @@ class UploadService:
         return urls
 
     def _fetch_single_presigned_url(
-        self, bucket, upload_key, upload_id, storage_node, part_number
+        self, bucket, upload_key, upload_id, storage_node, part_number,
+        refresh_session=None, refresh_state=None,
     ):
         """获取单个分片的预签名 URL（严格模式：缺失即抛错）。"""
         urls = self._fetch_presigned_urls(
-            bucket, upload_key, upload_id, storage_node, part_number, part_number + 1
+            bucket, upload_key, upload_id, storage_node, part_number, part_number + 1,
+            refresh_session, refresh_state,
         )
         if part_number not in urls:
             raise RuntimeError(f"获取分片 {part_number} 预签名 URL 失败")
@@ -159,7 +190,8 @@ class UploadService:
         if self._upload_speed_limit_kbps > 0:
             limited_seconds = len(data) / (self._upload_speed_limit_kbps * 1024)
             timeout = max(timeout, int(limited_seconds * 3))
-        for attempt in range(1, _UPLOAD_PART_RETRIES + 1):
+        max_attempts = _UPLOAD_PART_RETRIES if self._error_backoff_retry_enabled else 1
+        for attempt in range(1, max_attempts + 1):
             if task and task.is_cancelled:
                 return False
             try:
@@ -174,13 +206,13 @@ class UploadService:
                 ConnectionError,
             ) as error:
                 last_error = error
-                if attempt == _UPLOAD_PART_RETRIES:
+                if attempt == max_attempts:
                     break
                 delay = min(2 ** (attempt - 1), 4)
                 logger.warning(
                     "上传分片网络异常，第 %d/%d 次重试，等待 %ds: %s",
                     attempt,
-                    _UPLOAD_PART_RETRIES,
+                    max_attempts,
                     delay,
                     error,
                 )
@@ -194,7 +226,7 @@ class UploadService:
     def up_load(
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
         resume_info=None, session_callback=None, num_threads=1,
-        progress_callback=None, validation_callback=None,
+        progress_callback=None, validation_callback=None, refresh_session=None,
     ):
         """上传文件（支持断点续传与并行分片上传）。
 
@@ -230,6 +262,11 @@ class UploadService:
 
         t0 = time.monotonic()
         block_size = 5242880
+        refresh_state = {
+            "attempted": False,
+            "succeeded": False,
+            "lock": threading.Lock(),
+        }
 
         if task and task.is_cancelled:
             return "已取消"
@@ -264,21 +301,19 @@ class UploadService:
                 "duplicate": 0,
             }
 
-            up_res = self._session.http.post(
+            up_res, up_res_json = self._post_with_session_retry(
+                refresh_session, refresh_state,
                 "https://www.123pan.cn/b/api/file/upload_request",
-                json=list_up_request,
-                timeout=_UPLOAD_REQUEST_TIMEOUT,
+                list_up_request, _UPLOAD_REQUEST_TIMEOUT,
             )
-            up_res_json = up_res.json()
             res_code_up = up_res_json.get("code", -1)
             if res_code_up == 5060:
                 list_up_request["duplicate"] = dup_choice
-                up_res = self._session.http.post(
+                up_res, up_res_json = self._post_with_session_retry(
+                    refresh_session, refresh_state,
                     "https://www.123pan.cn/b/api/file/upload_request",
-                    json=list_up_request,
-                    timeout=_UPLOAD_REQUEST_TIMEOUT,
+                    list_up_request, _UPLOAD_REQUEST_TIMEOUT,
                 )
-                up_res_json = up_res.json()
                 res_code_up = up_res_json.get("code", -1)
             if res_code_up != 0:
                 raise RuntimeError(f"上传请求失败: {up_res_json}")
@@ -324,12 +359,11 @@ class UploadService:
             "uploadId": upload_id,
             "storageNode": storage_node,
         }
-        start_res = self._session.http.post(
+        start_res, start_res_json = self._post_with_session_retry(
+            refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
-            json=start_data,
-            timeout=30,
+            start_data, 30,
         )
-        start_res_json = start_res.json()
         res_code_up = start_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"获取传输列表失败: {start_res_json}")
@@ -374,7 +408,6 @@ class UploadService:
 
         # ---- 并行分片上传 ----
         if num_threads > 1 and len(pending_parts) > 1:
-            import threading
             from concurrent.futures import ThreadPoolExecutor
 
             progress_lock = threading.Lock()
@@ -393,7 +426,8 @@ class UploadService:
                     end = min(pn + batch, total_parts + 1)
                     try:
                         urls = self._fetch_presigned_urls(
-                            bucket, upload_key, upload_id, storage_node, pn, end
+                            bucket, upload_key, upload_id, storage_node, pn, end,
+                            refresh_session, refresh_state,
                         )
                         url_cache.update(urls)
                     except Exception as e:
@@ -402,7 +436,8 @@ class UploadService:
                         return url_cache[pn]
                     # 单分片兜底（失败则抛错中止上传）
                     url = self._fetch_single_presigned_url(
-                        bucket, upload_key, upload_id, storage_node, pn
+                        bucket, upload_key, upload_id, storage_node, pn,
+                        refresh_session, refresh_state,
                     )
                     url_cache[pn] = url
                     return url
@@ -491,7 +526,8 @@ class UploadService:
                                 time.sleep(min(remaining, 0.1))
 
                     upload_url = self._fetch_single_presigned_url(
-                        bucket, upload_key, upload_id, storage_node, part_number
+                        bucket, upload_key, upload_id, storage_node, part_number,
+                        refresh_session, refresh_state,
                     )
                     if not self._put_part_with_retry(upload_url, data, task):
                         return "已取消"
@@ -505,21 +541,19 @@ class UploadService:
             "uploadId": upload_id,
             "storageNode": storage_node,
         }
-        parts_res = self._session.http.post(
+        parts_res, parts_res_json = self._post_with_session_retry(
+            refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
-            json=uploaded_comp_data,
-            timeout=30,
+            uploaded_comp_data, 30,
         )
-        parts_res_json = parts_res.json()
         if parts_res_json.get("code", -1) != 0:
             raise RuntimeError(f"上传分片列表确认失败: {parts_res_json}")
 
-        complete_res = self._session.http.post(
+        complete_res, complete_res_json = self._post_with_session_retry(
+            refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload",
-            json=uploaded_comp_data,
-            timeout=30,
+            uploaded_comp_data, 30,
         )
-        complete_res_json = complete_res.json()
         if complete_res_json.get("code", -1) != 0:
             raise RuntimeError(f"合并上传分片失败: {complete_res_json}")
 
@@ -527,12 +561,11 @@ class UploadService:
             time.sleep(3)
 
         close_up_session_data = {"fileId": up_file_id}
-        close_res = self._session.http.post(
+        close_res, close_res_json = self._post_with_session_retry(
+            refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/upload_complete",
-            json=close_up_session_data,
-            timeout=30,
+            close_up_session_data, 30,
         )
-        close_res_json = close_res.json()
         res_code_up = close_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")

@@ -287,6 +287,35 @@ class SettingInterface(ScrollArea):
             step=1,
         )
 
+        # ---- 网络行为组 ----
+        self.networkBehaviorGroup = SettingCardGroup(
+            tr("settings.group_network_behavior", "网络行为"), self.scrollWidget
+        )
+        self.clientSimulationCard = SwitchSettingCard(
+            FIF.APPLICATION,
+            tr("settings.client_simulation", "客户端模拟"),
+            tr(
+                "settings.client_simulation_desc",
+                "开启时模拟 Android 客户端，关闭时使用 Web 客户端请求头",
+            ),
+            parent=self.networkBehaviorGroup,
+        )
+        self.clientSimulationCard.setChecked(
+            ConfigManager.get_setting("clientSimulationEnabled", True)
+        )
+        self.errorBackoffRetryCard = SwitchSettingCard(
+            FIF.SYNC,
+            tr("settings.error_backoff_retry", "错误退避重试"),
+            tr(
+                "settings.error_backoff_retry_desc",
+                "传输发生临时网络错误或限流时等待并自动重试",
+            ),
+            parent=self.networkBehaviorGroup,
+        )
+        self.errorBackoffRetryCard.setChecked(
+            ConfigManager.get_setting("errorBackoffRetryEnabled", True)
+        )
+
         # ---- 代理设置组 ----
         self.proxyGroup = SettingCardGroup(tr("网络代理"), self.scrollWidget)
 
@@ -513,6 +542,9 @@ class SettingInterface(ScrollArea):
         self.downloadGroup.addSettingCard(self.maxConcurrentUploadCard)
         self.downloadGroup.addSettingCard(self.maxConcurrentDownloadCard)
 
+        self.networkBehaviorGroup.addSettingCard(self.clientSimulationCard)
+        self.networkBehaviorGroup.addSettingCard(self.errorBackoffRetryCard)
+
         # 代理设置组
         self.proxyGroup.addSettingCard(self.proxyEnabledCard)
         self.proxyGroup.addSettingCard(self.proxyTypeCard)
@@ -544,6 +576,7 @@ class SettingInterface(ScrollArea):
 
         # 添加到布局
         self.expandLayout.addWidget(self.downloadGroup)
+        self.expandLayout.addWidget(self.networkBehaviorGroup)
         self.expandLayout.addWidget(self.proxyGroup)
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.trayGroup)
@@ -744,6 +777,20 @@ class SettingInterface(ScrollArea):
             mw.pan.set_download_multi_thread(checked, num_threads)
         logger.info("多线程下载: %s", "开启" if checked else "关闭")
 
+    def __onClientSimulationChanged(self, checked):
+        ConfigManager.set_setting("clientSimulationEnabled", checked)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_client_simulation(checked)
+        logger.info("客户端模拟: %s", "开启" if checked else "关闭")
+
+    def __onErrorBackoffRetryChanged(self, checked):
+        ConfigManager.set_setting("errorBackoffRetryEnabled", checked)
+        mw = self.window()
+        if mw and hasattr(mw, "pan"):
+            mw.pan.set_error_backoff_retry(checked)
+        logger.info("错误退避重试: %s", "开启" if checked else "关闭")
+
     def __onDownloadThreadsChanged(self, val):
         ConfigManager.set_setting("downloadThreadCount", val)
         mw = self.window()
@@ -862,6 +909,13 @@ class SettingInterface(ScrollArea):
         )
         self.maxConcurrentDownloadCard.spinBox.valueChanged.connect(
             self.__onMaxConcurrentDownloadsChanged
+        )
+
+        self.clientSimulationCard.checkedChanged.connect(
+            self.__onClientSimulationChanged
+        )
+        self.errorBackoffRetryCard.checkedChanged.connect(
+            self.__onErrorBackoffRetryChanged
         )
 
         # 代理设置

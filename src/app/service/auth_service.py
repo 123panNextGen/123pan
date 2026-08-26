@@ -59,7 +59,7 @@ class AuthService:
             return result.code
         token_data = result.data
         self.authorization = token_data["authorization"]
-        logger.info("登录成功: user=%s, token=%.20s...", self.user_name, self.authorization)
+        logger.info("登录成功: user=%s, token已获取", self.user_name)
         self.save_file()
         return 200
 

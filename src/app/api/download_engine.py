@@ -18,6 +18,8 @@ from typing import Callable, Optional
 
 import requests
 
+from .download_url import is_safe_download_url
+
 logger = logging.getLogger(__name__)
 
 # CDN 限流 / 服务器临时故障状态码：需要更长的退避重试，而非直接判失败
@@ -152,6 +154,8 @@ class DownloadEngine:
                     cancel_event=cancel_event,
                 )
             except RuntimeError as e:
+                if not getattr(self, "_error_backoff_retry_enabled", True):
+                    raise
                 # 分片下载失败（如 CDN 限流 429 重试耗尽、分片合并失败）时
                 # 回退单线程重试，避免整个下载任务失败；
                 # 单线程内部自带限流退避重试。
@@ -222,7 +226,7 @@ class DownloadEngine:
             return ""
         data = body.get("data") or {}
         redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))
-        if redirect_url and redirect_url.startswith("http"):
+        if redirect_url and is_safe_download_url(redirect_url):
             logger.debug("检测到 JSON 重定向: %s ...", redirect_url[:80])
             return redirect_url
         return ""
@@ -322,6 +326,10 @@ class DownloadEngine:
                             if cancel_event and cancel_event.is_set():
                                 raise DownloadCancelledError()
                             if chunk:
+                                if downloaded + len(chunk) > file_size:
+                                    raise RuntimeError(
+                                        "下载响应超过声明的文件大小"
+                                    )
                                 f.write(chunk)
                                 downloaded += len(chunk)
                                 if self._download_limiter:
@@ -364,7 +372,10 @@ class DownloadEngine:
                 requests.exceptions.Timeout,
             ) as e:
                 elapsed = time.monotonic() - t0
-                if conn_attempt < max_conn_retries - 1:
+                if (
+                    getattr(self, "_error_backoff_retry_enabled", True)
+                    and conn_attempt < max_conn_retries - 1
+                ):
                     wait = (conn_attempt + 1) * 2.0
                     logger.warning(
                         "单线程下载连接中断 (第 %d/%d 次): %s (%.1fs)，%ss 后重试",
@@ -390,7 +401,11 @@ class DownloadEngine:
 
             except requests.exceptions.HTTPError as e:
                 elapsed = time.monotonic() - t0
-                if _is_throttle_error(e) and conn_attempt < max_throttle_retries - 1:
+                if (
+                    getattr(self, "_error_backoff_retry_enabled", True)
+                    and _is_throttle_error(e)
+                    and conn_attempt < max_throttle_retries - 1
+                ):
                     wait = _throttle_backoff(e, conn_attempt)
                     logger.warning(
                         "单线程下载被限流/服务器临时故障 (第 %d/%d 次): "
@@ -458,7 +473,12 @@ class DownloadEngine:
             # 普通错误最多重试 3 次；限流/临时故障退避更久，最多重试 6 次
             max_retries = 3
             max_throttle_retries = 6
-            for attempt in range(max_throttle_retries):
+            max_attempts = (
+                max_throttle_retries
+                if getattr(self, "_error_backoff_retry_enabled", True)
+                else 1
+            )
+            for attempt in range(max_attempts):
                 chunk_downloaded = 0  # 本次尝试下载的字节数，失败时需回退
                 try:
                     if part_path.exists():
@@ -475,6 +495,11 @@ class DownloadEngine:
                                 if cancel_event and cancel_event.is_set():
                                     raise DownloadCancelledError()
                                 if data:
+                                    expected_size = end - start + 1
+                                    if chunk_downloaded + len(data) > expected_size:
+                                        raise RuntimeError(
+                                            f"分片 {index} 响应超过声明大小"
+                                        )
                                     pf.write(data)
                                     if self._download_limiter:
                                         wait = self._download_limiter.consume(len(data))
@@ -507,7 +532,10 @@ class DownloadEngine:
                         with progress_lock:
                             downloaded_bytes[0] -= chunk_downloaded
                     is_throttle = _is_throttle_error(e)
-                    limit = max_throttle_retries if is_throttle else max_retries
+                    if getattr(self, "_error_backoff_retry_enabled", True):
+                        limit = max_throttle_retries if is_throttle else max_retries
+                    else:
+                        limit = 1
                     if attempt < limit - 1:
                         if is_throttle:
                             wait = _throttle_backoff(e, attempt)

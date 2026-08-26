@@ -203,6 +203,22 @@ class TestUploadParallel:
         assert result == 7
         assert session.transfer.put.call_count == 2
 
+    def test_upload_does_not_retry_when_backoff_disabled(self, tmp_path):
+        """关闭错误退避后，分片网络错误立即上抛。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = _mock_upload_session()
+        session.transfer.put.side_effect = requests.exceptions.ConnectionError(
+            "write timeout"
+        )
+        svc = UploadService(session)
+        svc.set_error_backoff_retry(False)
+
+        with pytest.raises(requests.exceptions.ConnectionError):
+            svc.up_load(str(f), 0)
+
+        assert session.transfer.put.call_count == 1
+
     def test_complete_failure_is_not_reported_as_success(self, tmp_path):
         """服务端合并失败时抛错，不能继续确认上传完成。"""
         f = tmp_path / "f.bin"

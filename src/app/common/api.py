@@ -20,6 +20,7 @@ from ..service.file_service import FileService
 from ..service.offline_service import OfflineService
 from ..service.share_service import ShareService
 from ..service.upload_service import UploadService
+from .config import ConfigManager
 from .const import all_device_type, all_os_versions, VERSION
 from .log import get_logger
 
@@ -49,6 +50,12 @@ class Pan123:
         self._upload = UploadService(self._session)
         self._share = ShareService(self._session)
         self._offline = OfflineService(self._session)
+        self.set_client_simulation(
+            ConfigManager.get_setting("clientSimulationEnabled", True)
+        )
+        self.set_error_backoff_retry(
+            ConfigManager.get_setting("errorBackoffRetryEnabled", True)
+        )
 
         self.devicetype = random.choice(all_device_type)
         self.osversion = random.choice(all_os_versions)
@@ -101,6 +108,8 @@ class Pan123:
         self._auth.authorization = self.authorization
         self._auth.stay_logged_in = self.stay_logged_in
         self._auth.sync_to_session()
+        self._file.set_account(self.user_name)
+        self._offline.set_account(self.user_name)
 
     def _sync_from_auth(self):
         self.devicetype = self._auth.devicetype
@@ -118,6 +127,7 @@ class Pan123:
         code = self._auth.login()
         if code == 200:
             self.authorization = self._auth.authorization
+            self._sync_to_session()
             self.save_file()
         return code
 
@@ -213,6 +223,9 @@ class Pan123:
     def link_by_fileDetail(self, file_detail, showlink=True):
         return self._download.link_by_fileDetail(file_detail, showlink)
 
+    def check_download_traffic(self, file_ids):
+        return self._download.check_download_traffic(file_ids)
+
     def delete_file(self, file, by_num=True, operation=True, parent_file_id=None):
         """删除或恢复文件。
 
@@ -272,7 +285,7 @@ class Pan123:
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
-            validation_callback=validation_callback,
+            validation_callback=validation_callback, refresh_session=self.login,
         )
 
     def mark_dir_dirty(self, dir_id):
@@ -337,6 +350,13 @@ class Pan123:
     def set_download_multi_thread(self, enabled, num_threads=4):
         """启用/关闭多线程分片下载，并设置每个文件的下载线程数。"""
         self._download.set_multi_thread(enabled, num_threads)
+
+    def set_client_simulation(self, enabled):
+        self._session.set_client_simulation(enabled)
+
+    def set_error_backoff_retry(self, enabled):
+        self._session.set_error_backoff_retry(enabled)
+        self._upload.set_error_backoff_retry(enabled)
 
     def set_download_speed_limit(self, kbps):
         self._download.set_download_speed_limit(kbps)
