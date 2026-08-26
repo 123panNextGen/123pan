@@ -107,8 +107,8 @@ def encrypt_credential(plaintext: str) -> str:
         ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
         return "enc:" + base64.b64encode(nonce + ct).decode("ascii")
     except Exception as e:
-        logger.error(f"加密凭据失败: {e}")
-        return plaintext
+        logger.error("加密凭据失败: %s", e)
+        raise RuntimeError("无法安全加密凭据，已取消保存") from e
 
 
 def decrypt_credential(ciphertext: str) -> str:

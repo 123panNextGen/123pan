@@ -13,6 +13,7 @@ import requests
 import responses
 
 from src.app.api import download_engine as de
+from src.app.api.download_url import is_safe_download_url
 from src.app.api.session import NetSession
 
 
@@ -52,6 +53,12 @@ class TestThrottleHelpers:
         exc = self._http_error(429)
         wait = de._throttle_backoff(exc, 5)
         assert 30.0 <= wait < 31.0
+
+    def test_download_redirect_requires_https_public_host(self):
+        assert is_safe_download_url("https://cdn.example.com/file") is True
+        assert is_safe_download_url("http://cdn.example.com/file") is False
+        assert is_safe_download_url("https://127.0.0.1/file") is False
+        assert is_safe_download_url("https://user:pass@cdn.example.com/file") is False
 
 
 class TestDownloadSingleRetry:
@@ -134,6 +141,24 @@ class TestDownloadSingleRetry:
                 "https://cdn.example.com/limited2.bin", file_path, len(body)
             )
         assert calls["n"] == 6
+        assert not file_path.exists()
+        assert not file_path.with_suffix(".bin.tmp").exists()
+
+    @responses.activate
+    def test_single_rejects_response_larger_than_declared_size(self, tmp_path):
+        session = NetSession()
+        file_path = tmp_path / "too-large.bin"
+        responses.add(
+            responses.GET,
+            "https://cdn.example.com/too-large.bin",
+            body=b"12345",
+            status=200,
+        )
+
+        with pytest.raises(RuntimeError, match="超过声明"):
+            session._download_single(
+                "https://cdn.example.com/too-large.bin", file_path, 4
+            )
         assert not file_path.exists()
         assert not file_path.with_suffix(".bin.tmp").exists()
 

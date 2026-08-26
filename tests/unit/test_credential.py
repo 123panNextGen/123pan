@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import src.app.common.credential as cred_mod
+import pytest
 
 
 class TestCredential:
@@ -34,6 +35,16 @@ class TestCredential:
         cred_mod._KEY_FILE = tmp_path / ".keyfile"
         assert cred_mod.encrypt_credential("") == ""
         assert cred_mod.encrypt_credential(None) == ""
+
+    def test_encrypt_failure_does_not_return_plaintext(self, monkeypatch):
+        """密钥不可用时必须失败，不能回退返回明文。"""
+        monkeypatch.setattr(
+            cred_mod,
+            "_load_or_create_key",
+            lambda: (_ for _ in ()).throw(OSError("key unavailable")),
+        )
+        with pytest.raises(RuntimeError, match="无法安全加密凭据"):
+            cred_mod.encrypt_credential("secret")
 
     def test_encrypt_multiple_calls_different_results(self, tmp_path):
         """相同明文每次加密产生不同密文（GCM nonce 随机性）。"""

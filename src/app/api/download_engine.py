@@ -18,6 +18,8 @@ from typing import Callable, Optional
 
 import requests
 
+from .download_url import is_safe_download_url
+
 logger = logging.getLogger(__name__)
 
 # CDN 限流 / 服务器临时故障状态码：需要更长的退避重试，而非直接判失败
@@ -224,7 +226,7 @@ class DownloadEngine:
             return ""
         data = body.get("data") or {}
         redirect_url = data.get("RedirectUrl", data.get("redirect_url", ""))
-        if redirect_url and redirect_url.startswith("http"):
+        if redirect_url and is_safe_download_url(redirect_url):
             logger.debug("检测到 JSON 重定向: %s ...", redirect_url[:80])
             return redirect_url
         return ""
@@ -324,6 +326,10 @@ class DownloadEngine:
                             if cancel_event and cancel_event.is_set():
                                 raise DownloadCancelledError()
                             if chunk:
+                                if downloaded + len(chunk) > file_size:
+                                    raise RuntimeError(
+                                        "下载响应超过声明的文件大小"
+                                    )
                                 f.write(chunk)
                                 downloaded += len(chunk)
                                 if self._download_limiter:
@@ -489,6 +495,11 @@ class DownloadEngine:
                                 if cancel_event and cancel_event.is_set():
                                     raise DownloadCancelledError()
                                 if data:
+                                    expected_size = end - start + 1
+                                    if chunk_downloaded + len(data) > expected_size:
+                                        raise RuntimeError(
+                                            f"分片 {index} 响应超过声明大小"
+                                        )
                                     pf.write(data)
                                     if self._download_limiter:
                                         wait = self._download_limiter.consume(len(data))

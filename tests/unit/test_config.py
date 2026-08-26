@@ -72,13 +72,23 @@ class TestConfigManager:
 
         # verify password is encrypted in sqlite
         row = Database().query_one(
-            "SELECT pass_word FROM accounts WHERE user_name = ?", ("test_user",)
+            "SELECT pass_word, authorization FROM accounts WHERE user_name = ?",
+            ("test_user",),
         )
         assert row["pass_word"].startswith("enc:")
+        assert row["authorization"].startswith("enc:")
 
         # verify get_account decrypts automatically
         account = ConfigManager.get_account("test_user")
         assert account["passWord"] == "my_password"
+        assert account["authorization"] == "tok_xxx"
+
+        ConfigManager.set_setting("proxyPassword", "proxy_secret")
+        stored = Database().query_one(
+            "SELECT value FROM config WHERE key = ?", ("proxyPassword",)
+        )
+        assert "proxy_secret" not in stored["value"]
+        assert ConfigManager.get_setting("proxyPassword") == "proxy_secret"
 
         # switch account
         ConfigManager.save_account("user2", {"userName": "user2", "passWord": "pwd2"})
@@ -108,8 +118,15 @@ class TestConfigManager:
         # old top-level fields should be migrated
         assert config["currentAccount"] == "old_user"
         assert "old_user" in config["accounts"]
-        # migration preserves old password as-is (not encrypted)
-        assert config["accounts"]["old_user"]["passWord"] == "old_pwd"
+        # migrated credentials are encrypted in SQLite and decrypted on read
+        row = Database().query_one(
+            "SELECT pass_word, authorization FROM accounts WHERE user_name = ?",
+            ("old_user",),
+        )
+        assert row["pass_word"].startswith("enc:")
+        assert row["authorization"].startswith("enc:")
+        assert ConfigManager.get_account("old_user")["passWord"] == "old_pwd"
+        assert ConfigManager.get_account("old_user")["authorization"] == "old_tok"
         # old top-level fields cleaned up
         assert "userName" not in config
         assert "passWord" not in config
