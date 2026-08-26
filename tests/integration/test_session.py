@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import io
+import json
 
 import requests
 import responses
@@ -309,6 +310,42 @@ class TestNetSessionHttp:
         result = session.get_file_link(file_info)
         assert result.code == 0
         assert result.data == "https://resolved.example.com/file"
+
+    @responses.activate
+    def test_check_download_traffic(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/download/traffic/check",
+            json={
+                "code": 0,
+                "data": {
+                    "originalRemainTraffic": 5 * 1024**3,
+                    "originalFileSize": 1024**3,
+                    "clientFileSize": 512 * 1024**2,
+                    "isTrafficExceeded": False,
+                    "isBlocked": False,
+                },
+            },
+            status=200,
+        )
+        session = NetSession()
+        result = session.check_download_traffic([42, 43])
+
+        assert result.code == 0
+        assert result.data["originalRemainTraffic"] == 5 * 1024**3
+        assert json.loads(responses.calls[0].request.body) == {"fids": [42, 43]}
+
+    @responses.activate
+    def test_check_download_traffic_api_error(self):
+        responses.post(
+            "https://www.123pan.cn/b/api/file/download/traffic/check",
+            json={"code": 401, "message": "cookie token is empty"},
+            status=200,
+        )
+        session = NetSession()
+        result = session.check_download_traffic([42])
+
+        assert result.code == 401
+        assert result.msg == "cookie token is empty"
 
     @responses.activate
     def test_get_file_link_network_error(self):
