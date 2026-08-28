@@ -50,7 +50,7 @@ class _DownloadPreviewThread(QThread):
     def run(self):
         try:
             file_name = self.file_info.get("FileName", "unknown")
-            self.status.emit(f"正在获取下载链接...")
+            self.status.emit("正在获取下载链接...")
 
             # 1. 获取下载链接
             download_url = self.pan.link_by_fileDetail(
@@ -264,12 +264,6 @@ class PreviewDialog(QDialog):
                 min(int(screen_size.width() * 0.75), 1200),
                 min(int(screen_size.height() * 0.8), 900),
             )
-
-    def reject(self):
-        super().reject()
-
-    def closeEvent(self, event):
-        super().closeEvent(event)
 
     def done(self, result):
         """所有关闭路径（accept/reject/close）统一清理预览资源。

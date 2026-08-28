@@ -75,7 +75,7 @@ class FileListDB:
                 cls._instances[account_name] = instance
             return instance
 
-    def __init__(self, account_name=None):
+    def __init__(self, account_name=None):  # pylint: disable=unused-argument
         if self._initialized:
             return
         self._initialized = True

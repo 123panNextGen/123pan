@@ -155,7 +155,7 @@ class AudioPreviewWidget(QWidget):
             self._player.play()
 
     def _on_state_changed(self, state):
-        self._is_playing = (state == QMediaPlayer.PlaybackState.PlayingState)
+        self._is_playing = state == QMediaPlayer.PlaybackState.PlayingState
         self._update_play_button()
         if self._is_playing:
             self._status_label.setText("正在播放")

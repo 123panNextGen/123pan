@@ -98,7 +98,7 @@ def configure_resizable_header(table, stretch_column=0, default_widths=None):
             pass
 
     class _StretchFilter(QObject):
-        def eventFilter(self, obj, event):
+        def eventFilter(self, _obj, event):
             if event.type() == QEvent.Type.Resize:
                 _stretch()
             return False

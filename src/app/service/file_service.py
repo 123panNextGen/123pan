@@ -40,7 +40,8 @@ class FileService:
         """标记当前账户的全部目录缓存为脏。"""
         self._db.mark_all_dirty()
 
-    def get_dir_by_id(self, file_id, page=0, list_len=0, all=False, limit=100,
+    def get_dir_by_id(  # pylint: disable=redefined-builtin
+        self, file_id, page=0, list_len=0, all=False, limit=100,
                       force_refresh=False):
         """按文件夹ID获取文件列表（支持分页和本地缓存）。
 

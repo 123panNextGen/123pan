@@ -563,7 +563,6 @@ class FileActionsMixin:
         name_item = self.fileTable.item(row, 0)
         file_id = name_item.data(Qt.ItemDataRole.UserRole)
         old_name = name_item.text()
-        file_type = name_item.data(Qt.ItemDataRole.UserRole + 1)
 
         # 使用重命名对话框获取新名称
         dialog = InputDialog(tr("file.menu_rename", "重命名"), "请输入新的名称", old_name, self)

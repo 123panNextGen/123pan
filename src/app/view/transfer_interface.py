@@ -158,7 +158,7 @@ class TransferInterface(QWidget, TransferTableMixin):
                 self.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
-                logger.info(f"代理已启用: {proxy_type}://{host}:{port}")
+                logger.info("代理已启用: %s://%s:%s", proxy_type, host, port)
         else:
             self.pan.clear_download_proxy()
 

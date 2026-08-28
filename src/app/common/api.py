@@ -184,7 +184,7 @@ class Pan123:
     def get_dir(self, save=True, force_refresh=False):
         return self.get_dir_by_id(self.parent_file_id, save, force_refresh=force_refresh)
 
-    def get_dir_by_id(self, file_id, save=True, all=False, limit=100,
+    def get_dir_by_id(self, file_id, save=True, all=False, limit=100,  # pylint: disable=redefined-builtin
                       force_refresh=False):
         code, items, total, all_file, _ = self._file.get_dir_by_id(
             file_id, page=self.file_page, list_len=len(self.list),
@@ -326,7 +326,7 @@ class Pan123:
         return self._offline.build_rapid_payload(files)
 
     def mkdir(self, dirname, remakedir=False):
-        file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
+        file_id, _ = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
         if file_id is not None:
             self.get_dir()
         return file_id

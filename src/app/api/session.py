@@ -45,7 +45,7 @@ class _ApiSession(requests.Session):
         super().__init__()
         self._use_fallback = False
 
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, **kwargs):  # pylint: disable=arguments-differ
         parsed = urlparse(url)
         is_primary_api = parsed.netloc == self._PRIMARY_NETLOC and "/api/" in parsed.path
         if not is_primary_api:
