@@ -794,7 +794,7 @@ class UploadFolderTask(QRunnable):
                 full = _Path(dirpath) / fname
                 if not full.is_file():
                     continue
-                files.append((str(full), parent_cloud_id))
+                files.append((full.as_posix(), parent_cloud_id))
         return files
 
     def _ensure_folder(self, name, parent_id):
