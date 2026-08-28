@@ -9,7 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 from PySide6.QtCore import QThreadPool, QTimer
-from PySide6.QtWidgets import QDialog, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QAbstractScrollArea, QDialog, QMenu, QSystemTrayIcon
 
 import sys
 
@@ -17,6 +17,7 @@ from qfluentwidgets import (
     NavigationItemPosition,
     FluentWindow,
     FluentIcon as FIF,
+    SmoothMode,
 )
 from .file_interface import FileInterface
 from .login_window import LoginDialog
@@ -81,6 +82,7 @@ class MainWindow(FluentWindow):
         # 仅创建文件页（默认页）；传输/设置/云盘/回收站/分享/同步页懒加载，
         # 首次点击导航时才构建，显著降低启动内存峰值。
         self.file_interface = FileInterface(self)
+        self._configure_smooth_scrolling(self.file_interface)
 
         # 传输界面懒加载代理（文件页添加任务时按需创建，不切换页面）
         self.file_interface.transfer_interface = _LazyTransferProxy(
@@ -142,6 +144,7 @@ class MainWindow(FluentWindow):
         if interface is not None:
             return interface
         interface = self._create_lazy_interface(route_key)
+        self._configure_smooth_scrolling(interface)
         self._lazy_built[route_key] = interface
         icon, text, position = self._lazy_specs[route_key]
         self.addSubInterface(interface, icon, text, position)
@@ -185,6 +188,27 @@ class MainWindow(FluentWindow):
         else:
             raise KeyError(f"未知的懒加载界面: {route_key}")
         return interface
+
+    @staticmethod
+    def _configure_smooth_scrolling(widget):
+        """统一降低滚动动画延迟，避免连续滚轮事件堆积。"""
+        scroll_areas = [widget, *widget.findChildren(QAbstractScrollArea)]
+        for scroll_area in scroll_areas:
+            delegate = getattr(scroll_area, "scrollDelagate", None)
+            if delegate is None:
+                continue
+            for scroll_name in ("verticalSmoothScroll", "horizonSmoothScroll"):
+                smooth_scroll = getattr(delegate, scroll_name, None)
+                if smooth_scroll is None:
+                    continue
+                smooth_scroll.setSmoothMode(SmoothMode.CONSTANT)
+                smooth_scroll.widthThreshold = 0
+                for engine_name in ("fixedStepScrollEngine", "adaptiveScrollEngine"):
+                    engine = getattr(smooth_scroll, engine_name, None)
+                    if engine is not None:
+                        engine.duration = 180
+                        engine.stepRatio = 2.0
+                        engine.acceleration = 0
 
     def _startup_login_flow(self):
         """启动登录流程。
