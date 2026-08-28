@@ -24,23 +24,22 @@ _PREVIEWER_MAP = None
 
 def _build_previewer_map():
     """构建扩展名到预览器类的映射表（懒加载）。"""
-    global _PREVIEWER_MAP
     if _PREVIEWER_MAP is not None:
         return _PREVIEWER_MAP
 
-    _PREVIEWER_MAP = {}
+    previewer_map = {}
 
     # 图片格式
     for ext in ("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "ico", "tiff", "tif"):
-        _PREVIEWER_MAP[ext] = ImagePreviewWidget
+        previewer_map[ext] = ImagePreviewWidget
 
     # 视频格式
     for ext in ("mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "3gp"):
-        _PREVIEWER_MAP[ext] = VideoPreviewWidget
+        previewer_map[ext] = VideoPreviewWidget
 
     # 音频格式
     for ext in ("mp3", "wav", "flac", "ogg", "aac", "wma", "m4a", "opus", "ape"):
-        _PREVIEWER_MAP[ext] = AudioPreviewWidget
+        previewer_map[ext] = AudioPreviewWidget
 
     # 文本格式
     for ext in (
@@ -49,12 +48,13 @@ def _build_previewer_map():
         "js", "ts", "c", "cpp", "h", "hpp", "java", "kt", "rs", "go",
         "rb", "php", "lua", "r", "swift", "scala", "conf", "env",
     ):
-        _PREVIEWER_MAP[ext] = TextPreviewWidget
+        previewer_map[ext] = TextPreviewWidget
 
     # PDF 格式
     for ext in ("pdf",):
-        _PREVIEWER_MAP[ext] = PdfPreviewWidget
+        previewer_map[ext] = PdfPreviewWidget
 
+    _PREVIEWER_MAP.update(previewer_map)
     return _PREVIEWER_MAP
 
 
@@ -89,7 +89,7 @@ def is_preview_supported(filename):
     return get_previewer_for_file(filename) is not None
 
 
-def create_preview_widget(file_path, mime_type=""):
+def create_preview_widget(file_path, mime_type=""):  # pylint: disable=unused-argument
     """根据文件路径创建预览 Widget。
 
     Args:

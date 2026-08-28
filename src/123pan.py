@@ -15,7 +15,7 @@ import sys
 
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QPixmapCache
 from qfluentwidgets import (
     FluentTranslator,
     Theme,
@@ -41,7 +41,7 @@ def main():
 
     # 初始化国际化
     _lang = ConfigManager.get_setting("language", "zh_CN")
-    i18n = init_i18n(_lang)
+    init_i18n(_lang)
     logger.info("语言: %s", _lang)
     logger.info("日志等级: %s", _level)
     logger.info("=" * 60)
@@ -59,8 +59,6 @@ def main():
 
     # 限制 Qt 全局像素图缓存（图标/图片缩放等），降低内存占用
     # 默认 20MB，图标通常很小，10MB 足够且可避免缓存无限膨胀
-    from PySide6.QtGui import QPixmapCache
-
     QPixmapCache.setCacheLimit(10 * 1024)  # 单位 KB
     logger.debug("QPixmapCache 限制为 10MB")
     logger.debug("QApplication 初始化完成")

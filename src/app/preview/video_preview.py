@@ -142,7 +142,7 @@ class VideoPreviewWidget(QWidget):
             self._player.play()
 
     def _on_state_changed(self, state):
-        self._is_playing = (state == QMediaPlayer.PlaybackState.PlayingState)
+        self._is_playing = state == QMediaPlayer.PlaybackState.PlayingState
         self._update_play_button()
 
     def _update_play_button(self):

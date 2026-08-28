@@ -46,6 +46,7 @@ uv sync --group lint             # + pylint / mypy
 uv sync --group build            # + nuitka
 uv sync --group dev              # + pyrefly
 uv sync --group format           # + black
+uv sync --group build --group lint --group test --group dev --group format # 一键安装全部依赖
 ```
 
 > [!IMPORTANT]

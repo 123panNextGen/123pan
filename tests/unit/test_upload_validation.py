@@ -109,6 +109,34 @@ class TestComputeFileMd5Progress:
         assert validation_percents[-1] == 100
 
 
+class TestUploadDuplicateChoice:
+    """同名文件处理策略。"""
+
+    def test_duplicate_callback_choice_is_sent_to_api(self, tmp_path):
+        f = tmp_path / "duplicate.bin"
+        f.write_bytes(b"content")
+        session = MagicMock()
+        responses = [
+            {"code": 5060, "data": {
+                "etag": "old-md5", "size": 10, "updated_at": "2026-08-29 06:00:16",
+            }},
+            {"code": 0, "data": {"Reuse": True, "FileId": 42}},
+        ]
+        session.http.post.side_effect = [
+            MagicMock(json=lambda response=response: response) for response in responses
+        ]
+        service = UploadService(session)
+
+        result = service.up_load(
+            str(f), 0,
+            duplicate_callback=lambda info: 2,
+        )
+
+        assert result == 42
+        assert session.http.post.call_args_list[1].kwargs["json"]["duplicate"] == 2
+        assert session.http.post.call_args_list[1].kwargs["json"]["etag"] == "9a0364b9e99bb480dd25e1f0284c8555"
+
+
 class TestUploadThreadValidationStatus:
     """UploadThread 校验阶段状态文本。"""
 
@@ -132,7 +160,8 @@ class TestUploadThreadValidationStatus:
 
         def _up_load(local_path, task=None, resume_info=None,
                      session_callback=None, num_threads=1,
-                     progress_callback=None, validation_callback=None):
+                     progress_callback=None, validation_callback=None,
+                     duplicate_callback=None):
             # 模拟 MD5 校验进度 → 上传中
             if validation_callback:
                 for p in (10, 50, 90):

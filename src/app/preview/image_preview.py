@@ -209,7 +209,10 @@ class ImagePreviewWidget(QWidget):
                 if img.isNull():
                     raise RuntimeError(reader.errorString())
                 pixmap = QPixmap.fromImage(img)
-                logger.debug("大图预缩放: %dx%d → %dx%d", w, h, scaled_size.width(), scaled_size.height())
+                logger.debug(
+                    "大图预缩放: %dx%d → %dx%d",
+                    w, h, scaled_size.width(), scaled_size.height(),
+                )
             else:
                 pixmap.load(self._file_path)
         else:
@@ -256,7 +259,7 @@ class ImagePreviewWidget(QWidget):
 
         QTimer.singleShot(50, self._view.reset_zoom)
 
-    def _on_gif_frame_changed(self, frame_num):
+    def _on_gif_frame_changed(self, _frame_num):
         if self._pixmap_item and self._movie:
             self._pixmap_item.setPixmap(self._movie.currentPixmap())
 

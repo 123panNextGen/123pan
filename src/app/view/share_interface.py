@@ -264,7 +264,7 @@ class ShareInterface(QWidget):
         # 尝试提取日期部分
         exp_str = str(item.expiration)
         if "T" in exp_str:
-            return exp_str.split("T")[0]
+            return exp_str.split("T", maxsplit=1)[0]
         return exp_str
 
     def __formatStatus(self, item):

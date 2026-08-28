@@ -607,7 +607,7 @@ class DownloadEngine:
                                 out_f.write(buf)
                         p.unlink()
                     except OSError as e:
-                        raise RuntimeError(f"合并分片文件 {i} 失败: {e}")
+                        raise RuntimeError(f"合并分片文件 {i} 失败: {e}") from e
 
             if temp_path.exists():
                 if file_path.exists():

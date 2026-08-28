@@ -159,4 +159,3 @@ class TextPreviewWidget(QWidget):
 
     def cleanup(self):
         """清理资源。"""
-        pass

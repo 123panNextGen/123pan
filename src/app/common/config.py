@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 
 def isWin11():
-    return sys.platform == "win32" and sys.getwindowsversion().build >= 22000
+    return sys.platform == "win32" and sys.getwindowsversion().build >= 22000  # pylint: disable=no-member
 
 
 # 旧版 JSON 配置路径（迁移检测用，迁移后改名备份）
@@ -120,7 +120,6 @@ class ConfigManager:
 
         每个配置文件路径只处理一次（生产环境仅首次调用做文件系统检查）。
         """
-        global _migrated_paths
         with _MIGRATION_LOCK:
             if CONFIG_FILE in _migrated_paths:
                 return

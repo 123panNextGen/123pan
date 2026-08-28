@@ -530,7 +530,7 @@ class SettingInterface(ScrollArea):
     def __initLayout(self):
         # 标题（与 CloudInterface 一致的布局方式）
         self.expandLayout.setSpacing(28)
-        self.expandLayout.setContentsMargins(36, 10, 36, 0)
+        self.expandLayout.setContentsMargins(24, 10, 24, 0)
         self.expandLayout.addWidget(self.settingLabel)
         self.downloadGroup.addSettingCard(self.downloadFolderCard)
         self.downloadGroup.addSettingCard(self.askDownloadLocationCard)

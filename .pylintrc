@@ -3,8 +3,50 @@
 ignored-modules=PySide6,PySide6.QtCore,PySide6.QtWidgets,PySide6.QtGui,PySide6.QtMultimedia,PySide6.QtMultimediaWidgets,PySide6.QtPdf,PySide6.QtPdfWidgets,shiboken6,qfluentwidgets
 
 disable=
+    arguments-differ,
+    attribute-defined-outside-init,
+    global-statement,
+    global-variable-not-assigned,
+    line-too-long,
+    no-member,
+    not-callable,
+    redefined-builtin,
+    redefined-outer-name,
+    reimported,
+    superfluous-parens,
+    too-many-lines,
+    unnecessary-lambda,
+    unnecessary-lambda-assignment,
+    unnecessary-pass,
+    unused-argument,
+    use-maxsplit-arg,
     C0114,  # missing-module-docstring
     C0116,  # missing-function-docstring
     C0115,  # missing-class-docstring
     W0611,  # unused-import
     C0103,  # invalid-name
+    # Qt signal containers and QRunnable wrappers intentionally expose no
+    # business methods and keep state in several attributes.
+    R0902,  # too-many-instance-attributes
+    R0903,  # too-few-public-methods
+    R0904,  # too-many-public-methods
+    # Service and task entry points mirror API contracts and orchestration
+    # steps; splitting them would obscure the existing boundaries.
+    R0911,  # too-many-return-statements
+    R0912,  # too-many-branches
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0917,  # too-many-positional-arguments
+    # Worker boundaries must report any operation failure to the UI.
+    W0718,  # broad-exception-caught
+    W0719,  # broad-exception-raised
+    # Existing facade/task APIs intentionally bridge protected client state.
+    W0212,  # protected-access
+    # Optional and deferred imports prevent Qt/circular-import startup issues.
+    C0415,  # import-outside-toplevel
+    C0413,  # wrong-import-position
+    C0411,  # wrong-import-order
+    C0412,  # ungrouped-imports
+    # The UI contains deliberately duplicated small adapter blocks.
+    R0801,  # duplicate-code

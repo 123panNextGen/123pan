@@ -227,7 +227,7 @@ class LoginDialog(QDialog):
         QApplication.restoreOverrideCursor()
         self.btn_ok.setEnabled(True)
 
-        if error or (code != 200 and code != 0):
+        if error or code not in (200, 0):
             self.login_error = (
                 error
                 if error
@@ -249,9 +249,9 @@ class LoginDialog(QDialog):
             if hasattr(pan, "save_file"):
                 pan.save_file()
         except (IOError, OSError) as e:
-            logger.warning(f"保存配置失败: {e}")
+            logger.warning("保存配置失败: %s", e)
         except Exception as e:
-            logger.error(f"保存配置时发生未知错误: {e}")
+            logger.error("保存配置时发生未知错误: %s", e)
         logger.info("登录成功，对话框关闭: %s", user_name_of(pan))
         self.accept()
 

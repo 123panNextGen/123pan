@@ -84,7 +84,7 @@ class AuthService:
         except Exception as e:
             logger.error("保存账号失败: %s", e)
 
-    def read_ini(self, user_name="", password="", input_pwd=False, authorization=""):
+    def read_ini(self, user_name="", password="", _input_pwd=False, authorization=""):
         """从配置文件读取账号信息。"""
         try:
             account = ConfigManager.get_account(user_name) if user_name else {}

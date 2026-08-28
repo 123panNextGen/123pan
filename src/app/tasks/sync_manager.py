@@ -144,15 +144,9 @@ class SyncManager(QObject):
         thread = SyncRunThread(self._pan, job, signals)
         self._running[job_id] = thread
 
-        signals.status.connect(
-            lambda jid, text: self.jobStatusChanged.emit(jid, text)
-        )
-        signals.file_progress.connect(
-            lambda jid, rel, cur, total: self.jobFileProgress.emit(jid, rel, cur, total)
-        )
-        signals.file_done.connect(
-            lambda jid, rel, ok, err: self.jobFileDone.emit(jid, rel, ok, err)
-        )
+        signals.status.connect(self.jobStatusChanged.emit)
+        signals.file_progress.connect(self.jobFileProgress.emit)
+        signals.file_done.connect(self.jobFileDone.emit)
         signals.finished.connect(
             lambda jid, ok, summary, stats: self._on_job_finished(
                 jid, ok, summary, stats, thread
@@ -174,7 +168,7 @@ class SyncManager(QObject):
         logger.info("同步任务结束: job_id=%s, ok=%s", job_id, ok)
 
     def _cancel_all(self):
-        for job_id, thread in list(self._running.items()):
+        for thread in list(self._running.values()):
             thread.cancel()
             if thread.isRunning():
                 thread.wait(5000)

@@ -64,7 +64,10 @@ class DownloadService:
         else:
             self._session.set_speed_limiter(None, is_upload=False)
 
-    def set_proxy(self, proxy_type: str, host: str, port: int, username: str = "", password: str = ""):
+    def set_proxy(
+        self, proxy_type: str, host: str, port: int,
+        username: str = "", password: str = "",
+    ):
         """设置下载代理。"""
         self._session.set_proxy_auth(proxy_type, host, port, username, password)
 
@@ -89,4 +92,3 @@ class DownloadService:
         return self._session.download_file_multithread(
             url, file_path, file_size, progress_callback, resume_offset, cancel_event
         )
-

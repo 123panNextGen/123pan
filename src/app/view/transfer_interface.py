@@ -51,6 +51,7 @@ from ..tasks.transfer_tasks import (
     DownloadThread,
 )
 from .transfer_table import TransferTableMixin
+from .dialogs import DuplicateFileDialog
 
 logger = get_logger(__name__)
 
@@ -158,7 +159,7 @@ class TransferInterface(QWidget, TransferTableMixin):
                 self.pan.set_download_proxy(
                     proxy_type, host, port, username, password
                 )
-                logger.info(f"代理已启用: {proxy_type}://{host}:{port}")
+                logger.info("代理已启用: %s://%s:%s", proxy_type, host, port)
         else:
             self.pan.clear_download_proxy()
 
@@ -414,6 +415,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         thread.status_updated.connect(
             lambda status, t=task: self.__update_task_status(t, status)
         )
+        thread.duplicate_requested.connect(
+            lambda info, t=task, th=thread: self.__on_duplicate_requested(t, th, info)
+        )
         thread.completed.connect(
             lambda t=task, th=thread: self.__on_thread_finished(t, th, "upload")
         )
@@ -431,6 +435,16 @@ class TransferInterface(QWidget, TransferTableMixin):
             self._active_upload_count,
             self._max_concurrent_uploads,
         )
+
+    def __on_duplicate_requested(self, task, thread, conflict_info):
+        """显示同名文件处理选项，并将结果返回上传线程。"""
+        dialog = DuplicateFileDialog(
+            task.file_name, conflict_info, task.file_size, self
+        )
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            thread.provide_duplicate_choice(dialog.choice)
+        else:
+            thread.provide_duplicate_choice(None)
 
     def add_download_task(
         self, file_name, file_size, file_id, save_path, current_dir_id=0

@@ -2,7 +2,7 @@ name: check.yml
 on:
   push:
     branches:
-      - main
+      - "**"
   workflow_dispatch:
   pull_request:
 
@@ -18,13 +18,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.0
-
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.0
 
       - name: Install System Dependencies
         run: |
@@ -51,8 +51,8 @@ jobs:
           UV_HTTP_TIMEOUT: "120"
           UV_HTTP_RETRIES: "5"
         run: |
-          uv sync --group build --group lint
+          uv sync --group build --group test --group lint
 
       - name: Check
         run: |
-          bash ./script/test.sh
+          bash ./script/test.sh && echo && bash script/lint.sh src/

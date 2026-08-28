@@ -63,8 +63,7 @@ class SpeedLimiter:
         self._last_refill = now
         if self._limit_kbps > 0 and elapsed > 0:
             self._tokens += elapsed * float(self._limit_kbps)
-            if self._tokens > self._max_tokens:
-                self._tokens = self._max_tokens
+            self._tokens = min(self._tokens, self._max_tokens)
 
     def consume(self, bytes_count: int) -> float:
         """消费指定字节数，返回需等待的秒数。
@@ -86,11 +85,8 @@ class SpeedLimiter:
             if self._tokens >= kb:
                 self._tokens -= kb
                 return 0.0
-            else:
-                # 需要等待的时间
-                deficit = kb - self._tokens
-                wait = deficit / float(self._limit_kbps)
-                self._tokens = 0.0
-                return wait
-
-
+            # 需要等待的时间
+            deficit = kb - self._tokens
+            wait = deficit / float(self._limit_kbps)
+            self._tokens = 0.0
+            return wait

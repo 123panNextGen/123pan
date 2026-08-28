@@ -131,9 +131,9 @@ def open_log_file():
     if platform.system() == "Windows":
         os.startfile(LOG_FILE)
     elif platform.system() == "Darwin":
-        subprocess.Popen(["open", LOG_FILE])
+        subprocess.Popen(["open", LOG_FILE])  # pylint: disable=consider-using-with
     else:
-        subprocess.Popen(["xdg-open", LOG_FILE])
+        subprocess.Popen(["xdg-open", LOG_FILE])  # pylint: disable=consider-using-with
 
 
 _cleanup_old_logs()

@@ -184,7 +184,7 @@ class Pan123:
     def get_dir(self, save=True, force_refresh=False):
         return self.get_dir_by_id(self.parent_file_id, save, force_refresh=force_refresh)
 
-    def get_dir_by_id(self, file_id, save=True, all=False, limit=100,
+    def get_dir_by_id(self, file_id, save=True, all=False, limit=100,  # pylint: disable=redefined-builtin
                       force_refresh=False):
         code, items, total, all_file, _ = self._file.get_dir_by_id(
             file_id, page=self.file_page, list_len=len(self.list),
@@ -280,12 +280,14 @@ class Pan123:
         return self._file.permanent_delete_files(file_id_list)
 
     def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
-                num_threads=1, progress_callback=None, validation_callback=None):
+                num_threads=1, progress_callback=None, validation_callback=None,
+                duplicate_callback=None):
         return self._upload.up_load(
             file_path, self.parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
-            validation_callback=validation_callback, refresh_session=self.login,
+            validation_callback=validation_callback,
+            duplicate_callback=duplicate_callback, refresh_session=self.login,
         )
 
     def mark_dir_dirty(self, dir_id):
@@ -326,7 +328,7 @@ class Pan123:
         return self._offline.build_rapid_payload(files)
 
     def mkdir(self, dirname, remakedir=False):
-        file_id, err = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
+        file_id, _ = self._file.mkdir(dirname, self.list, self.parent_file_id, remakedir)
         if file_id is not None:
             self.get_dir()
         return file_id

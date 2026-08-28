@@ -495,7 +495,7 @@ class DeleteFileTask(QRunnable):
                 # 文件不在内存列表（列表按 save=False 加载，pan.list 常为空），
                 # 强制从服务器刷新后再查一次，避免本地缓存残留旧数据导致找不到
                 logger.debug("文件未在当前列表中找到，强制刷新目录")
-                code, files = self.pan.get_dir_by_id(
+                code, _ = self.pan.get_dir_by_id(
                     self.current_dir_id, save=True, all=True, limit=1000,
                     force_refresh=True,
                 )
@@ -677,7 +677,7 @@ class BatchDeleteTask(QRunnable):
             logger.info("批量删除文件: %s", names)
 
             # 先获取完整文件列表（强制刷新，避免本地缓存残留旧数据）
-            code, files = self.pan.get_dir_by_id(
+            code, _ = self.pan.get_dir_by_id(
                 self.current_dir_id, save=True, all=True, limit=1000,
                 force_refresh=True,
             )
@@ -781,7 +781,7 @@ class UploadFolderTask(QRunnable):
             raise RuntimeError("创建云端顶层文件夹失败")
 
         files = []
-        for dirpath, dirnames, filenames in _os.walk(root):
+        for dirpath, _dirnames, filenames in _os.walk(root):
             rel = _os.path.relpath(dirpath, root)
             parent_cloud_id = top_id
             if rel != ".":
@@ -881,8 +881,6 @@ class RapidTransferTask(QRunnable):
 
     def run(self):
         try:
-            total = len(self.files)
-
             def _on_progress(current, total_count):
                 self.signals.progress.emit(current, total_count)
 
