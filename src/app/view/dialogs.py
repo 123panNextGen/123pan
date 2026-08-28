@@ -116,6 +116,7 @@ class DuplicateFileDialog(QDialog):
             if size < 1024 or unit == "TB":
                 return f"{size:.2f} {unit}" if unit != "B" else f"{int(size)} B"
             size /= 1024
+        return f"{size:.2f} TB"
 
     def _accept_choice(self, choice):
         self.choice = choice
