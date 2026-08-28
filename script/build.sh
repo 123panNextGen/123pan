@@ -84,6 +84,7 @@ NOFOLLOW=(
     --enable-plugin=pyside6 \
     --jobs="$JOBS" \
     --nofollow-import-to="$(IFS=,; echo "${NOFOLLOW[*]}")" \
+    --include-data-dir="$project/src/app/resource/i18n=app/resource/i18n" \
     --assume-yes-for-downloads \
     --python-flag=no_docstrings \
     --python-flag=no_asserts \
