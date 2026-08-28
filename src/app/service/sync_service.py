@@ -290,8 +290,8 @@ class SyncService:
             if progress_callback:
                 progress_callback(rel, i, total, PHASE_UPLOAD)
             try:
-                # 新文件：duplicate=0；更新覆盖：duplicate=1
-                dup_choice = 1 if not is_new else 0
+                # 新文件：duplicate=0；更新覆盖：duplicate=2
+                dup_choice = 2 if not is_new else 0
                 result = self._upload.up_load(abs_path, parent_id, dup_choice=dup_choice)
                 if result == "已取消":
                     return False, stats

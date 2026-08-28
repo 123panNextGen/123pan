@@ -227,13 +227,14 @@ class UploadService:
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
         resume_info=None, session_callback=None, num_threads=1,
         progress_callback=None, validation_callback=None, refresh_session=None,
+        duplicate_callback=None,
     ):
         """上传文件（支持断点续传与并行分片上传）。
 
         Args:
             file_path: 本地文件路径
             parent_file_id: 目标目录ID
-            dup_choice: 重复文件处理策略（0=提示/1=覆盖/2=跳过）
+            dup_choice: 重复文件处理策略（0=提示/1=保留两者/2=覆盖）
             signals: 可选信号对象（需有 progress 信号）
             task: 可选的任务控制对象（需有 is_cancelled 属性）
             resume_info: 断点续传信息（S3 会话），文件未变化时复用
@@ -241,6 +242,7 @@ class UploadService:
             num_threads: 并行上传的分片线程数，1 表示顺序上传
             progress_callback: 可选进度回调 (uploaded_bytes)，实时上报已上传字节数
             validation_callback: 可选校验进度回调 (percent)，MD5 计算期间上报
+            duplicate_callback: 同名文件回调，接收冲突文件信息并返回 1（保留两者）或 2（覆盖）
 
         Returns:
             int: 上传后的文件ID（成功）
@@ -308,6 +310,10 @@ class UploadService:
             )
             res_code_up = up_res_json.get("code", -1)
             if res_code_up == 5060:
+                if duplicate_callback:
+                    dup_choice = duplicate_callback(up_res_json.get("data") or {})
+                    if dup_choice not in (1, 2):
+                        return "已取消"
                 list_up_request["duplicate"] = dup_choice
                 _, up_res_json = self._post_with_session_retry(
                     refresh_session, refresh_state,
@@ -319,7 +325,9 @@ class UploadService:
                 raise RuntimeError(f"上传请求失败: {up_res_json}")
 
             if up_res_json["data"].get("Reuse", False):
-                up_file_id = up_res_json["data"]["FileId"]
+                up_file_id = up_res_json["data"].get("FileId", 0)
+                if not up_file_id:
+                    up_file_id = (up_res_json["data"].get("Info") or {}).get("FileId")
                 elapsed = time.monotonic() - t0
                 speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
                 logger.info(

@@ -89,6 +89,7 @@ class UploadThread(QThread):
     # (progress_percent, speed_bps)：进度百分比与实时速度（B/s）
     progress_updated = Signal(int, float)
     status_updated = Signal(str)
+    duplicate_requested = Signal(object)
     completed = Signal()
     error = Signal(str)
 
@@ -99,6 +100,8 @@ class UploadThread(QThread):
         self._pause_event = threading.Event()
         self._pause_event.set()  # 初始状态：不暂停
         self._cancelled = False
+        self._duplicate_event = threading.Event()
+        self._duplicate_choice = None
         # 速度测量状态
         self._speed_ts = time.monotonic()
         self._speed_bytes = 0
@@ -126,7 +129,24 @@ class UploadThread(QThread):
     def cancel(self):
         """取消传输"""
         self._cancelled = True
+        self._duplicate_event.set()
         self._pause_event.set()  # 解除暂停以便退出
+
+    def provide_duplicate_choice(self, choice):
+        """接收界面返回的同名文件处理方式。"""
+        self._duplicate_choice = choice
+        self._duplicate_event.set()
+
+    def _request_duplicate_choice(self, conflict_info):
+        self._duplicate_choice = None
+        self._duplicate_event.clear()
+        self.duplicate_requested.emit(conflict_info)
+        while not self._duplicate_event.wait(0.1):
+            if self._cancelled:
+                return None
+        if self._cancelled:
+            return None
+        return self._duplicate_choice
 
     def run(self):
         try:
@@ -199,7 +219,7 @@ class UploadThread(QThread):
             t0 = time.monotonic()
             if resume_info:
                 self.status_updated.emit(tr("transfer.status_resuming", "续传中"))
-            self.pan.up_load(
+            result = self.pan.up_load(
                 self.task.local_path,
                 task=self,
                 resume_info=resume_info,
@@ -207,10 +227,11 @@ class UploadThread(QThread):
                 num_threads=ul_threads,
                 progress_callback=_on_upload_progress,
                 validation_callback=_on_validation,
+                duplicate_callback=self._request_duplicate_choice,
             )
             elapsed = time.monotonic() - t0
 
-            if self._cancelled:
+            if self._cancelled or result == "已取消":
                 self.task.speed = 0.0
                 self.status_updated.emit(tr("transfer.status_cancelled", "已取消"))
                 return
