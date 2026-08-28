@@ -130,7 +130,7 @@ def decrypt_credential(ciphertext: str) -> str:
         ct = raw[12:]
         return aesgcm.decrypt(nonce, ct, None).decode("utf-8")
     except Exception as e:
-        logger.error(f"解密凭据失败: {e}")
+        logger.error("解密凭据失败: %s", e)
         return ciphertext
 
 

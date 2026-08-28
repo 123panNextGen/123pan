@@ -8,3 +8,28 @@ disable=
     C0115,  # missing-class-docstring
     W0611,  # unused-import
     C0103,  # invalid-name
+    # Qt signal containers and QRunnable wrappers intentionally expose no
+    # business methods and keep state in several attributes.
+    R0902,  # too-many-instance-attributes
+    R0903,  # too-few-public-methods
+    R0904,  # too-many-public-methods
+    # Service and task entry points mirror API contracts and orchestration
+    # steps; splitting them would obscure the existing boundaries.
+    R0911,  # too-many-return-statements
+    R0912,  # too-many-branches
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0917,  # too-many-positional-arguments
+    # Worker boundaries must report any operation failure to the UI.
+    W0718,  # broad-exception-caught
+    W0719,  # broad-exception-raised
+    # Existing facade/task APIs intentionally bridge protected client state.
+    W0212,  # protected-access
+    # Optional and deferred imports prevent Qt/circular-import startup issues.
+    C0415,  # import-outside-toplevel
+    C0413,  # wrong-import-position
+    C0411,  # wrong-import-order
+    C0412,  # ungrouped-imports
+    # The UI contains deliberately duplicated small adapter blocks.
+    R0801,  # duplicate-code

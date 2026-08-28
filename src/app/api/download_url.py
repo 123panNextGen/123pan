@@ -16,6 +16,8 @@ import ipaddress
 
 import requests
 
+from ..common.log import get_logger
+
 # 预编译正则：解析 HTML body 中 href='...' 形式的下载链接
 # 避免每次调用 resolve_download_url 时重复编译
 HREF_URL_RE = re.compile(r"href='(https?://[^']+)'")
@@ -101,25 +103,23 @@ def rewrite_download_url(url: str) -> str:
                 qs["params"] = b64_encode(new_inner)
                 return urlunparse(parsed._replace(query=_dict_to_qs(qs)))
             return url
-        else:
-            # 非 web-pro 域名，重写为 web-pro2 代理
-            orig_parsed = urlparse(url)
-            orig_qs = _qs_to_dict(orig_parsed.query)
-            orig_qs["auto_redirect"] = "0"
-            rewritten_orig = urlunparse(
-                orig_parsed._replace(query=_dict_to_qs(orig_qs))
-            )
-            proxy_url = urlunparse((
-                "https",
-                "web-pro2.123952.com",
-                "/download-v2/",
-                "",
-                "params=" + b64_encode(rewritten_orig) + "&is_s3=0",
-                "",
-            ))
-            return proxy_url
+        # 非 web-pro 域名，重写为 web-pro2 代理
+        orig_parsed = urlparse(url)
+        orig_qs = _qs_to_dict(orig_parsed.query)
+        orig_qs["auto_redirect"] = "0"
+        rewritten_orig = urlunparse(
+            orig_parsed._replace(query=_dict_to_qs(orig_qs))
+        )
+        proxy_url = urlunparse((
+            "https",
+            "web-pro2.123952.com",
+            "/download-v2/",
+            "",
+            "params=" + b64_encode(rewritten_orig) + "&is_s3=0",
+            "",
+        ))
+        return proxy_url
     except Exception as e:
-        from ..common.log import get_logger
         get_logger(__name__).warning("下载 URL 重写失败，使用原始 URL: %s", e)
         return url
 
@@ -134,7 +134,6 @@ def resolve_download_url(transfer_session: requests.Session, url: str) -> str:
 
     对应 Flutter 中用 dart:io HttpClient 手动跟随重定向的逻辑。
     """
-    from ..common.log import get_logger
     logger = get_logger(__name__)
 
     try:

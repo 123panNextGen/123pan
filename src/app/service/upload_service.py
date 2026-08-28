@@ -153,7 +153,7 @@ class UploadService:
             "uploadId": upload_id,
             "StorageNode": storage_node,
         }
-        get_link_res, get_link_res_json = self._post_with_session_retry(
+        _, get_link_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
             get_link_data, _UPLOAD_REQUEST_TIMEOUT,
@@ -301,7 +301,7 @@ class UploadService:
                 "duplicate": 0,
             }
 
-            up_res, up_res_json = self._post_with_session_retry(
+            _, up_res_json = self._post_with_session_retry(
                 refresh_session, refresh_state,
                 "https://www.123pan.cn/b/api/file/upload_request",
                 list_up_request, _UPLOAD_REQUEST_TIMEOUT,
@@ -309,7 +309,7 @@ class UploadService:
             res_code_up = up_res_json.get("code", -1)
             if res_code_up == 5060:
                 list_up_request["duplicate"] = dup_choice
-                up_res, up_res_json = self._post_with_session_retry(
+                _, up_res_json = self._post_with_session_retry(
                     refresh_session, refresh_state,
                     "https://www.123pan.cn/b/api/file/upload_request",
                     list_up_request, _UPLOAD_REQUEST_TIMEOUT,
@@ -359,7 +359,7 @@ class UploadService:
             "uploadId": upload_id,
             "storageNode": storage_node,
         }
-        start_res, start_res_json = self._post_with_session_retry(
+        _, start_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
             start_data, 30,
@@ -541,7 +541,7 @@ class UploadService:
             "uploadId": upload_id,
             "storageNode": storage_node,
         }
-        parts_res, parts_res_json = self._post_with_session_retry(
+        _, parts_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
             uploaded_comp_data, 30,
@@ -549,7 +549,7 @@ class UploadService:
         if parts_res_json.get("code", -1) != 0:
             raise RuntimeError(f"上传分片列表确认失败: {parts_res_json}")
 
-        complete_res, complete_res_json = self._post_with_session_retry(
+        _, complete_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload",
             uploaded_comp_data, 30,
@@ -561,7 +561,7 @@ class UploadService:
             time.sleep(3)
 
         close_up_session_data = {"fileId": up_file_id}
-        close_res, close_res_json = self._post_with_session_retry(
+        _, close_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             "https://www.123pan.cn/b/api/file/upload_complete",
             close_up_session_data, 30,
