@@ -48,6 +48,7 @@ class _LazyTransferProxy:
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
+        self.stackedWidget.setAnimationEnabled(False)
         self.setWindowTitle("123pan")
         self.resize(900, 600)
         self.setMinimumSize(760, 520)
