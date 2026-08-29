@@ -15,6 +15,7 @@ from pathlib import Path
 
 import requests
 
+from ..api.constants import api_url
 from ..common.log import get_logger
 from ..common.speed_limiter import SpeedLimiter
 
@@ -155,7 +156,7 @@ class UploadService:
         }
         _, get_link_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
-            "https://www.123pan.cn/b/api/file/s3_repare_upload_parts_batch",
+            api_url("/b/api/file/s3_repare_upload_parts_batch"),
             get_link_data, _UPLOAD_REQUEST_TIMEOUT,
         )
         res_code_up = get_link_res_json.get("code", -1)
@@ -305,7 +306,7 @@ class UploadService:
 
             _, up_res_json = self._post_with_session_retry(
                 refresh_session, refresh_state,
-                "https://www.123pan.cn/b/api/file/upload_request",
+                api_url("/b/api/file/upload_request"),
                 list_up_request, _UPLOAD_REQUEST_TIMEOUT,
             )
             res_code_up = up_res_json.get("code", -1)
@@ -317,7 +318,7 @@ class UploadService:
                 list_up_request["duplicate"] = dup_choice
                 _, up_res_json = self._post_with_session_retry(
                     refresh_session, refresh_state,
-                    "https://www.123pan.cn/b/api/file/upload_request",
+                    api_url("/b/api/file/upload_request"),
                     list_up_request, _UPLOAD_REQUEST_TIMEOUT,
                 )
                 res_code_up = up_res_json.get("code", -1)
@@ -369,7 +370,7 @@ class UploadService:
         }
         _, start_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
-            "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
+            api_url("/b/api/file/s3_list_upload_parts"),
             start_data, 30,
         )
         res_code_up = start_res_json.get("code", -1)
@@ -551,7 +552,7 @@ class UploadService:
         }
         _, parts_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
-            "https://www.123pan.cn/b/api/file/s3_list_upload_parts",
+            api_url("/b/api/file/s3_list_upload_parts"),
             uploaded_comp_data, 30,
         )
         if parts_res_json.get("code", -1) != 0:
@@ -559,7 +560,7 @@ class UploadService:
 
         _, complete_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
-            "https://www.123pan.cn/b/api/file/s3_complete_multipart_upload",
+            api_url("/b/api/file/s3_complete_multipart_upload"),
             uploaded_comp_data, 30,
         )
         if complete_res_json.get("code", -1) != 0:
@@ -571,7 +572,7 @@ class UploadService:
         close_up_session_data = {"fileId": up_file_id}
         _, close_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
-            "https://www.123pan.cn/b/api/file/upload_complete",
+            api_url("/b/api/file/upload_complete"),
             close_up_session_data, 30,
         )
         res_code_up = close_res_json.get("code", -1)
@@ -615,7 +616,7 @@ class UploadService:
             "duplicate": 1,
         }
         up_res = self._session.http.post(
-            "https://www.123pan.cn/b/api/file/upload_request",
+            api_url("/b/api/file/upload_request"),
             json=list_up_request,
             timeout=30,
         )
@@ -625,7 +626,7 @@ class UploadService:
             # 同名文件冲突：以覆盖方式重试
             list_up_request["duplicate"] = 1
             up_res = self._session.http.post(
-                "https://www.123pan.cn/b/api/file/upload_request",
+                api_url("/b/api/file/upload_request"),
                 json=list_up_request,
                 timeout=30,
             )

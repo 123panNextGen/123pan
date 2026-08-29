@@ -10,11 +10,9 @@ the Free Software Foundation, either version 3 of the License, or
 
 import time
 from typing import Any
-from urllib.parse import urljoin
-
 import requests
 
-from .constants import BASE_URL
+from .constants import api_url
 from .download_url import resolve_download_url, rewrite_download_url
 from .model import (
     ApiCode,
@@ -38,7 +36,7 @@ class FileSessionMixin:
         limit: int = 100,
         retry_login: bool = True,
     ) -> ApiReturnModel:
-        url = urljoin(BASE_URL, "/api/file/list/new")
+        url = api_url("/api/file/list/new")
         params = {
             "driveId": 0,
             "limit": limit,
@@ -134,7 +132,7 @@ class FileSessionMixin:
     # ---- 文件夹操作 ----
 
     def create_dir(self, dir_name: str, parent_file_id: int) -> ApiReturnModel:
-        url = urljoin(BASE_URL, "/a/api/file/upload_request")
+        url = api_url("/a/api/file/upload_request")
         data = {
             "driveId": 0,
             "etag": "",
@@ -201,7 +199,7 @@ class FileSessionMixin:
     def trash_file(
         self, file_info: dict | FileItemModel, operation: bool = True
     ) -> ApiReturnModel:
-        url = urljoin(BASE_URL, "/a/api/file/trash")
+        url = api_url("/a/api/file/trash")
         if isinstance(file_info, FileItemModel):
             file_id = file_info.file_id
             file_name = file_info.file_name
@@ -277,7 +275,7 @@ class FileSessionMixin:
         Returns:
             ApiReturnModel
         """
-        url = "https://api.123278.com/b/api/file/delete"
+        url = api_url("/b/api/file/delete")
         data = {
             "fileIdList": [{"fileId": fid} for fid in file_id_list],
             "event": "recycleDelete",
@@ -324,7 +322,7 @@ class FileSessionMixin:
 
     def check_download_traffic(self, file_ids):
         """检查所选文件的下载流量。"""
-        url = urljoin(BASE_URL, "/b/api/file/download/traffic/check")
+        url = api_url("/b/api/file/download/traffic/check")
         try:
             resp = self._http.post(url, json={"fids": file_ids}, timeout=10)
         except requests.RequestException as e:
@@ -372,14 +370,14 @@ class FileSessionMixin:
 
         request_data: dict[str, Any]
         if type_val == 1:
-            url = urljoin(BASE_URL, "/a/api/file/batch_download_info")
+            url = api_url("/a/api/file/batch_download_info")
             if isinstance(file_info, FileItemModel):
                 file_id = file_info.file_id
             else:
                 file_id = int(file_info.get("FileId", file_info.get("fileId", 0)))
             request_data = {"fileIdList": [{"fileId": file_id}]}
         else:
-            url = urljoin(BASE_URL, "/a/api/file/download_info")
+            url = api_url("/a/api/file/download_info")
             if isinstance(file_info, FileItemModel):
                 request_data = {
                     "driveId": 0,
@@ -494,7 +492,7 @@ class FileSessionMixin:
     # ---- 重命名 ----
 
     def rename_file(self, file_id: int, new_name: str) -> ApiReturnModel:
-        url = urljoin(BASE_URL, "/a/api/file/rename")
+        url = api_url("/a/api/file/rename")
         data = {"driveId": 0, "fileId": file_id, "fileName": new_name}
         t0 = time.monotonic()
         try:
@@ -546,7 +544,7 @@ class FileSessionMixin:
 
         调用 /b/api/file/mod_pid 接口。
         """
-        url = urljoin(BASE_URL, "/b/api/file/mod_pid")
+        url = api_url("/b/api/file/mod_pid")
         data = {
             "fileIdList": [{"FileId": int(fid)} for fid in file_id_list],
             "parentFileId": int(target_parent_id),
@@ -605,7 +603,7 @@ class FileSessionMixin:
         调用 /b/api/restful/goapi/v1/file/copy/async 接口创建复制任务，
         成功后返回任务 ID（data 字段）。
         """
-        url = urljoin(BASE_URL, "/b/api/restful/goapi/v1/file/copy/async")
+        url = api_url("/b/api/restful/goapi/v1/file/copy/async")
         data = {"fileList": file_list, "targetFileId": int(target_parent_id)}
         t0 = time.monotonic()
         try:
@@ -673,7 +671,7 @@ class FileSessionMixin:
         调用 /b/api/restful/goapi/v1/file/copy/task 接口。
         任务状态（data.status）：1 进行中，2 结束（成功），3 失败，4 等待。
         """
-        url = urljoin(BASE_URL, "/b/api/restful/goapi/v1/file/copy/task")
+        url = api_url("/b/api/restful/goapi/v1/file/copy/task")
         params = {"taskId": task_id}
         t0 = time.monotonic()
         try:

@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import time
 
+from ..api.constants import api_url
 from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 
@@ -395,7 +396,7 @@ class FileService:
             "event": "shareCreate",
         }
         share_res = self._session.http.post(
-            "https://www.123pan.cn/a/api/share/create",
+            api_url("/a/api/share/create"),
             json=data,
             timeout=10,
         )

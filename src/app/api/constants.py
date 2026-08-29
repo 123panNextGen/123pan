@@ -11,6 +11,8 @@ API 端点域名常量（session / session_file / download_url 共用，
 独立成模块以避免循环导入）。
 """
 
+from urllib.parse import urljoin
+
 # 主 API 域名
 BASE_URL = "https://www.123pan.cn"
 # 备用 API 域名（主域名连接失败时自动切换）
@@ -19,6 +21,11 @@ FALLBACK_BASE_URL = "https://api.123278.com"
 LOGIN_BASE_URL = "https://login.123pan.com"
 # 离线下载专用域名（解析/提交任务，固定使用 api.123278.com）
 OFFLINE_BASE_URL = "https://api.123278.com"
+
+
+def api_url(path, base_url=BASE_URL):
+	"""根据相对路径和 API 域名构造完整地址。"""
+	return urljoin(base_url, path)
 
 CLIENT_SIMULATION_HEADERS = {
 	"platform": "android",

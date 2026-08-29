@@ -10,7 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import json
 
-from ..api.constants import OFFLINE_BASE_URL
+from ..api.constants import OFFLINE_BASE_URL, api_url
 from ..common.log import get_logger
 from .file_service import FileService
 from .upload_service import UploadService
@@ -18,8 +18,8 @@ from .upload_service import UploadService
 logger = get_logger(__name__)
 
 # 离线下载 API 端点
-_OFFLINE_RESOLVE_URL = OFFLINE_BASE_URL + "/b/api/v2/offline_download/task/resolve?"
-_OFFLINE_SUBMIT_URL = OFFLINE_BASE_URL + "/b/api/v2/offline_download/task/submit?"
+_OFFLINE_RESOLVE_PATH = "/b/api/v2/offline_download/task/resolve"
+_OFFLINE_SUBMIT_PATH = "/b/api/v2/offline_download/task/submit"
 
 # 秒传链接前缀（123FastLink / 秒传 JSON 生成器 共用格式）
 _RAPID_LINK_PREFIX = "123FLCPV2$"
@@ -64,7 +64,7 @@ class OfflineService:
             RuntimeError: 接口级失败
         """
         resp = self._session.http.post(
-            _OFFLINE_RESOLVE_URL,
+            api_url(_OFFLINE_RESOLVE_PATH, OFFLINE_BASE_URL),
             json={"urls": urls},
             timeout=30,
         )
@@ -86,7 +86,7 @@ class OfflineService:
             RuntimeError: 接口级失败
         """
         resp = self._session.http.post(
-            _OFFLINE_SUBMIT_URL,
+            api_url(_OFFLINE_SUBMIT_PATH, OFFLINE_BASE_URL),
             json={"resource_list": resources},
             timeout=30,
         )
