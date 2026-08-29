@@ -24,8 +24,8 @@ OFFLINE_BASE_URL = "https://api.123278.com"
 
 
 def api_url(path, base_url=BASE_URL):
-	"""根据相对路径和 API 域名构造完整地址。"""
-	return urljoin(base_url, path)
+    """根据相对路径和 API 域名构造完整地址。"""
+    return urljoin(base_url, path)
 
 CLIENT_SIMULATION_HEADERS = {
 	"platform": "android",
