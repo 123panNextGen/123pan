@@ -43,7 +43,7 @@
 uv sync                          # 运行时依赖
 uv sync --group test             # + pytest / pytest-mock / responses / coverage
 uv sync --group lint             # + pylint / mypy
-uv sync --group build            # + nuitka
+uv sync --group build            # + nuitka / maturin / imageio
 uv sync --group dev              # + pyrefly
 uv sync --group format           # + black
 uv sync --group build --group lint --group test --group dev --group format # 一键安装全部依赖
@@ -65,6 +65,8 @@ cd 123pan
 uv sync --group test --group lint --group build
 uv run src/123pan.py
 ```
+
+上述命令安装运行、测试、检查和构建所需依赖；`dev`（pyrefly）与 `format`（black）仅在使用对应开发工具时需要。
 
 打包版可执行文件必须位于**纯 ASCII 路径**（详见[第 14 节](#14-构建打包nuitka)）。
 
@@ -112,6 +114,7 @@ src/
       file_service.py        # 文件列表 / 增删改移 / 回收站 / 分享创建
       download_service.py    # 下载链接获取 + 下载执行
       upload_service.py      # 分片上传 + 断点续传
+      offline_service.py     # 离线下载解析/提交 + 秒传数据处理
       share_service.py       # 免费/付费分享列表管理
       sync_service.py        # 文件夹同步（本地 → 云端）
     tasks/                   # Tasks 层：Qt 后台任务 + 信号
@@ -134,7 +137,11 @@ src/
       cloud_interface.py     # 云盘（账号信息/设备/登出）
       share_interface.py     # 分享链接管理
       trash_interface.py     # 回收站
-      folder_select_dialog.py# 移动文件的目标目录选择
+      folder_select_dialog.py # 移动文件的目标目录选择
+      file_actions.py        # 文件操作菜单和拖拽动作
+      transfer_table.py      # 传输任务表格
+      offline_download_dialog.py # 离线下载对话框
+      rapid_export_dialog.py # 秒传数据导出对话框
       dialogs.py             # 通用输入对话框
       icons.py               # 图标共享缓存
 tests/
@@ -207,15 +214,20 @@ flowchart TD
   ├─ FluentTranslator + SystemThemeListener（自动主题，退出时 requestInterruption + wait）
   └─ MainWindow
        ├─ 仅创建 FileInterface（默认页）；传输/同步/回收站/分享/云盘/设置 → 懒加载
-       ├─ 启动登录流程：
+        ├─ 启动登录流程：
        │    ├─ 有已保存密码/token → AutoLoginTask 后台自动登录（Pan123 构造含网络请求，避免主线程阻塞）
        │    └─ 无凭证 → LoginDialog（密码登录 Tab / 扫码登录 Tab）
+        │         └─ 用户取消登录 → 关闭主窗口并退出程序
        ├─ 登录成功 → __finish_login_flow：
        │    ├─ SyncManager.set_pan(pan)
        │    ├─ file_interface.pan = pan
        │    ├─ _sync_pan_to_interfaces()（懒加载页面也同步 pan）
        │    └─ __ensure_tray()（系统托盘：显示/立即同步全部/打开同步页/退出）
-       └─ closeEvent：closeToTray 且已登录 → hide_to_tray + ignore()；托盘「退出」置 _force_quit 绕过
+        └─ closeEvent：
+          ├─ closeToTray 且已登录 → hide_to_tray + ignore()
+          ├─ 传输页已创建 → TransferInterface.shutdown()，取消传输并等待线程结束（上限 5s）
+          ├─ SyncManager.shutdown() → 停止调度器并取消运行中的同步任务
+          └─ 托盘「退出」置 _force_quit，绕过最小化到托盘逻辑
 ```
 
 ### 4.1 懒加载机制
@@ -304,6 +316,8 @@ pan = Pan123(authorization=...)                # 仅凭 token 构造（扫码验
 | `set_download_multi_thread()` / `set_download_speed_limit()` / `set_upload_speed_limit()` | 传输配置 |
 | `set_download_proxy()` / `clear_download_proxy()` | 代理配置 |
 | `download_file(url, file_path, file_size, progress_callback, resume_offset, cancel_event)` | 多线程下载 |
+| `offline_resolve(urls)` / `offline_submit(resources)` | 解析并提交离线下载任务 |
+| `offline_parse_rapid(text)` / `offline_rapid_transfer(...)` / `offline_build_rapid(files)` | 秒传数据解析、导入、生成 |
 | `check_version()` | 模块级函数，GitHub 最新版本检查 |
 
 目录浏览状态由门面持有：`list` / `total` / `all_file` / `file_page` / `parent_file_id`。
@@ -379,9 +393,9 @@ QThreadPool.globalInstance().start(task)
 | `ShareCreateTask` | `_ShareCreateSignals` | 创建分享 |
 | `QRGenerateTask` / `QRPollTask` / `QRLoginVerifyTask` | `_QR*Signals` | 扫码登录三步 |
 
-**传输线程**（`tasks/transfer_tasks.py`）：`UploadThread` / `DownloadThread`（QThread），带 `progress_updated` / `status_updated` / `finished` / `error` 信号，支持 `pause` / `resume` / `cancel`。
+**传输线程**（`tasks/transfer_tasks.py`）：`UploadThread` / `DownloadThread`（QThread），带 `progress_updated` / `status_updated` / `finished` / `error` 信号，支持 `pause` / `resume` / `cancel`。应用退出时由 `TransferInterface.shutdown()` 请求取消、断开信号并等待线程结束，等待上限为 5 秒。
 
-**同步线程**（`tasks/sync_tasks.py`）：`SyncRunThread`（QThread），通过 `_SyncJobSignals` 回主线程。
+**同步线程**（`tasks/sync_tasks.py`）：`SyncRunThread`（QThread），通过 `_SyncJobSignals` 回主线程。`SyncManager.shutdown()` 只停止定时器并向运行中的同步线程发出取消请求，不负责 5 秒等待。
 
 ### 6.5 View 层关键接口
 
@@ -553,17 +567,17 @@ QThreadPool.globalInstance().start(task)
 
 ## 12. 测试
 
-项目当前包含 **331 个测试函数**（33 个测试文件，其中 31 个单元测试 + 2 个集成测试）。
+当前仓库包含 **363 个测试函数**（按 `test_*.py` / `test_*` 定义统计；测试文件为 34 个，其中 32 个单元测试 + 2 个集成测试）。新增测试后请以实际收集结果为准，不要依赖此固定统计值。
 
 ### 12.1 运行测试
 
 ```shell
 uv run --group test pytest              # 全部（推荐，避免依赖被移除）
-uv run pytest -v                        # 详细输出
-uv run pytest --cov                     # 覆盖率
-uv run pytest tests/unit/               # 单元测试
-uv run pytest -k "test_login"           # 按名称
-uv run pytest tests/unit/test_speed_limiter.py   # 单文件
+uv run --group test pytest -v           # 详细输出
+uv run --group test pytest --cov        # 覆盖率
+uv run --group test pytest tests/unit/  # 单元测试
+uv run --group test pytest -k "test_login" # 按名称
+uv run --group test pytest tests/unit/test_speed_limiter.py # 单文件
 script/test.sh                          # 脚本方式（自动带 --group test）
 ```
 
@@ -733,7 +747,7 @@ BUILD_ARCH=arm64 script/build.sh   # 指定架构
 > **打包版二进制必须放在纯 ASCII 路径**（整个路径链都要 ASCII）。
 > Nuitka standalone 启动时把二进制路径逐字节转宽字符（`mbstowcs`），
 > 遇到 UTF-8 多字节（如中文「文件」）会静默 SIGABRT（exit 134，无任何输出）。
-> 详见 `doc/PERFORMANCE_REPORT.md` 与历史排查笔记。
+> 该问题来自 Nuitka standalone 在非 ASCII 路径下的运行时兼容性限制；构建和运行打包产物时应确保完整路径链只包含 ASCII 字符。
 
 ---
 
