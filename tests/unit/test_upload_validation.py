@@ -156,12 +156,13 @@ class TestUploadThreadValidationStatus:
         task = UploadTask("f.bin", f.stat().st_size, str(f), 0)
         task.task_id = None  # 跳过 TransferStore 查询
         pan = MagicMock()
-        pan.parent_file_id = 0
+        received_parent_ids = []
 
-        def _up_load(local_path, task=None, resume_info=None,
+        def _up_load(local_path, task=None, parent_file_id=None, resume_info=None,
                      session_callback=None, num_threads=1,
                      progress_callback=None, validation_callback=None,
                      duplicate_callback=None):
+            received_parent_ids.append(parent_file_id)
             # 模拟 MD5 校验进度 → 上传中
             if validation_callback:
                 for p in (10, 50, 90):
@@ -180,6 +181,7 @@ class TestUploadThreadValidationStatus:
         # 同步执行 run()，避免依赖事件循环
         thread.run()
 
+        assert received_parent_ids == [task.target_dir_id]
         assert any(s.startswith(tr("transfer.status_validating", "校验中")) for s in statuses)
         assert any(s == tr("transfer.status_uploading", "上传中") for s in statuses)
         assert any(s == tr("transfer.status_completed", "已完成") for s in statuses)
