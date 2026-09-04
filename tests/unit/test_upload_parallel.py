@@ -290,8 +290,8 @@ class TestThreadCountPlumbing:
         pan.set_download_multi_thread(True, 8)
         pan._download.set_multi_thread.assert_called_once_with(True, 8)
 
-    def test_upload_thread_applies_config_thread_count(self, tmp_db):
-        """UploadThread 启动时读取 uploadThreadCount 并传给 up_load。"""
+    def test_upload_thread_passes_config_and_target_directory(self, tmp_db):
+        """UploadThread 将线程数和目标目录传给 up_load。"""
         from src.app.common.config import ConfigManager
         from src.app.tasks.transfer_tasks import UploadThread
 
@@ -300,7 +300,7 @@ class TestThreadCountPlumbing:
         task.file_name = "f.bin"
         task.file_size = BLOCK
         task.local_path = "/tmp/f.bin"
-        task.target_dir_id = 0
+        task.target_dir_id = 42
         task.task_id = None
         task.speed = 0.0
         pan = MagicMock()
@@ -312,6 +312,7 @@ class TestThreadCountPlumbing:
 
         kwargs = pan.up_load.call_args.kwargs
         assert kwargs.get("num_threads") == 3
+        assert kwargs.get("parent_file_id") == 42
 
     def test_upload_thread_caps_config_thread_count(self, tmp_db):
         """旧配置超过上限时，上传线程数最多为 4。"""
