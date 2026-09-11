@@ -104,6 +104,32 @@ class TestMoveFileTask:
         assert "boom" in error
 
 
+class TestFileServiceShare:
+    def _make(self):
+        session = MagicMock()
+        svc = FileService(session)
+        return svc, session
+
+    def test_share_uses_real_api_payload_shape(self):
+        svc, session = self._make()
+        session.http.post.return_value.json.return_value = {
+            "code": 0,
+            "data": {"ShareKey": "xYz123"},
+        }
+
+        url = svc.share([11, 22], share_pwd="secret")
+
+        assert url == "https://www.123pan.cn/s/xYz123"
+        payload = session.http.post.call_args.args[0]
+        assert payload.endswith("/b/api/share/create")
+        body = session.http.post.call_args.kwargs["json"]
+        assert body["sharePwd"] == "secret"
+        assert body["fileIdList"] == "11,22"
+        assert body["fileNum"] == 2
+        assert body["shareModality"] == 4
+        assert body["operatePlace"] == 2
+
+
 class TestFileServiceCopy:
     def _make(self):
         session = MagicMock()
