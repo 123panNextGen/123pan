@@ -222,6 +222,7 @@ class UploadThread(QThread):
             result = self.pan.up_load(
                 self.task.local_path,
                 task=self,
+                parent_file_id=self.task.target_dir_id,
                 resume_info=resume_info,
                 session_callback=_on_session,
                 num_threads=ul_threads,

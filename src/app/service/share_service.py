@@ -17,7 +17,9 @@ from ..common.log import get_logger
 
 logger = get_logger(__name__)
 
-SHARE_API_BASE = "https://api.123278.com"
+from ..api.constants import FALLBACK_BASE_URL, api_url
+
+SHARE_API_BASE = FALLBACK_BASE_URL
 
 
 class ShareService:
@@ -37,7 +39,7 @@ class ShareService:
         Returns:
             ApiReturnModel，成功时 data 为 ShareListResponse 实例
         """
-        url = SHARE_API_BASE + "/b/api/share/list"
+        url = api_url("/b/api/share/list", SHARE_API_BASE)
         params = {
             "driveId": drive_id,
             "limit": limit,
@@ -81,7 +83,9 @@ class ShareService:
         Returns:
             ApiReturnModel，成功时 data 为 ShareListResponse 实例
         """
-        url = SHARE_API_BASE + "/b/api/restful/goapi/v1/share/content/payment/list"
+        url = api_url(
+            "/b/api/restful/goapi/v1/share/content/payment/list", SHARE_API_BASE
+        )
         params = {
             "driveId": drive_id,
             "limit": limit,
@@ -127,7 +131,7 @@ class ShareService:
         Returns:
             ApiReturnModel
         """
-        url = SHARE_API_BASE + "/b/api/share/delete"
+        url = api_url("/b/api/share/delete", SHARE_API_BASE)
         data = {
             "driveId": drive_id,
             "shareInfoList": [{"shareId": share_id}],

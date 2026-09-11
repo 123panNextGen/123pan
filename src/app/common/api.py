@@ -281,9 +281,11 @@ class Pan123:
 
     def up_load(self, file_path, task=None, resume_info=None, session_callback=None,
                 num_threads=1, progress_callback=None, validation_callback=None,
-                duplicate_callback=None):
+                duplicate_callback=None, parent_file_id=None):
+        if parent_file_id is None:
+            parent_file_id = self.parent_file_id
         return self._upload.up_load(
-            file_path, self.parent_file_id,
+            file_path, parent_file_id,
             task=task, resume_info=resume_info, session_callback=session_callback,
             num_threads=num_threads, progress_callback=progress_callback,
             validation_callback=validation_callback,

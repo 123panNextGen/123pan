@@ -10,6 +10,7 @@ the Free Software Foundation, either version 3 of the License, or
 
 import time
 
+from ..api.constants import FALLBACK_BASE_URL, api_url
 from ..common.file_list_db import FileListDB
 from ..common.log import get_logger
 
@@ -386,16 +387,25 @@ class FileService:
         """
         if not file_id_list:
             raise ValueError("文件ID列表为空")
+        normalized_ids = [str(int(fid)) for fid in file_id_list]
         data = {
             "driveId": 0,
             "expiration": "2099-12-12T08:00:00+08:00",
-            "fileIdList": file_id_list,
+            "fileIdList": ",".join(normalized_ids),
             "shareName": "123云盘分享",
             "sharePwd": share_pwd or "",
             "event": "shareCreate",
+            "fileNum": len(normalized_ids),
+            "renameVisible": False,
+            "shareModality": 4,
+            "operatePlace": 2,
+            "trafficLimitSwitch": 1,
+            "trafficLimit": 0,
+            "trafficSwitch": 1,
+            "fillPwdSwitch": 0,
         }
         share_res = self._session.http.post(
-            "https://www.123pan.cn/a/api/share/create",
+            api_url("/b/api/share/create", FALLBACK_BASE_URL),
             json=data,
             timeout=10,
         )
