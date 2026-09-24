@@ -172,6 +172,34 @@ class CloudInterface(ScrollArea):
         self.space_card.hBoxLayout.addSpacing(16)
         self.storageGroup.addSettingCard(self.space_card)
 
+        # 专业空间
+        self.professional_space_card = SettingCard(
+            FIF.FOLDER,
+            tr("cloud.professional_space", "专业空间"),
+            tr("cloud.professional_space_desc", "已用空间 / 专业空间总量"),
+            self.storageGroup,
+        )
+        self.professional_space_label = QLabel()
+        self.professional_space_card.hBoxLayout.addWidget(
+            self.professional_space_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.professional_space_card.hBoxLayout.addSpacing(16)
+        self.storageGroup.addSettingCard(self.professional_space_card)
+
+        # 标准空间
+        self.standard_space_card = SettingCard(
+            FIF.FOLDER,
+            tr("cloud.standard_space", "标准空间"),
+            tr("cloud.standard_space_desc", "已用空间 / 标准空间总量"),
+            self.storageGroup,
+        )
+        self.standard_space_label = QLabel()
+        self.standard_space_card.hBoxLayout.addWidget(
+            self.standard_space_label, 0, Qt.AlignmentFlag.AlignRight
+        )
+        self.standard_space_card.hBoxLayout.addSpacing(16)
+        self.storageGroup.addSettingCard(self.standard_space_card)
+
         # 文件数量
         self.file_count_card = SettingCard(
             FIF.DOCUMENT,
@@ -268,6 +296,32 @@ class CloudInterface(ScrollArea):
         else:
             self.space_label.setText(f"{used_str} / {total_str}")
 
+        # 专业空间
+        professional_used_str = info.professional_space_used_str()
+        professional_total_str = info.professional_space_total_str()
+        if info.professional_space_permanent > 0:
+            professional_pct = info.professional_space_used / info.professional_space_permanent * 100
+            self.professional_space_label.setText(
+                f"{professional_used_str} / {professional_total_str} ({professional_pct:.1f}%)"
+            )
+        else:
+            self.professional_space_label.setText(
+                f"{professional_used_str} / {professional_total_str}"
+            )
+
+        # 标准空间
+        standard_used_str = info.standard_space_used_str()
+        standard_total_str = info.standard_space_total_str()
+        if info.standard_space_permanent > 0:
+            standard_pct = info.standard_space_used / info.standard_space_permanent * 100
+            self.standard_space_label.setText(
+                f"{standard_used_str} / {standard_total_str} ({standard_pct:.1f}%)"
+            )
+        else:
+            self.standard_space_label.setText(
+                f"{standard_used_str} / {standard_total_str}"
+            )
+
         # 文件数量
         self.file_count_label.setText(str(info.file_count))
 
@@ -275,8 +329,15 @@ class CloudInterface(ScrollArea):
         self.traffic_label.setText(info.traffic_str())
 
         logger.info(
-            "用户信息已更新: uid=%s, vip=%s, space=%s/%s",
-            info.uid, info.vip, used_str, total_str,
+            "用户信息已更新: uid=%s, vip=%s, space=%s/%s, professional=%s/%s, standard=%s/%s",
+            info.uid,
+            info.vip,
+            used_str,
+            total_str,
+            professional_used_str,
+            professional_total_str,
+            standard_used_str,
+            standard_total_str,
         )
 
     def _show_user_info_error(self):
@@ -284,6 +345,8 @@ class CloudInterface(ScrollArea):
         self.uid_label.setText("-")
         self.vip_label.setText("-")
         self.space_label.setText("-")
+        self.professional_space_label.setText("-")
+        self.standard_space_label.setText("-")
         self.file_count_label.setText("-")
         self.traffic_label.setText("-")
 

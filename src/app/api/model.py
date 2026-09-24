@@ -169,6 +169,10 @@ class CloudUserInfoModel:
     direct_traffic: int   # 直链流量
     share_traffic: int    # 分享流量
     passport: int
+    professional_space_permanent: int = 0
+    professional_space_used: int = 0
+    standard_space_permanent: int = 0
+    standard_space_used: int = 0
 
     @classmethod
     def from_dict(cls, json: dict[str, Any]) -> "CloudUserInfoModel":
@@ -187,6 +191,30 @@ class CloudUserInfoModel:
             direct_traffic=int(data.get("DirectTraffic", data.get("directTraffic", 0))),
             share_traffic=int(data.get("ShareTraffic", data.get("shareTraffic", 0))),
             passport=int(data.get("Passport", data.get("passport", 0))),
+            professional_space_permanent=int(
+                data.get(
+                    "ProfessionalSpacePermanent",
+                    data.get("professionalSpacePermanent", 0),
+                )
+            ),
+            professional_space_used=int(
+                data.get(
+                    "ProfessionalSpaceUsed",
+                    data.get("professionalSpaceUsed", 0),
+                )
+            ),
+            standard_space_permanent=int(
+                data.get(
+                    "StandardSpacePermanent",
+                    data.get("standardSpacePermanent", 0),
+                )
+            ),
+            standard_space_used=int(
+                data.get(
+                    "StandardSpaceUsed",
+                    data.get("standardSpaceUsed", 0),
+                )
+            ),
         )
 
     def space_used_str(self):
@@ -196,6 +224,18 @@ class CloudUserInfoModel:
     def space_total_str(self):
         """格式化总空间（如 '28.5 TB'）。"""
         return _format_bytes(self.space_total)
+
+    def professional_space_used_str(self):
+        return _format_bytes(self.professional_space_used)
+
+    def professional_space_total_str(self):
+        return _format_bytes(self.professional_space_permanent)
+
+    def standard_space_used_str(self):
+        return _format_bytes(self.standard_space_used)
+
+    def standard_space_total_str(self):
+        return _format_bytes(self.standard_space_permanent)
 
     def traffic_str(self):
         """格式化直链流量（如 '10.0 GB'）。"""
