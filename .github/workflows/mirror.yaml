@@ -2,22 +2,28 @@ name: Mirror to Codeberg
 
 on:
   push:
-    branches:
-      - "**"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   mirror:
+    name: Mirror to Codeberg
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Push to Codeberg
+      - name: Mirror GitHub to Codeberg
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
         run: |
-          git remote add codeberg https://x-access-token:${{ secrets.CODEBERG_TOKEN }}@codeberg.org/123pannextgen/123pan.git
-          git push --mirror codeberg
+          git clone --mirror \
+            "https://github.com/${{ github.repository }}.git" \
+            repo
+
+          cd repo
+
+          git push -f --prune \
+            "https://x-access-token:${CODEBERG_TOKEN}@codeberg.org/123pannextgen/123pan.git" \
+            "refs/heads/*:refs/heads/*" \
+            "refs/tags/*:refs/tags/*"
