@@ -113,6 +113,12 @@ uv run src/123pan.py
 uv sync --group test --group lint --group build
 ```
 
+### 使用AUR
+如果您是Arch Linux及其衍生发行版的用户，可以使用[AUR](https://aur.archlinux.org/packages/123pan)安装
+```shell
+yay -S 123pan
+```
+
 ## 快捷键
 
 | 快捷键 | 操作 |

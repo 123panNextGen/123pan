@@ -13,6 +13,7 @@ from datetime import datetime
 from src.app.api.model import (
     ApiCode,
     ApiReturnModel,
+    CloudUserInfoModel,
     DeviceItemModel,
     DeviceListResponse,
     FileItemModel,
@@ -125,6 +126,34 @@ class TestFileListData:
         assert fld.is_first is True
         assert len(fld.info_list) == 1
         assert fld.info_list[0].file_name == "a.txt"
+
+    def test_cloud_user_info_from_dict_with_pro_space_fields(self):
+        data = {
+            "data": {
+                "UID": 123,
+                "Nickname": "test-user",
+                "SpaceUsed": "551181671066",
+                "SpacePermanent": "32298154065920",
+                "SpaceTemp": "0",
+                "FileCount": 5,
+                "Vip": False,
+                "VipExpire": "",
+                "VipLevel": 0,
+                "HeadImage": "",
+                "DirectTraffic": 0,
+                "ShareTraffic": 0,
+                "Passport": 0,
+                "ProfessionalSpacePermanent": "1099511627776",
+                "ProfessionalSpaceUsed": "0",
+                "StandardSpacePermanent": "32298154065920",
+                "StandardSpaceUsed": "551181671066",
+            }
+        }
+        user = CloudUserInfoModel.from_dict(data)
+        assert user.professional_space_permanent == 1099511627776
+        assert user.professional_space_used == 0
+        assert user.standard_space_permanent == 32298154065920
+        assert user.standard_space_used == 551181671066
 
     def test_from_dict_camel(self):
         data = {
