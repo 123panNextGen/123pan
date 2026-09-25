@@ -9,21 +9,21 @@ permissions:
 
 jobs:
   mirror:
+    name: Mirror to Codeberg
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clone repository as mirror
-        run: |
-          git clone --mirror \
-            "https://github.com/${{ github.repository }}.git" \
-            repo.git
-
-      - name: Push mirror to Codeberg
-        working-directory: repo.git
+      - name: Mirror GitHub to Codeberg
         env:
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
         run: |
-          git remote add codeberg \
-            "https://x-access-token:${CODEBERG_TOKEN}@codeberg.org/123pannextgen/123pan.git"
+          git clone --mirror \
+            "https://github.com/${{ github.repository }}.git" \
+            repo
 
-          git push --mirror codeberg
+          cd repo
+
+          git push -f --prune \
+            "https://x-access-token:${CODEBERG_TOKEN}@codeberg.org/123pannextgen/123pan.git" \
+            "refs/heads/*:refs/heads/*" \
+            "refs/tags/*:refs/tags/*"
