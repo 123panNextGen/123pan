@@ -24,6 +24,7 @@ _PREVIEWER_MAP = None
 
 def _build_previewer_map():
     """构建扩展名到预览器类的映射表（懒加载）。"""
+    global _PREVIEWER_MAP
     if _PREVIEWER_MAP is not None:
         return _PREVIEWER_MAP
 
@@ -54,7 +55,7 @@ def _build_previewer_map():
     for ext in ("pdf",):
         previewer_map[ext] = PdfPreviewWidget
 
-    _PREVIEWER_MAP.update(previewer_map)
+    _PREVIEWER_MAP = previewer_map
     return _PREVIEWER_MAP
 
 
