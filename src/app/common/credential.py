@@ -12,6 +12,8 @@ import base64
 import os
 import platform
 import secrets
+import threading
+import time
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -54,39 +56,109 @@ def _get_machine_id() -> str:
     return "|".join(parts)
 
 
-def _load_or_create_key() -> bytes:
-    """加载或创建随机密钥，用机器标识加密后存储。"""
-    machine_id = _get_machine_id()
+# 密钥文件创建/读取的进程内互斥锁，防止并发首次创建互相覆盖
+_KEY_LOCK = threading.Lock()
+
+
+def _read_key_file(machine_id: str) -> bytes:
+    """读取并解密已有的密钥文件。任何失败都向上抛出，绝不覆盖原文件。"""
+    with open(_KEY_FILE, "rb") as f:
+        stored_salt = f.read(_SALT_SIZE)
+        encrypted_key = f.read()
+    if len(stored_salt) != _SALT_SIZE or len(encrypted_key) <= 12:
+        raise ValueError("密钥文件内容不完整")
+    dk = _derive_key(stored_salt, machine_id)
+    aesgcm = AESGCM(dk)
+    nonce = encrypted_key[:12]
+    ct = encrypted_key[12:]
+    return aesgcm.decrypt(nonce, ct, None)
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """循环写入直到全部写完（os.write 可能只写入部分字节）。"""
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError("写入密钥文件失败")
+        view = view[written:]
+
+
+def _create_key_file(machine_id: str) -> bytes:
+    """原子创建新的密钥文件（O_CREAT|O_EXCL）。
+
+    并发情况下若文件已被其他线程/进程创建，则等待并读取现有密钥，绝不覆盖；
+    若创建者写入失败并清理了文件，则重试自己创建。
+    """
+    random_key = secrets.token_bytes(_KEY_LENGTH)
     salt = secrets.token_bytes(_SALT_SIZE)
     derived_key = _derive_key(salt, machine_id)
-
-    if _KEY_FILE.exists():
-        try:
-            with open(_KEY_FILE, "rb") as f:
-                stored_salt = f.read(_SALT_SIZE)
-                encrypted_key = f.read()
-            dk = _derive_key(stored_salt, machine_id)
-            aesgcm = AESGCM(dk)
-            nonce = encrypted_key[:12]
-            ct = encrypted_key[12:]
-            return aesgcm.decrypt(nonce, ct, None)
-        except Exception:
-            logger.warning("密钥文件损坏，重新生成")
-
-    # 生成新密钥并加密存储
-    random_key = secrets.token_bytes(_KEY_LENGTH)
     aesgcm = AESGCM(derived_key)
     nonce = secrets.token_bytes(12)
     encrypted_key = nonce + aesgcm.encrypt(nonce, random_key, None)
+    payload = salt + encrypted_key
 
     os.makedirs(str(CONFIG_DIR), exist_ok=True)
-    # 设置仅用户可读写
-    with open(_KEY_FILE, "wb") as f:
-        f.write(salt)
-        f.write(encrypted_key)
-    os.chmod(_KEY_FILE, 0o600)
+    # Windows 下 os.open 默认文本模式，会把 0x0A 写成 0x0D 0x0A，
+    # 而读取用二进制模式，字节错位会导致密钥无法解密，故必须加 O_BINARY
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    last_error = None
+    for _ in range(50):
+        try:
+            fd = os.open(str(_KEY_FILE), flags, 0o600)
+        except FileExistsError:
+            # 并发：等待对方写完并读取。对方若写入失败并清理了文件，
+            # 则下一轮 os.open 会成功，由自己创建。
+            try:
+                return _read_key_file(machine_id)
+            except Exception as e:  # noqa: BLE001 - ValueError/OSError/InvalidTag 等
+                last_error = e
+                time.sleep(0.02)
+                continue
+        try:
+            _write_all(fd, payload)
+        except BaseException:
+            # 写入失败（如磁盘满）时清理残留的不完整文件，
+            # 否则下次会因“文件存在但内容不完整”而被永久锁死
+            os.close(fd)
+            try:
+                os.unlink(str(_KEY_FILE))
+            except OSError as e:
+                logger.warning("清理不完整的密钥文件失败: %s", e)
+            raise
+        # fsync 尽力而为：完整数据已在页缓存中，其他进程可正常读取；
+        # 若此时删除文件，反而会让刚加密的凭据变成无法解密的孤儿
+        try:
+            os.fsync(fd)
+        except OSError as e:
+            logger.warning("密钥文件 fsync 失败（忽略）: %s", e)
+        os.close(fd)
+        return random_key
+    raise RuntimeError("并发创建密钥文件超时（文件始终不可读）") from last_error
 
-    return random_key
+
+def _load_or_create_key() -> bytes:
+    """加载或创建随机密钥，用机器标识加密后存储。
+
+    已存在的密钥文件**绝不会被静默覆盖**：读取或解密失败时抛出异常，
+    由调用方处理（避免销毁此前加密的所有凭据）。
+    """
+    machine_id = _get_machine_id()
+    with _KEY_LOCK:
+        if not _KEY_FILE.exists():
+            return _create_key_file(machine_id)
+        try:
+            return _read_key_file(machine_id)
+        except Exception as e:  # noqa: BLE001 - 需保护既有密钥文件
+            logger.error(
+                "无法读取既有密钥文件 %s: %s。为保护已保存的凭据，已停止"
+                "操作；如确认密钥已损坏，请先备份后手动删除该文件。",
+                _KEY_FILE,
+                e or type(e).__name__,
+            )
+            raise RuntimeError(
+                "密钥文件无法读取，已取消操作以保护已保存的凭据"
+            ) from e
 
 
 def encrypt_credential(plaintext: str) -> str:
@@ -130,8 +202,14 @@ def decrypt_credential(ciphertext: str) -> str:
         ct = raw[12:]
         return aesgcm.decrypt(nonce, ct, None).decode("utf-8")
     except Exception as e:
-        logger.error("解密凭据失败: %s", e)
-        return ciphertext
+        # 不再回退返回密文：否则会把 "enc:..." 当成明文密码使用，
+        # 既掩盖密钥损坏，又导致难以排查的认证失败
+        logger.error(
+            "解密凭据失败 (%s): %s；密钥可能不匹配或密钥文件不可读",
+            type(e).__name__,
+            e,
+        )
+        return ""
 
 
 def encrypt_account_passwords(account_info: dict) -> dict:

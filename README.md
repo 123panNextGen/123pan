@@ -1,6 +1,6 @@
 <div align="center">
 
-# [123pan](https://www.123panng.top)
+# 123pan
 
 第三方 123 云盘桌面客户端
 
@@ -88,8 +88,6 @@
 ### 使用发行版
 
 前往 [GitHub Releases](https://github.com/123panNextGen/123pan/releases) 下载适合当前系统的版本。目前项目提供 Windows、Linux 和 macOS 构建，具体可用平台与架构以各版本的附件说明为准。
-
-也可从项目下载站获取发行版：<https://download.123panng.top/>。下载站经由 Cloudflare CDN 分发，更新可能略有延迟。
 
 解压后运行 Windows 版本中的 `123pan.exe`、Linux 版本中的 `123pan`，或打开 macOS 应用包。
 

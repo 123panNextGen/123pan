@@ -16,10 +16,11 @@ import pytest
 from types import SimpleNamespace
 from PySide6.QtWidgets import QApplication, QLabel, QTreeWidget
 
-from qfluentwidgets import TableWidget
+from qfluentwidgets import FluentIcon as FIF, TableWidget
 
 from src.app.view.file_table import FileTableManager, format_date_text
 from src.app.view.file_tree import FileTreeManager
+from src.app.view.icons import icon
 from src.app.api.model import ApiCode, ApiReturnModel
 from src.app.tasks.file_tasks import CheckDownloadTrafficTask
 from src.app.tasks.signals import _DownloadTrafficSignals
@@ -65,6 +66,24 @@ class TestFileTableManager:
                         "Size": 100, "UpdateAt": 1700000000}])
         item = table.item(0, 0)
         assert item.toolTip() == long_name
+
+    def test_file_icons_follow_extension(self, qapp):
+        table = TableWidget()
+        table.setColumnCount(4)
+        mgr = FileTableManager(table, QLabel())
+        mgr.set_items([
+            {"FileId": 1, "FileName": "photo.PNG", "Type": 0},
+            {"FileId": 2, "FileName": "source.py", "Type": 0},
+            {"FileId": 3, "FileName": "archive.zip", "Type": 0},
+            {"FileId": 4, "FileName": "unknown.xyz", "Type": 0},
+            {"FileId": 5, "FileName": "folder.mp3", "Type": 1},
+        ])
+
+        assert table.item(0, 0).icon().cacheKey() == icon(FIF.PHOTO).cacheKey()
+        assert table.item(1, 0).icon().cacheKey() == icon(FIF.CODE).cacheKey()
+        assert table.item(2, 0).icon().cacheKey() == icon(FIF.ZIP_FOLDER).cacheKey()
+        assert table.item(3, 0).icon().cacheKey() == icon(FIF.DOCUMENT).cacheKey()
+        assert table.item(4, 0).icon().cacheKey() == icon(FIF.FOLDER).cacheKey()
 
     def test_name_column_interactive(self, qapp):
         """文件表格名称列允许用户手动调整宽度。"""

@@ -50,11 +50,13 @@ class AudioPreviewWidget(QWidget):
         self._position_timer = QTimer(self)
         self._position_timer.setInterval(200)
 
+        # 先构建 UI：_show_error 依赖已存在的 layout
+        self._setup_ui()
+
         if not _HAS_MULTIMEDIA:
             self._show_error("PySide6 多媒体模块不可用，无法预览音频。")
             return
 
-        self._setup_ui()
         self._setup_player()
 
     def _setup_ui(self):
@@ -157,10 +159,15 @@ class AudioPreviewWidget(QWidget):
     def _on_state_changed(self, state):
         self._is_playing = state == QMediaPlayer.PlaybackState.PlayingState
         self._update_play_button()
-        if self._is_playing:
+        if state == QMediaPlayer.PlaybackState.PlayingState:
             self._status_label.setText("正在播放")
-        else:
+            self._position_timer.start()
+        elif state == QMediaPlayer.PlaybackState.PausedState:
             self._status_label.setText("已暂停")
+            self._position_timer.stop()
+        else:
+            self._status_label.setText("准备就绪")
+            self._position_timer.stop()
 
     def _update_play_button(self):
         if self._is_playing:
@@ -207,13 +214,22 @@ class AudioPreviewWidget(QWidget):
             f"{_fmt(position_ms)} / {_fmt(self._duration_ms)}"
         )
 
+    def _clear_layout(self, layout):
+        """递归隐藏布局（含嵌套布局）中的所有控件。"""
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                continue
+            child = item.layout()
+            if child is not None:
+                self._clear_layout(child)
+
     def _show_error(self, message):
         layout = self.layout()
         if layout:
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    item.widget().hide()
+            self._clear_layout(layout)
             error_label = QLabel(message)
             error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             error_label.setStyleSheet(
@@ -223,8 +239,12 @@ class AudioPreviewWidget(QWidget):
 
     def cleanup(self):
         """清理播放器资源。"""
+        self._position_timer.stop()
         if self._player:
             self._player.stop()
+            self._player.setSource(QUrl())
+            self._player.deleteLater()
             self._player = None
-        self._audio_output = None
-        self._position_timer.stop()
+        if self._audio_output:
+            self._audio_output.deleteLater()
+            self._audio_output = None
