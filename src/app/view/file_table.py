@@ -19,6 +19,29 @@ from ..common.i18n import tr
 from .icons import icon
 
 
+_FILE_ICON_GROUPS = (
+    (("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "ico", "tiff", "tif", "heic", "heif"), FIF.PHOTO),
+    (("mp4", "mkv", "webm", "avi", "mov", "flv", "wmv", "m4v", "3gp"), FIF.VIDEO),
+    (("mp3", "wav", "flac", "ogg", "aac", "wma", "m4a", "opus", "ape"), FIF.MUSIC),
+    (("py", "json", "xml", "sh", "bat", "ps1", "sql", "html", "css", "js", "ts", "c", "cpp", "h", "hpp", "java", "kt", "rs", "go", "rb", "php", "lua", "r", "swift", "scala"), FIF.CODE),
+    (("zip", "rar", "7z", "tar", "gz", "bz2", "xz"), FIF.ZIP_FOLDER),
+    (("ppt", "pptx", "odp"), FIF.PROJECTOR),
+    (("xls", "xlsx", "ods", "csv"), FIF.PIE_SINGLE),
+    (("ttf", "otf", "woff", "woff2"), FIF.FONT),
+)
+_FILE_ICON_MAP = {
+    extension: fluent_icon
+    for extensions, fluent_icon in _FILE_ICON_GROUPS
+    for extension in extensions
+}
+
+
+def _file_icon(file_name):
+    """根据文件后缀返回 FluentIcon，未知类型使用通用文档图标。"""
+    extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    return icon(_FILE_ICON_MAP.get(extension, FIF.DOCUMENT))
+
+
 def format_date_text(ts):
     """将时间戳格式化为 'YYYY-MM-DD HH:MM'，非法值返回空串。"""
     if not ts:
@@ -76,7 +99,6 @@ class FileTableManager:
             table.setRowCount(count)
 
             folder_icon = icon(FIF.FOLDER)
-            file_icon = icon(FIF.DOCUMENT)
 
             for row, file_item in enumerate(items):
                 file_name = file_item.get("FileName", "")
@@ -100,7 +122,7 @@ class FileTableManager:
                 name_item.setToolTip(file_name)
                 name_item.setData(Qt.ItemDataRole.UserRole, file_id)
                 name_item.setData(Qt.ItemDataRole.UserRole + 1, file_type)
-                name_item.setIcon(folder_icon if file_type == 1 else file_icon)
+                name_item.setIcon(folder_icon if file_type == 1 else _file_icon(file_name))
 
                 type_item = table.item(row, 1)
                 if type_item is None:
