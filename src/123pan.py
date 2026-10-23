@@ -14,8 +14,8 @@ import platform
 import sys
 
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QPixmapCache
+from PySide6.QtCore import Qt, qInstallMessageHandler
+from PySide6.QtGui import QIcon, QPixmapCache, QGuiApplication
 from qfluentwidgets import (
     FluentTranslator,
     Theme,
@@ -32,6 +32,30 @@ from app.common import resource  # 注册 Qt 资源（qss 等，:/(prefix)/... �
 from app.view.main_window import MainWindow
 
 logger = get_logger("123pan")
+
+
+def _wayland_qt_message_handler(_mode, _context, message):
+    """Qt 消息过滤器：丢弃 Wayland 不支持的窗口透明度警告。"""
+    if "does not support setting window opacity" in message:
+        return
+    print(message, file=sys.stderr)
+
+
+def _silence_wayland_opacity_warning():
+    """屏蔽 Wayland 下“不支持设置窗口透明度”的无害警告。
+
+    qfluentwidgets 的菜单/提示淡入动画会通过 QPropertyAnimation 写入
+    windowOpacity 属性，而 Wayland 平台插件不支持该属性，Qt 每次动画
+    都会打印 "This plugin does not support setting window opacity"。
+    动画的其余部分（位置等）不受影响，这里只过滤这一条警告。
+    """
+    if sys.platform != "linux":
+        return
+    if "wayland" not in QGuiApplication.platformName().lower():
+        return
+
+    qInstallMessageHandler(_wayland_qt_message_handler)
+    logger.debug("Wayland 平台已过滤窗口透明度警告")
 
 
 def main():
@@ -56,6 +80,7 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings)
     app.setWindowIcon(QIcon(":/123pan/logo.ico"))
+    _silence_wayland_opacity_warning()
 
     # 限制 Qt 全局像素图缓存（图标/图片缩放等），降低内存占用
     # 默认 20MB，图标通常很小，10MB 足够且可避免缓存无限膨胀
