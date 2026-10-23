@@ -26,6 +26,58 @@ _UPLOAD_REQUEST_TIMEOUT = 15
 _UPLOAD_PART_TIMEOUT = 120
 _UPLOAD_PART_RETRIES = 5
 _MAX_UPLOAD_THREADS = 4
+# 分片请求体的发送块大小：越小取消/暂停生效越快，过小会增加请求开销
+_UPLOAD_SEND_CHUNK_SIZE = 64 * 1024
+
+
+class _UploadInterrupted(Exception):
+    """上传分片请求被主动中断（取消/暂停）的基类。"""
+
+
+class _UploadCancelled(_UploadInterrupted):
+    """用户取消上传。"""
+
+
+class _UploadPaused(_UploadInterrupted):
+    """用户暂停上传：中止当前分片请求，恢复后从该分片起点重传。"""
+
+
+class _ChunkedPartBody:
+    """把分片数据包装成可中断的流式请求体。
+
+    requests 会逐块写出该可迭代对象，这里在每块数据发送前检查取消/暂停，
+    取消时可以立即断开连接，而不必等待整个分片（默认 5MB）发送完毕。
+    """
+
+    def __init__(self, data, is_cancelled, is_paused, on_bytes_sent):
+        self._data = data
+        self._is_cancelled = is_cancelled
+        self._is_paused = is_paused
+        self._on_bytes_sent = on_bytes_sent
+
+    def __len__(self):
+        return len(self._data)
+
+    def tell(self):
+        """requests 在重定向时需要回绕请求体，这里是每次迭代重新开始。"""
+        return 0
+
+    def seek(self, _offset, _whence=0):
+        return 0
+
+    def __iter__(self):
+        total = len(self._data)
+        sent = 0
+        for offset in range(0, total, _UPLOAD_SEND_CHUNK_SIZE):
+            if self._is_cancelled():
+                raise _UploadCancelled
+            if self._is_paused():
+                raise _UploadPaused
+            chunk = self._data[offset:offset + _UPLOAD_SEND_CHUNK_SIZE]
+            yield chunk
+            sent += len(chunk)
+            if self._on_bytes_sent:
+                self._on_bytes_sent(sent)
 
 
 class UploadService:
@@ -184,30 +236,76 @@ class UploadService:
             raise RuntimeError(f"获取分片 {part_number} 预签名 URL 失败")
         return urls[part_number]
 
-    def _put_part_with_retry(self, upload_url, data, task=None):
-        """上传分片并重试临时网络错误。"""
+    def _put_part_with_retry(self, upload_url, data, task=None, progress_callback=None):
+        """上传分片并重试临时网络错误。
+
+        分片以流式方式发送，配合取消/暂停标志可在发送途中断开请求，
+        避免用户取消后仍要等整个分片传完。
+
+        Args:
+            progress_callback: 可选回调，接收本次尝试的增量字节数；
+                重试/暂停回滚时上报负值，保证调用方累计值准确。
+
+        Returns:
+            bool: True 成功；False 已取消。
+        """
         last_error = None
         timeout = _UPLOAD_PART_TIMEOUT
         if self._upload_speed_limit_kbps > 0:
             limited_seconds = len(data) / (self._upload_speed_limit_kbps * 1024)
             timeout = max(timeout, int(limited_seconds * 3))
         max_attempts = _UPLOAD_PART_RETRIES if self._error_backoff_retry_enabled else 1
-        for attempt in range(1, max_attempts + 1):
+        attempt = 0
+        while attempt < max_attempts:
             if task and task.is_cancelled:
                 return False
+            attempt += 1
+            sent = [0]
+
+            def _on_sent(total):
+                delta = total - sent[0]
+                sent[0] = total
+                if progress_callback and delta:
+                    progress_callback(delta)
+
+            body = _ChunkedPartBody(
+                data,
+                is_cancelled=lambda: bool(task and task.is_cancelled),
+                is_paused=lambda: bool(getattr(task, "is_paused", False)),
+                on_bytes_sent=_on_sent,
+            )
             try:
                 self._session.transfer.put(
-                    upload_url, data=data, timeout=timeout
+                    upload_url,
+                    data=body,
+                    headers={"Content-Length": str(len(data))},
+                    timeout=timeout,
                 )
+                # 兜底补齐：若请求体未被逐块消费（如测试 mock），按整片补报
+                if progress_callback and sent[0] < len(data):
+                    progress_callback(len(data) - sent[0])
                 return True
+            except _UploadCancelled:
+                return False
+            except _UploadPaused:
+                # 暂停不计入重试次数：回滚本分片已上报的字节，恢复后重传
+                if progress_callback and sent[0]:
+                    progress_callback(-sent[0])
+                attempt -= 1
+                waiter = getattr(task, "wait_if_paused", None) if task else None
+                if waiter is not None:
+                    waiter()
+                continue
             except (
                 requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError,
                 TimeoutError,
                 ConnectionError,
             ) as error:
+                if progress_callback and sent[0]:
+                    progress_callback(-sent[0])
                 last_error = error
-                if attempt == max_attempts:
+                if attempt >= max_attempts:
                     break
                 delay = min(2 ** (attempt - 1), 4)
                 logger.warning(
@@ -406,6 +504,13 @@ class UploadService:
         def _cancelled():
             return bool(task and getattr(task, "is_cancelled", False))
 
+        def _add_sent(delta):
+            """累计已发送字节并上报；重试/暂停回滚时 delta 为负值。"""
+            if not delta:
+                return
+            total_sent[0] = max(0, total_sent[0] + delta)
+            _report_progress()
+
         def _wait_pause():
             waiter = getattr(task, "wait_if_paused", None) if task else None
             if waiter is not None:
@@ -423,6 +528,14 @@ class UploadService:
             url_lock = threading.Lock()
             url_cache = {}
             cancel_flag = [False]
+
+            def _report_part_progress(delta):
+                """并行分片进度：多个工作线程共享 total_sent，需要加锁。"""
+                if not delta:
+                    return
+                with progress_lock:
+                    total_sent[0] = max(0, total_sent[0] + delta)
+                    _report_progress()
 
             def _get_presigned_url(pn):
                 """获取分片预签名 URL：批量请求 + 缓存，缺失时单分片兜底。"""
@@ -481,13 +594,11 @@ class UploadService:
                                 break
                             time.sleep(min(remaining, 0.1))
 
-                if not self._put_part_with_retry(upload_url, data, task):
+                if not self._put_part_with_retry(
+                    upload_url, data, task, progress_callback=_report_part_progress
+                ):
                     cancel_flag[0] = True
                     return
-
-                with progress_lock:
-                    total_sent[0] += len(data)
-                    _report_progress()
 
             workers = min(num_threads, len(pending_parts))
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -538,11 +649,15 @@ class UploadService:
                         bucket, upload_key, upload_id, storage_node, part_number,
                         refresh_session, refresh_state,
                     )
-                    if not self._put_part_with_retry(upload_url, data, task):
+                    if not self._put_part_with_retry(
+                        upload_url, data, task, progress_callback=_add_sent
+                    ):
                         return "已取消"
-                    total_sent[0] += len(data)
-                    _report_progress()
                     part_number += 1
+
+        # 取消后不再合并分片，避免“已取消”的任务仍出现在云端
+        if _cancelled():
+            return "已取消"
 
         uploaded_comp_data = {
             "bucket": bucket,
