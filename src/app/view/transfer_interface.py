@@ -75,6 +75,9 @@ class TransferInterface(QWidget, TransferTableMixin):
         self.download_tasks = []
         self.upload_threads = []
         self.download_threads = []
+        # 取消后尚未退出的线程：保留引用并等待 finished 信号回收，
+        # 避免在 UI 线程长时间 wait，也避免在运行中被 GC 销毁
+        self._retiring_threads = []
         self.pan = None  # Pan123实例
 
         # 传输任务持久化（历史记录 / 断点续传）
@@ -141,6 +144,10 @@ class TransferInterface(QWidget, TransferTableMixin):
         for thread in threads:
             if thread.isRunning():
                 thread.wait(_THREAD_CANCEL_WAIT_MS)
+        # 已结束的延后回收线程可以释放引用
+        for thread in list(self._retiring_threads):
+            if thread.isFinished():
+                self._retiring_threads.remove(thread)
         self.upload_threads.clear()
         self.download_threads.clear()
 
@@ -641,7 +648,22 @@ class TransferInterface(QWidget, TransferTableMixin):
             thread_list.remove(thread)
         if not thread.isFinished():
             thread.quit()
-            thread.wait(_THREAD_CANCEL_WAIT_MS)
+            # 已发出取消请求，正常情况下线程会在分片边界很快退出；
+            # 短暂等待后若仍未结束则交给 finished 信号回收，避免卡住界面
+            if not thread.wait(500):
+                logger.warning(
+                    "线程仍在退出，转交后台回收: %s", type(thread).__name__
+                )
+                self._retiring_threads.append(thread)
+                thread.finished.connect(
+                    lambda t=thread: self.__release_retiring_thread(t)
+                )
+
+    def __release_retiring_thread(self, thread):
+        """线程真正结束后释放引用。"""
+        if thread in self._retiring_threads:
+            self._retiring_threads.remove(thread)
+        thread.deleteLater()
 
     def __clearCompletedTasks(self):
         """清除所有已完成/已取消/失败的任务"""

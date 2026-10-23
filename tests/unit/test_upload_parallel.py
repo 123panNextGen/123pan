@@ -240,6 +240,69 @@ class TestUploadParallel:
         urls = [str(c.args[0]) for c in session.http.post.call_args_list]
         assert not any("upload_complete" in url for url in urls)
 
+    def test_part_body_is_streamed_with_content_length(self, tmp_path):
+        """分片以流式请求体发送，并显式带上 Content-Length。"""
+        svc = UploadService(MagicMock())
+        data = b"A" * (256 * 1024)
+        captured = {}
+
+        def _put(url, *args, **kwargs):
+            captured["headers"] = kwargs.get("headers")
+            captured["body"] = b"".join(kwargs["data"])
+            captured["length"] = len(kwargs["data"])
+
+        svc._session.transfer.put.side_effect = _put
+        deltas = []
+
+        assert svc._put_part_with_retry(
+            "http://cdn/1", data, progress_callback=deltas.append
+        )
+        assert captured["headers"]["Content-Length"] == str(len(data))
+        assert captured["length"] == len(data)
+        assert captured["body"] == data
+        # 进度按块上报，累计值等于分片大小
+        assert sum(deltas) == len(data)
+
+    def test_cancel_aborts_inflight_part(self, tmp_path):
+        """分片发送途中取消：请求体中立即抛出取消，不再调用完成接口。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = _mock_upload_session()
+        svc = UploadService(session)
+        task = _CancellableTask()
+
+        def _put_side_effect(url, *args, **kwargs):
+            iterator = iter(kwargs["data"])
+            next(iterator)  # 已发送第一块
+            task.cancelled = True
+            for _ in iterator:  # 下一块应立即中断请求
+                pass
+
+        session.transfer.put.side_effect = _put_side_effect
+
+        assert svc.up_load(str(f), 0, task=task) == "已取消"
+        urls = [str(c.args[0]) for c in session.http.post.call_args_list]
+        assert not any("upload_complete" in u for u in urls)
+        assert not any("s3_complete_multipart_upload" in u for u in urls)
+
+
+class TestUploadThreadPauseState:
+    def test_is_paused_reflects_pause_event(self, tmp_db):
+        """is_paused 供上传服务在分片发送途中断开请求。"""
+        from src.app.tasks.transfer_tasks import UploadThread
+
+        task = MagicMock()
+        task.file_name = "f.bin"
+        task.file_size = BLOCK
+        task.speed = 0.0
+        thread = UploadThread(task, MagicMock())
+
+        assert thread.is_paused is False
+        thread.pause()
+        assert thread.is_paused is True
+        thread.resume()
+        assert thread.is_paused is False
+
 
 class TestFormatSpeed:
     def test_zero_or_negative_is_placeholder(self):

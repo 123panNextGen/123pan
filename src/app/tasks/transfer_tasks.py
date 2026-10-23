@@ -23,6 +23,9 @@ from ..common.transfer_store import TransferStore
 
 logger = get_logger(__name__)
 
+# 上传进度信号最小间隔（秒）：分片流式上报很频繁，节流后避免信号风暴
+_PROGRESS_EMIT_INTERVAL = 0.1
+
 
 def _measure_speed(speed_ts, speed_bytes, current_speed, bytes_done):
     """实时速度计算（B/s）。
@@ -105,11 +108,19 @@ class UploadThread(QThread):
         # 速度测量状态
         self._speed_ts = time.monotonic()
         self._speed_bytes = 0
+        self._speed_lock = threading.Lock()
+        # 进度信号节流时间戳
+        self._last_progress_emit = 0.0
 
     @property
     def is_cancelled(self):
         """供上传服务轮询的取消标志。"""
         return self._cancelled
+
+    @property
+    def is_paused(self):
+        """供上传服务轮询的暂停状态（在分片发送途中断开请求）。"""
+        return not self._pause_event.is_set()
 
     def wait_if_paused(self):
         """暂停时阻塞（由上传分片循环调用）。"""
@@ -192,16 +203,21 @@ class UploadThread(QThread):
                 """上传进度回调：计算实时速度并更新 UI。"""
                 if self._cancelled:
                     return
-                speed, ts, b = _measure_speed(
-                    self._speed_ts, self._speed_bytes,
-                    self.task.speed, uploaded_bytes,
-                )
-                self._speed_ts, self._speed_bytes = ts, b
+                with self._speed_lock:
+                    speed, ts, b = _measure_speed(
+                        self._speed_ts, self._speed_bytes,
+                        self.task.speed, uploaded_bytes,
+                    )
+                    self._speed_ts, self._speed_bytes = ts, b
                 self.task.speed = speed
                 if self.task.file_size > 0:
                     pct = int(uploaded_bytes * 100 / self.task.file_size)
                 else:
                     pct = 0
+                now = time.monotonic()
+                if pct < 100 and now - self._last_progress_emit < _PROGRESS_EMIT_INTERVAL:
+                    return
+                self._last_progress_emit = now
                 self.progress_updated.emit(pct, speed)
 
             def _on_validation(percent):
@@ -210,6 +226,11 @@ class UploadThread(QThread):
                     return
                 self.progress_updated.emit(percent, 0.0)
                 if percent >= 100:
+                    # 校验耗时不计入上传速度：从真正的数据传输开始重新采样
+                    with self._speed_lock:
+                        self._speed_ts = time.monotonic()
+                        self._speed_bytes = 0
+                    self._last_progress_emit = 0.0
                     self.status_updated.emit(tr("transfer.status_uploading", "上传中"))
                 else:
                     self.status_updated.emit(
