@@ -11,6 +11,7 @@
 ### 分支
 
 ```
+main — 最新稳定版
 fluent-dev  ← 合并目标
   feature/xxx  — 新功能
   fix/xxx      — 修复
