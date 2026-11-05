@@ -852,9 +852,9 @@ wheels = [
 
 [[package]]
 name = "nuitka"
-version = "4.3.1"
+version = "4.3.4"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/da/0f/db5cfdebf906a6de141bfdadcd72a7417ba710ba9c9d307be185a69a7c8d/nuitka-4.3.1.tar.gz", hash = "sha256:b9c87a694acc424cfffa06abf149fddbdfa85f6daac998df67411b5f4269df0f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/46/19/9e0a68ea7bf6124843eaf2163430edc80569d4ce33511928e3958c960fb3/nuitka-4.3.4.tar.gz", hash = "sha256:e98e0c9a3224b581cf8ec0fab92b039b90fb7fa78673550c22833a82de444b25" }
 
 [[package]]
 name = "numpy"
