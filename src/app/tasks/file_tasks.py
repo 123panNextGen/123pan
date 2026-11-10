@@ -647,7 +647,11 @@ class MoveFileTask(QRunnable):
             file_ids = [fid for fid, _ in self.file_infos]
             names = [name for _, name in self.file_infos]
             logger.info("移动文件: %s -> 目录 %s", names, self.target_parent_id)
-            success, msg = self.pan.move_file(file_ids, self.target_parent_id)
+            # 传入源目录，确保源目录缓存失效后刷新列表
+            success, msg = self.pan.move_file(
+                file_ids, self.target_parent_id,
+                source_parent_id=self.current_dir_id,
+            )
             if success:
                 items, folder_items = self._fi._reload_dir_data(self.current_dir_id)
                 self.signals.finished.emit(
