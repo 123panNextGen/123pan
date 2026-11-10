@@ -33,13 +33,32 @@ class MockResponse:
         return self._data
 
 
+class MockPartResponse:
+    """分片 PUT 的成功响应。"""
+
+    status_code = 200
+    text = ""
+
+
 def _mock_upload_session(uploaded_parts=None):
     """与 test_transfer_speed_limit_cancel 相同的最小上传会话 mock。
 
     uploaded_parts: 续传场景下服务端已上传的分片号列表。
+    分片 PUT 会记录实际传上去的分片号，`s3_list_upload_parts` 返回
+    已有分片与新上传分片的并集，接近服务端的真实行为。
     """
-    uploaded_parts = uploaded_parts or []
+    uploaded_parts = list(uploaded_parts or [])
     session = MagicMock()
+    sent_parts = []
+
+    def _put_side_effect(url, *args, **kwargs):
+        try:
+            sent_parts.append(int(str(url).rsplit("/", 1)[-1]))
+        except (TypeError, ValueError):
+            pass
+        return MockPartResponse()
+
+    session.transfer.put.side_effect = _put_side_effect
 
     def _post_side_effect(url, *args, **kwargs):
         url = str(url)
@@ -53,9 +72,10 @@ def _mock_upload_session(uploaded_parts=None):
                 },
             })
         if "s3_list_upload_parts" in url:
+            numbers = sorted(set(uploaded_parts) | set(sent_parts))
             return MockResponse(
                 {"code": 0, "data": {"parts": [
-                    {"PartNumber": pn} for pn in uploaded_parts
+                    {"PartNumber": pn} for pn in numbers
                 ]}}
             )
         if "s3_repare_upload_parts_batch" in url:
@@ -190,18 +210,77 @@ class TestUploadParallel:
         f = tmp_path / "f.bin"
         f.write_bytes(b"A" * BLOCK)
         session = _mock_upload_session()
-        session.transfer.put.side_effect = [
-            requests.exceptions.ConnectionError(
-                "Connection aborted: write timeout"
-            ),
-            None,
-        ]
+        real_put = session.transfer.put.side_effect
+        attempts = []
+
+        def _put_side_effect(url, *args, **kwargs):
+            attempts.append(url)
+            if len(attempts) == 1:
+                raise requests.exceptions.ConnectionError(
+                    "Connection aborted: write timeout"
+                )
+            return real_put(url, *args, **kwargs)
+
+        session.transfer.put.side_effect = _put_side_effect
         svc = UploadService(session)
 
         result = svc.up_load(str(f), 0)
 
         assert result == 7
         assert session.transfer.put.call_count == 2
+
+    def test_part_http_error_triggers_fresh_restart(self, tmp_path):
+        """分片 PUT 返回非 2xx 时不当作成功：丢弃会话重建后重传一次。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK)
+        session = _mock_upload_session()
+        real_put = session.transfer.put.side_effect
+        attempts = []
+
+        def _put_side_effect(url, *args, **kwargs):
+            attempts.append(url)
+            if len(attempts) == 1:
+                response = MockPartResponse()
+                response.status_code = 403
+                response.text = "<Error><Code>SignatureDoesNotMatch</Code></Error>"
+                return response
+            return real_put(url, *args, **kwargs)
+
+        session.transfer.put.side_effect = _put_side_effect
+        svc = UploadService(session)
+
+        result = svc.up_load(str(f), 0)
+
+        assert result == 7
+        assert session.transfer.put.call_count == 2
+        # 重传是全新的 S3 会话（再次调用 upload_request）
+        upload_requests = [
+            c for c in session.http.post.call_args_list
+            if "upload_request" in str(c.args[0])
+        ]
+        assert len(upload_requests) == 2
+
+    def test_incomplete_parts_are_not_reported_as_success(self, tmp_path):
+        """服务端确认分片缺失时报错，不合并、不确认上传完成。"""
+        f = tmp_path / "f.bin"
+        f.write_bytes(b"A" * BLOCK * 2)
+        session = _mock_upload_session()
+        original_post = session.http.post.side_effect
+
+        def _post_side_effect(url, *args, **kwargs):
+            if "s3_list_upload_parts" in str(url):
+                return MockResponse({"code": 0, "data": {"parts": []}})
+            return original_post(url, *args, **kwargs)
+
+        session.http.post.side_effect = _post_side_effect
+        svc = UploadService(session)
+
+        with pytest.raises(Exception, match="分片不完整"):
+            svc.up_load(str(f), 0)
+
+        urls = [str(c.args[0]) for c in session.http.post.call_args_list]
+        assert not any("s3_complete_multipart_upload" in u for u in urls)
+        assert not any("upload_complete" in u for u in urls)
 
     def test_upload_does_not_retry_when_backoff_disabled(self, tmp_path):
         """关闭错误退避后，分片网络错误立即上抛。"""

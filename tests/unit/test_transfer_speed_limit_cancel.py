@@ -36,6 +36,13 @@ class MockResponse:
 def _mock_upload_session():
     """与 test_upload_resume 相同的最小上传会话 mock。"""
     session = MagicMock()
+    sent_parts = []
+
+    def _put_side_effect(url, *args, **kwargs):
+        sent_parts.append(url)
+        return MagicMock(status_code=200, text="")
+
+    session.transfer.put.side_effect = _put_side_effect
 
     def _post_side_effect(url, *args, **kwargs):
         url = str(url)
@@ -49,7 +56,11 @@ def _mock_upload_session():
                 },
             })
         if "s3_list_upload_parts" in url:
-            return MockResponse({"code": 0, "data": {"parts": []}})
+            return MockResponse(
+                {"code": 0, "data": {"parts": [
+                    {"PartNumber": pn} for pn in range(1, len(sent_parts) + 1)
+                ]}}
+            )
         if "s3_repare_upload_parts_batch" in url:
             return MockResponse(
                 {"code": 0, "data": {"presignedUrls": {

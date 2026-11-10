@@ -88,6 +88,10 @@ class TestComputeFileMd5Progress:
                         "UploadId": "u", "FileId": 1,
                     },
                 })
+            if "s3_list_upload_parts" in url:
+                return MagicMock(json=lambda: {
+                    "code": 0, "data": {"parts": [{"PartNumber": 1}]},
+                })
             if "s3_repare_upload_parts_batch" in url:
                 return MagicMock(json=lambda: {
                     "code": 0,

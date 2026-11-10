@@ -33,6 +33,31 @@ class TestFileServiceMove:
         assert msg == ""
         session.mod_pid.assert_called_once_with([1, 2], 99)
 
+    def test_move_invalidates_source_dir_cache(self, tmp_db):
+        """移动后源目录缓存也必须失效，否则根目录仍显示已移走的文件。"""
+        svc, session = self._make()
+        session.mod_pid.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg=""
+        )
+        svc._db.save_dir(0, [{"FileId": 1}], total=1, all_loaded=True)
+        assert svc._db.is_dirty(0) is False
+
+        ok, _ = svc.move_files([1], 99, source_parent_id=0)
+
+        assert ok is True
+        assert svc._db.is_dirty(0) is True
+        assert svc._db.is_dirty(99) is True
+
+    def test_move_same_source_and_target_marks_once(self, tmp_db):
+        """源目录与目标目录相同时不重复标记，也不报错。"""
+        svc, session = self._make()
+        session.mod_pid.return_value = ApiReturnModel(
+            code=0, api_code=200, api_code_enum=ApiCode.success, msg=""
+        )
+        ok, _ = svc.move_files([1], 99, source_parent_id=99)
+        assert ok is True
+        assert svc._db.is_dirty(99) is True
+
     def test_move_empty_list(self, tmp_db):
         svc, _ = self._make()
         ok, msg = svc.move_files([], 99)
@@ -68,7 +93,9 @@ class TestMoveFileTask:
         assert success is True
         assert error == ""
         assert items == [{"FileId": 1}]
-        pan.move_file.assert_called_once_with([1, 2], 99)
+        pan.move_file.assert_called_once_with(
+            [1, 2], 99, source_parent_id=0
+        )
 
     def test_failure(self):
         pan = MagicMock()

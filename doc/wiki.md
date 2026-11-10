@@ -274,6 +274,7 @@ flowchart TD
 - `mark_dirty(dir_id)` / `mark_all_dirty()` 使缓存失效（删除/移动/同步后调用）。
 - 缓存 TTL **5 分钟**（`DEFAULT_CACHE_TTL_SECONDS`）：过期后自动从服务器刷新，用于检测其他客户端（网页/手机端）的增删改。TTL 不宜过大，否则界面长期显示陈旧列表。
 - 删除/移动等写操作成功后必须 `mark_dirty(parent_dir)`，且界面刷新要走 `force_refresh=True`（跳过缓存），否则被删文件仍会显示。
+- **移动要同时失效源目录与目标目录**（`move_files(..., source_parent_id=...)`）：只失效目标目录时，源目录缓存仍有效，被移走的文件会继续显示在原目录。
 - 内存缓存上限 20 个目录（FIFO 淘汰），避免浏览目录过多内存膨胀。
 
 ---
@@ -548,6 +549,7 @@ QThreadPool.globalInstance().start(task)
 
 - 上传流程：`upload_request` → `s3_repare_upload_parts_batch`（拿预签名 URL）→ `transfer.put` 分片 → `s3_list_upload_parts` → `s3_complete_multipart_upload` → `upload_complete`。
 - 分片大小 5MB（`block_size = 5242880`）。
+- **分片失败必须显式检查**：S3 预签名 PUT 的失败（签名过期/长度不符/权限不足）同样以正常 HTTP 响应返回，requests 不抛异常，`_verify_part_response` 校验状态码；合并前还会校验 `s3_list_upload_parts` 的分片号是否齐全，缺失则抛 `_UploadPartFailed`，由 `up_load` 丢弃 `resume_info` 重建会话整文件重传一次。否则会出现「本地显示上传完成、云端没有文件（或只剩异常文件）」。
 - **断点续传**：S3 会话持久化到 `resume_info`（bucket/storage_node/upload_key/upload_id/up_file_id + etag/mtime/size），`_validate_resume_info` 校验文件未变才复用；`s3_list_upload_parts` 返回已传分片，跳过继续。
 - 重复文件：`code=5060` 时按 `dup_choice` 重试（0 提示 / 1 覆盖 / 2 跳过）；`Reuse=True` 表示秒传。
 - 上传 >64MB 完成后 sleep 3s 等待服务端就绪。
