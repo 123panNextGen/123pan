@@ -1,5 +1,6 @@
 {
   "recommendations": [
+    "ms-python.python","ms-python.debugpy","ms-python.vscode-pylance","ms-python.vscode-python-envs",
     "theqtcompany.qt-python","theqtcompany.qt-core"
   ]
 }
