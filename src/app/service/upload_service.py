@@ -811,7 +811,10 @@ class UploadService:
             "bucket": bucket,
             "fileId": up_file_id,
             "fileSize": fsize,
-            "isMultipart": total_parts > 1,
+            # 本流程始终走 S3 分片会话(uploadId)+合并，即使只有 1 个分片
+            # 也必须告诉服务端是 multipart：传 false 时 v2 返回 code=0 但
+            # data 为空、不建文件记录(小文件"提示成功但云端无文件"的根因)
+            "isMultipart": True,
             "key": upload_key,
             "uploadId": upload_id,
         }
@@ -828,7 +831,12 @@ class UploadService:
 
         # v2 返回的 fileInfo 才是云端真实记录，FileId 可能与上传会话不同
         final_data = close_res_json.get("data") or {}
-        file_info = final_data.get("fileInfo") or final_data.get("info") or {}
+        file_info = (
+            final_data.get("file_info")
+            or final_data.get("fileInfo")
+            or final_data.get("info")
+            or {}
+        )
         final_file_id = (
             file_info.get("fileId")
             or file_info.get("FileId")
