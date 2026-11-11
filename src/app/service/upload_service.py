@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import hashlib
+import os
 import threading
 import time
 from pathlib import Path
@@ -452,6 +453,7 @@ class UploadService:
         if file_path_obj.is_dir():
             raise IsADirectoryError("不支持文件夹上传")
         fsize = file_path_obj.stat().st_size
+        stem, suffix = os.path.splitext(file_name)
         logger.info(
             "上传开始: %s (%.2f MB, %d 线程)",
             file_name, fsize / 1024 / 1024, num_threads,
@@ -811,7 +813,10 @@ class UploadService:
             "bucket": bucket,
             "fileId": up_file_id,
             "fileSize": fsize,
-            "isMultipart": total_parts > 1,
+            # 本流程始终走 S3 分片会话(uploadId)+合并，即使只有 1 个分片
+            # 也必须告诉服务端是 multipart：传 false 时 v2 返回 code=0 但
+            # data 为空、不建文件记录(小文件"提示成功但云端无文件"的根因)
+            "isMultipart": True,
             "key": upload_key,
             "uploadId": upload_id,
         }
@@ -826,9 +831,14 @@ class UploadService:
         if res_code_up != 0:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")
 
-        # v2 返回的 fileInfo 才是云端真实记录，FileId 可能与上传会话不同
+        # v2 返回的 file_info 才是云端真实记录，FileId 可能与上传会话不同
         final_data = close_res_json.get("data") or {}
-        file_info = final_data.get("fileInfo") or final_data.get("info") or {}
+        file_info = (
+            final_data.get("file_info")
+            or final_data.get("fileInfo")
+            or final_data.get("info")
+            or {}
+        )
         final_file_id = (
             file_info.get("fileId")
             or file_info.get("FileId")
@@ -836,6 +846,38 @@ class UploadService:
             or final_data.get("FileId")
             or up_file_id
         )
+
+        # 兜底核对：服务端返回成功却没给文件记录时，主动查一次目标目录。
+        # 历史问题（旧接口/单分片误传 isMultipart）都是 code=0 但不建记录，
+        # 表现成"提示上传成功、云端没有文件"；这里宁可报错也不假成功。
+        if not file_info:
+            confirmed = False
+            try:
+                listing = self._session.get_file_list(
+                    file_id=parent_file_id, page=1, limit=100, retry_login=False
+                )
+                if getattr(listing, "code", -1) == 0:
+                    items = [
+                        item.to_json() for item in listing.data.data.info_list
+                    ]
+                    for item in items:
+                        if item.get("FileName") in (file_name, f"{stem} (1){suffix}"):
+                            final_file_id = item.get("FileId") or final_file_id
+                            confirmed = True
+                            break
+                    if not confirmed:
+                        raise RuntimeError(
+                            "上传完成但服务端未确认到文件记录，请重试"
+                        )
+                else:
+                    logger.warning(
+                        "上传后核对文件列表失败（code=%s），跳过核对",
+                        getattr(listing, "code", "?"),
+                    )
+            except RuntimeError:
+                raise
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("上传后核对文件列表异常: %s", e)
 
         elapsed = time.monotonic() - t0
         speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
