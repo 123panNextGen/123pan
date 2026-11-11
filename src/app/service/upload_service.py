@@ -572,8 +572,11 @@ class UploadService:
             raise RuntimeError(f"获取传输列表失败: {start_res_json}")
 
         # 已上传分片（续传时跳过）
+        # 接口数据键为 Parts（大写 P），历史代码误读小写 parts，
+        # 导致已传分片识别不到：续传失效且合并前误判分片不完整
+        parts_data = start_res_json.get("data") or {}
         uploaded_parts = set()
-        for part in (start_res_json.get("data") or {}).get("parts") or []:
+        for part in parts_data.get("Parts") or parts_data.get("parts") or []:
             try:
                 uploaded_parts.add(int(part.get("PartNumber", 0)))
             except (TypeError, ValueError):
@@ -771,8 +774,11 @@ class UploadService:
 
         # 合并前确认所有分片确实落在服务端：分片 PUT 失败会被服务器当作正常
         # 响应返回，不校验就会出现“合并成功但列表里没有文件”
+        # 数据键为 Parts（大写 P），历史代码误读小写 parts 恒为空，
+        # 导致“服务端确认 0/N 个分片”假失败并整文件重传
+        confirm_data = parts_res_json.get("data") or {}
         confirmed_parts = set()
-        for part in (parts_res_json.get("data") or {}).get("parts") or []:
+        for part in confirm_data.get("Parts") or confirm_data.get("parts") or []:
             try:
                 confirmed_parts.add(int(part.get("PartNumber", 0)))
             except (TypeError, ValueError):
