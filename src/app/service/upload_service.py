@@ -572,8 +572,11 @@ class UploadService:
             raise RuntimeError(f"获取传输列表失败: {start_res_json}")
 
         # 已上传分片（续传时跳过）
+        # 接口数据键为 Parts（大写 P），历史代码误读小写 parts，
+        # 导致已传分片识别不到：续传失效且合并前误判分片不完整
+        parts_data = start_res_json.get("data") or {}
         uploaded_parts = set()
-        for part in (start_res_json.get("data") or {}).get("parts") or []:
+        for part in parts_data.get("Parts") or parts_data.get("parts") or []:
             try:
                 uploaded_parts.add(int(part.get("PartNumber", 0)))
             except (TypeError, ValueError):
@@ -771,8 +774,11 @@ class UploadService:
 
         # 合并前确认所有分片确实落在服务端：分片 PUT 失败会被服务器当作正常
         # 响应返回，不校验就会出现“合并成功但列表里没有文件”
+        # 数据键为 Parts（大写 P），历史代码误读小写 parts 恒为空，
+        # 导致“服务端确认 0/N 个分片”假失败并整文件重传
+        confirm_data = parts_res_json.get("data") or {}
         confirmed_parts = set()
-        for part in (parts_res_json.get("data") or {}).get("parts") or []:
+        for part in confirm_data.get("Parts") or confirm_data.get("parts") or []:
             try:
                 confirmed_parts.add(int(part.get("PartNumber", 0)))
             except (TypeError, ValueError):
@@ -797,15 +803,39 @@ class UploadService:
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
 
-        close_up_session_data = {"fileId": up_file_id}
+        # 完成确认必须走 v2 接口并携带完整 S3 会话信息：
+        # 旧接口 /b/api/file/upload_complete 只传 fileId，服务端返回 code=0
+        # 但不建立文件记录，造成“上传成功但云端无文件”
+        finalize_data = {
+            "StorageNode": storage_node,
+            "bucket": bucket,
+            "fileId": up_file_id,
+            "fileSize": fsize,
+            "isMultipart": total_parts > 1,
+            "key": upload_key,
+            "uploadId": upload_id,
+        }
         _, close_res_json = self._post_with_session_retry(
-            refresh_session, refresh_state,
-            api_url("/b/api/file/upload_complete"),
-            close_up_session_data, 30,
+            refresh_session,
+            refresh_state,
+            api_url("/b/api/file/upload_complete/v2"),
+            finalize_data,
+            30,
         )
         res_code_up = close_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")
+
+        # v2 返回的 fileInfo 才是云端真实记录，FileId 可能与上传会话不同
+        final_data = close_res_json.get("data") or {}
+        file_info = final_data.get("fileInfo") or final_data.get("info") or {}
+        final_file_id = (
+            file_info.get("fileId")
+            or file_info.get("FileId")
+            or final_data.get("fileId")
+            or final_data.get("FileId")
+            or up_file_id
+        )
 
         elapsed = time.monotonic() - t0
         speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
@@ -813,7 +843,7 @@ class UploadService:
             "上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
             file_name, fsize / 1024 / 1024, elapsed, speed,
         )
-        return up_file_id
+        return final_file_id
 
     def fast_upload(self, file_name, file_size, etag, parent_file_id):
         """秒传：以 etag 直接调用 upload_request，无需上传文件内容。
