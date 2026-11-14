@@ -316,12 +316,14 @@ class FileService:
             time.sleep(interval)
         return False, "复制超时，请稍后刷新查看结果"
 
-    def move_files(self, file_id_list, target_parent_id):
+    def move_files(self, file_id_list, target_parent_id, source_parent_id=None):
         """移动文件/文件夹到目标目录。
 
         Args:
             file_id_list: 文件 ID 列表
             target_parent_id: 目标目录 ID（0 表示根目录）
+            source_parent_id: 源目录 ID。移动后必须同时失效源目录缓存，
+                否则源目录仍会返回缓存里的旧列表（被移走的文件继续显示）
 
         Returns:
             (success, msg)
@@ -338,6 +340,10 @@ class FileService:
         logger.info("移动成功: %d 个文件 -> 目录 %s", len(file_id_list), target_parent_id)
         # 移动后源目录与目标目录缓存均失效
         self._db.mark_dirty(target_parent_id)
+        if source_parent_id is not None and str(source_parent_id) != str(
+            target_parent_id
+        ):
+            self._db.mark_dirty(source_parent_id)
         return True, ""
 
     def recycle(self):

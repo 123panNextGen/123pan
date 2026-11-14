@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 """
 
 import hashlib
+import os
 import threading
 import time
 from pathlib import Path
@@ -40,6 +41,13 @@ class _UploadCancelled(_UploadInterrupted):
 
 class _UploadPaused(_UploadInterrupted):
     """用户暂停上传：中止当前分片请求，恢复后从该分片起点重传。"""
+
+
+class _UploadPartFailed(Exception):
+    """分片未真正落到服务端（HTTP 非 2xx 或分片校验不通过）。
+
+    此时已上传的分片与 S3 会话都不可信，需要丢弃断点信息重建会话重传。
+    """
 
 
 class _ChunkedPartBody:
@@ -120,6 +128,7 @@ class UploadService:
         """发起鉴权请求；会话过期时重新登录并重试一次。"""
         response = self._session.http.post(url, json=json, timeout=timeout)
         response_data = response.json()
+        self._log_upload_response(url, response_data)
         if not refresh_session or not self._is_session_expired(response_data):
             return response, response_data
 
@@ -131,7 +140,27 @@ class UploadService:
                 return response, response_data
 
         response = self._session.http.post(url, json=json, timeout=timeout)
-        return response, response.json()
+        response_data = response.json()
+        self._log_upload_response(url, response_data)
+        return response, response_data
+
+    @staticmethod
+    def _log_upload_response(url, response_data):
+        """记录上传链路接口响应摘要，便于定位“上传成功但云端无文件”。
+
+        只记录字段名，不记录 upload_request 返回的 S3 密钥等敏感字段。
+        """
+        if not isinstance(response_data, dict):
+            return
+        data = response_data.get("data")
+        data_keys = sorted(data.keys()) if isinstance(data, dict) else type(data).__name__
+        logger.debug(
+            "上传接口响应: %s, code=%s, data=%s, message=%s",
+            str(url).rsplit("/", 1)[-1],
+            response_data.get("code"),
+            data_keys,
+            response_data.get("message", ""),
+        )
 
     @staticmethod
     def compute_file_md5(file_path, progress_callback=None, cancel_check=None):
@@ -275,12 +304,15 @@ class UploadService:
                 on_bytes_sent=_on_sent,
             )
             try:
-                self._session.transfer.put(
+                response = self._session.transfer.put(
                     upload_url,
                     data=body,
                     headers={"Content-Length": str(len(data))},
                     timeout=timeout,
                 )
+                # 分片没落到服务端（非 2xx）时这里会抛 _UploadPartFailed，
+                # 由 up_load 重建会话整文件重传，绝不能当成成功继续合并
+                self._verify_part_response(response)
                 # 兜底补齐：若请求体未被逐块消费（如测试 mock），按整片补报
                 if progress_callback and sent[0] < len(data):
                     progress_callback(len(data) - sent[0])
@@ -322,7 +354,72 @@ class UploadService:
                     time.sleep(min(0.1, deadline - time.monotonic()))
         raise last_error
 
+    @staticmethod
+    def _verify_part_response(response):
+        """校验分片 PUT 是否真的成功。
+
+        S3 对预签名 PUT 的失败（签名过期、长度不符、权限不足等）同样以
+        正常 HTTP 响应返回，requests 不会抛异常。若不显式检查状态码，
+        会把失败当成功，最终云端只剩一个列表里看不到的异常文件。
+        """
+        status = getattr(response, "status_code", None)
+        if not isinstance(status, int) or 200 <= status < 300:
+            return
+        detail = ""
+        try:
+            text = getattr(response, "text", "") or ""
+            detail = " ".join(str(text).split())[:200]
+        except Exception:  # pylint: disable=broad-except
+            detail = ""
+        raise _UploadPartFailed(
+            f"分片上传失败: HTTP {status}" + (f" {detail}" if detail else "")
+        )
+
     def up_load(
+        self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
+        resume_info=None, session_callback=None, num_threads=1,
+        progress_callback=None, validation_callback=None, refresh_session=None,
+        duplicate_callback=None,
+    ):
+        """上传文件（分片失败时丢弃断点信息整文件重传一次）。
+
+        `_up_load_once` 直接抛 `_UploadPartFailed` 时，之前上传的分片已不可信，
+        因此丢掉 resume_info 重建 S3 会话再干净地传一遍；仍失败则报错给调用方，
+        避免“本地显示已完成、云端没有文件”。
+        """
+        try:
+            return self._up_load_once(
+                file_path, parent_file_id, dup_choice=dup_choice,
+                signals=signals, task=task, resume_info=resume_info,
+                session_callback=session_callback, num_threads=num_threads,
+                progress_callback=progress_callback,
+                validation_callback=validation_callback,
+                refresh_session=refresh_session,
+                duplicate_callback=duplicate_callback,
+            )
+        except _UploadPartFailed as error:
+            if task is not None and getattr(task, "is_cancelled", False):
+                return "已取消"
+            logger.warning(
+                "分片上传失败，丢弃断点信息后整文件重传: %s (%s)", file_path, error
+            )
+            if session_callback:
+                # 空 dict 表示旧会话作废，避免下次续传复用死会话
+                try:
+                    session_callback({})
+                except Exception as callback_error:  # pylint: disable=broad-except
+                    logger.error("清理上传会话失败: %s", callback_error)
+            return self._up_load_once(
+                file_path, parent_file_id, dup_choice=dup_choice,
+                signals=signals, task=task, resume_info=None,
+                session_callback=session_callback, num_threads=num_threads,
+                progress_callback=progress_callback,
+                validation_callback=validation_callback,
+                refresh_session=refresh_session,
+                duplicate_callback=duplicate_callback,
+            )
+
+    def _up_load_once(
         self, file_path, parent_file_id, dup_choice=0, signals=None, task=None,
         resume_info=None, session_callback=None, num_threads=1,
         progress_callback=None, validation_callback=None, refresh_session=None,
@@ -356,6 +453,7 @@ class UploadService:
         if file_path_obj.is_dir():
             raise IsADirectoryError("不支持文件夹上传")
         fsize = file_path_obj.stat().st_size
+        stem, suffix = os.path.splitext(file_name)
         logger.info(
             "上传开始: %s (%.2f MB, %d 线程)",
             file_name, fsize / 1024 / 1024, num_threads,
@@ -476,8 +574,11 @@ class UploadService:
             raise RuntimeError(f"获取传输列表失败: {start_res_json}")
 
         # 已上传分片（续传时跳过）
+        # 接口数据键为 Parts（大写 P），历史代码误读小写 parts，
+        # 导致已传分片识别不到：续传失效且合并前误判分片不完整
+        parts_data = start_res_json.get("data") or {}
         uploaded_parts = set()
-        for part in (start_res_json.get("data") or {}).get("parts") or []:
+        for part in parts_data.get("Parts") or parts_data.get("parts") or []:
             try:
                 uploaded_parts.add(int(part.get("PartNumber", 0)))
             except (TypeError, ValueError):
@@ -673,6 +774,26 @@ class UploadService:
         if parts_res_json.get("code", -1) != 0:
             raise RuntimeError(f"上传分片列表确认失败: {parts_res_json}")
 
+        # 合并前确认所有分片确实落在服务端：分片 PUT 失败会被服务器当作正常
+        # 响应返回，不校验就会出现“合并成功但列表里没有文件”
+        # 数据键为 Parts（大写 P），历史代码误读小写 parts 恒为空，
+        # 导致“服务端确认 0/N 个分片”假失败并整文件重传
+        confirm_data = parts_res_json.get("data") or {}
+        confirmed_parts = set()
+        for part in confirm_data.get("Parts") or confirm_data.get("parts") or []:
+            try:
+                confirmed_parts.add(int(part.get("PartNumber", 0)))
+            except (TypeError, ValueError):
+                continue
+        missing_parts = [
+            pn for pn in range(1, total_parts + 1) if pn not in confirmed_parts
+        ]
+        if missing_parts:
+            raise _UploadPartFailed(
+                f"分片不完整: 服务端确认 {len(confirmed_parts)}/{total_parts} 个分片，"
+                f"缺少 {missing_parts[:5]}"
+            )
+
         _, complete_res_json = self._post_with_session_retry(
             refresh_session, refresh_state,
             api_url("/b/api/file/s3_complete_multipart_upload"),
@@ -684,15 +805,79 @@ class UploadService:
         if fsize > 64 * 1024 * 1024:
             time.sleep(3)
 
-        close_up_session_data = {"fileId": up_file_id}
+        # 完成确认必须走 v2 接口并携带完整 S3 会话信息：
+        # 旧接口 /b/api/file/upload_complete 只传 fileId，服务端返回 code=0
+        # 但不建立文件记录，造成“上传成功但云端无文件”
+        finalize_data = {
+            "StorageNode": storage_node,
+            "bucket": bucket,
+            "fileId": up_file_id,
+            "fileSize": fsize,
+            # 本流程始终走 S3 分片会话(uploadId)+合并，即使只有 1 个分片
+            # 也必须告诉服务端是 multipart：传 false 时 v2 返回 code=0 但
+            # data 为空、不建文件记录(小文件"提示成功但云端无文件"的根因)
+            "isMultipart": True,
+            "key": upload_key,
+            "uploadId": upload_id,
+        }
         _, close_res_json = self._post_with_session_retry(
-            refresh_session, refresh_state,
-            api_url("/b/api/file/upload_complete"),
-            close_up_session_data, 30,
+            refresh_session,
+            refresh_state,
+            api_url("/b/api/file/upload_complete/v2"),
+            finalize_data,
+            30,
         )
         res_code_up = close_res_json.get("code", -1)
         if res_code_up != 0:
             raise RuntimeError(f"上传完成确认失败: {close_res_json}")
+
+        # v2 返回的 file_info 才是云端真实记录，FileId 可能与上传会话不同
+        final_data = close_res_json.get("data") or {}
+        file_info = (
+            final_data.get("file_info")
+            or final_data.get("fileInfo")
+            or final_data.get("info")
+            or {}
+        )
+        final_file_id = (
+            file_info.get("fileId")
+            or file_info.get("FileId")
+            or final_data.get("fileId")
+            or final_data.get("FileId")
+            or up_file_id
+        )
+
+        # 兜底核对：服务端返回成功却没给文件记录时，主动查一次目标目录。
+        # 历史问题（旧接口/单分片误传 isMultipart）都是 code=0 但不建记录，
+        # 表现成"提示上传成功、云端没有文件"；这里宁可报错也不假成功。
+        if not file_info:
+            confirmed = False
+            try:
+                listing = self._session.get_file_list(
+                    file_id=parent_file_id, page=1, limit=100, retry_login=False
+                )
+                if getattr(listing, "code", -1) == 0:
+                    items = [
+                        item.to_json() for item in listing.data.data.info_list
+                    ]
+                    for item in items:
+                        if item.get("FileName") in (file_name, f"{stem} (1){suffix}"):
+                            final_file_id = item.get("FileId") or final_file_id
+                            confirmed = True
+                            break
+                    if not confirmed:
+                        raise RuntimeError(
+                            "上传完成但服务端未确认到文件记录，请重试"
+                        )
+                else:
+                    logger.warning(
+                        "上传后核对文件列表失败（code=%s），跳过核对",
+                        getattr(listing, "code", "?"),
+                    )
+            except RuntimeError:
+                raise
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("上传后核对文件列表异常: %s", e)
 
         elapsed = time.monotonic() - t0
         speed = fsize / 1024 / 1024 / elapsed if elapsed > 0 else 0
@@ -700,7 +885,7 @@ class UploadService:
             "上传完成: %s (%.2f MB / %.1fs / %.1f MB/s)",
             file_name, fsize / 1024 / 1024, elapsed, speed,
         )
-        return up_file_id
+        return final_file_id
 
     def fast_upload(self, file_name, file_size, etag, parent_file_id):
         """秒传：以 etag 直接调用 upload_request，无需上传文件内容。

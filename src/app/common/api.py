@@ -260,17 +260,20 @@ class Pan123:
             file_id_list, target_parent_id, source_parent_id
         )
 
-    def move_file(self, file_id_list, target_parent_id):
+    def move_file(self, file_id_list, target_parent_id, source_parent_id=None):
         """移动文件/文件夹到目标目录。
 
         Args:
             file_id_list: 文件 ID 列表
             target_parent_id: 目标目录 ID（0 表示根目录）
+            source_parent_id: 源目录 ID（可选，用于移动后失效源目录缓存）
 
         Returns:
             (success, msg)
         """
-        return self._file.move_files(file_id_list, target_parent_id)
+        return self._file.move_files(
+            file_id_list, target_parent_id, source_parent_id
+        )
 
     def share(self, file_id_list, share_pwd=""):
         return self._file.share(file_id_list, share_pwd)

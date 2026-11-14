@@ -24,6 +24,13 @@ class MockResponse:
         return self._data
 
 
+class MockPartResponse:
+    """分片 PUT 的成功响应。"""
+
+    status_code = 200
+    text = ""
+
+
 class TestValidateResumeInfo:
     def _make(self):
         return UploadService(MagicMock())
@@ -73,12 +80,24 @@ class TestValidateResumeInfo:
 class TestUploadResume:
     def _mock_session(self):
         session = MagicMock()
+        sent_parts = []
+        # 暴露给个别需要自定义 post 行为的测试，用于模拟服务端已收到分片
+        session.sent_parts = sent_parts
+
+        def _put_side_effect(url, *args, **kwargs):
+            sent_parts.append(url)
+            return MockPartResponse()
+
+        session.transfer.put.side_effect = _put_side_effect
 
         def _post_side_effect(url, *args, **kwargs):
             url = str(url)
             if "s3_list_upload_parts" in url:
                 return MockResponse(
-                    {"code": 0, "data": {"parts": [{"PartNumber": 1}]}}
+                    {"code": 0, "data": {"parts": [
+                        {"PartNumber": 1},
+                        *[{"PartNumber": 2 + i} for i, _ in enumerate(sent_parts)],
+                    ]}}
                 )
             if "s3_repare_upload_parts_batch" in url:
                 return MockResponse(
@@ -146,7 +165,12 @@ class TestUploadResume:
                     },
                 })
             if "s3_list_upload_parts" in url:
-                return MockResponse({"code": 0, "data": {"parts": []}})
+                return MockResponse(
+                    {"code": 0, "data": {"parts": [
+                        {"PartNumber": i + 1}
+                        for i in range(len(session.sent_parts))
+                    ]}}
+                )
             if "s3_repare_upload_parts_batch" in url:
                 return MockResponse(
                     {"code": 0, "data": {"presignedUrls": {"1": "http://cdn/1"}}}
