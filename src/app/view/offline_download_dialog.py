@@ -101,7 +101,6 @@ class _FileSelectDialog(QDialog):
             )
             self.table.setItem(i, 0, check_item)
             name_item = QTableWidgetItem(str(f.get("name", "")))
-            name_item.setToolTip(str(f.get("name", "")))
             self.table.setItem(i, 1, name_item)
 
         layout.addWidget(self.table)
@@ -445,7 +444,6 @@ class OfflineDownloadDialog(QDialog):
                 table.setItem(row, 0, check_item)
 
                 name_item = QTableWidgetItem(str(res.get("name", "") or ""))
-                name_item.setToolTip(str(res.get("name", "") or ""))
                 table.setItem(row, 1, name_item)
 
                 size_item = QTableWidgetItem(

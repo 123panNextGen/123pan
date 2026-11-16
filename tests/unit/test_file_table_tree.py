@@ -56,8 +56,8 @@ class TestFileTableManager:
         assert mgr.find_by_id(2)["FileName"] == "文件夹A"
         assert mgr.find_by_id(999) is None
 
-    def test_name_tooltip(self, qapp):
-        """名称单元格悬停提示完整文件名（长名截断时可查看）。"""
+    def test_name_has_no_tooltip(self, qapp):
+        """名称单元格不再设置悬停提示（文件名已完整显示，提示属于冗余信息）。"""
         table = TableWidget()
         table.setColumnCount(4)
         mgr = FileTableManager(table, QLabel())
@@ -65,7 +65,7 @@ class TestFileTableManager:
         mgr.set_items([{"FileId": 1, "FileName": long_name, "Type": 0,
                         "Size": 100, "UpdateAt": 1700000000}])
         item = table.item(0, 0)
-        assert item.toolTip() == long_name
+        assert item.toolTip() in ("", None)
 
     def test_file_icons_follow_extension(self, qapp):
         table = TableWidget()
