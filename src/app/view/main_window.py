@@ -130,7 +130,6 @@ class MainWindow(FluentWindow):
                 text=text,
                 onClick=lambda checked=False, rk=route_key: self._open_interface(rk),
                 position=position,
-                tooltip=text,
             )
 
     @property
