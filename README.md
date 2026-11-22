@@ -5,12 +5,20 @@
 第三方 123 云盘桌面客户端
 
 <p>
-  <a href="https://github.com/123panNextGen/123pan/stargazers"><img src="https://img.shields.io/github/stars/123panNextGen/123pan" alt="GitHub Stars"></a>
-  <a href="https://github.com/123panNextGen/123pan/issues"><img src="https://img.shields.io/github/issues/123panNextGen/123pan" alt="GitHub Issues"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-green" alt="GPLv3 License"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
-  <a href="https://github.com/123panNextGen/123pan/releases"><img src="https://img.shields.io/github/v/tag/123panNextGen/123pan?label=release" alt="Latest Release"></a>
-  <a href="https://github.com/123panNextGen/123pan/releases"><img src="https://img.shields.io/github/downloads/123panNextGen/123pan/total" alt="Downloads"></a>
+  <div>
+    <a href="https://github.com/123pannextgen/123pan/stargazers"><img src="https://img.shields.io/github/stars/123pannextgen/123pan" alt="Stars"></a>
+    <a href="https://github.com/123pannextgen/123pan/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL%20V3-green" alt="License"></a>
+    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/v/release/123pannextgen/123pan" alt="Release"></a>
+    <a href="https://github.com/123pannextgen/123pan/releases"><img src="https://img.shields.io/github/downloads/123pannextgen/123pan/total" alt="Downloads"></a>
+    <a href="https://qm.qq.com/q/nu8NLH5qBW"><img src="https://img.shields.io/badge/Join-QQ-blue.svg?logo=QQ"></a>
+  </div>
+  <div>
+    <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/PySide6-Fluent%20Design-41CD52?logo=qt&logoColor=white" alt="PySide6">
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey" alt="Platform">
+    <a href="https://github.com/123pannextgen/123pan/actions/workflows/build.yaml"><img src="https://img.shields.io/github/actions/workflow/status/123pannextgen/123pan/build.yaml?label=build&logo=github" alt="Build"></a>
+    <a href="https://github.com/123pannextgen/123pan/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/123pannextgen/123pan/check.yml?label=check&logo=github" alt="Tests"></a>
+  </div>
 </p>
 
 <img src="./doc/image.png" width="720" alt="123pan 主界面">
@@ -23,8 +31,14 @@
 
 项目以 GPLv3 协议开源，代码同步托管于 [GitHub](https://github.com/123panNextGen/123pan) 和 [Codeberg](https://codeberg.org/123panNextGen/123pan)。
 
-> [!IMPORTANT]
-> 本项目与 123 云盘官方无关。客户端能力依赖 123 云盘服务端接口，部分功能可能随服务端策略调整而变化。
+> [!WARNING]
+> **免责声明**
+>
+>本项目**仅供个人学习与技术研究**，与 123 云盘官方**无任何关联**！  
+>客户端能力依赖 123 云盘服务端接口，部分功能可能**随服务端策略调整而变化**！  
+>软件按“现状”提供，**不作任何明示或暗示的保证**！  
+>使用者应自行承担**数据丢失、账号限制、服务中断等**风险，并遵守 **123 云盘用户协议及相关法律法规**。  
+>请勿将本软件用于**商业用途**！
 
 ## 功能特性
 
@@ -79,11 +93,6 @@
 - 可配置日志等级，日志保留最近 7 天
 
 ## 下载与运行
-
-> [!WARNING]
-> **免责声明**
->
-> 本项目仅供个人学习与技术研究，与 123 云盘官方无任何关联。软件按“现状”提供，不作任何明示或暗示的保证。使用者应自行承担数据丢失、账号限制、服务中断等风险，并遵守 123 云盘用户协议及相关法律法规。请勿将本软件用于商业用途。
 
 ### 使用发行版
 
@@ -172,7 +181,7 @@ uv run pytest --cov              # 生成覆盖率报告
 
 - [GitHub Issues](https://github.com/123panNextGen/123pan/issues)
 - [GitHub Discussions](https://github.com/123panNextGen/123pan/discussions)
-- QQ 群：996241397
+- QQ 群：[996241397](https://qm.qq.com/q/nu8NLH5qBW)
 
 ## 开源协议
 
