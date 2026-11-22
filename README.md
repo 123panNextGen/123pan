@@ -13,8 +13,8 @@
     <a href="https://qm.qq.com/q/nu8NLH5qBW"><img src="https://img.shields.io/badge/Join-QQ-blue.svg?logo=QQ"></a>
   </div>
   <div>
-    <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python">
-    <img src="https://img.shields.io/badge/PySide6-Fluent%20Design-41CD52?logo=qt&logoColor=white" alt="PySide6">
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python"></a>
+    <a href="https://github.com/zhiyiYo/PyQt-Fluent-Widgets/"><img src="https://img.shields.io/badge/PySide6-Fluent%20Design-41CD52?logo=qt&logoColor=white" alt="PySide6"></a>
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey" alt="Platform">
     <a href="https://github.com/123pannextgen/123pan/actions/workflows/build.yaml"><img src="https://img.shields.io/github/actions/workflow/status/123pannextgen/123pan/build.yaml?label=build&logo=github" alt="Build"></a>
     <a href="https://github.com/123pannextgen/123pan/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/123pannextgen/123pan/check.yml?label=check&logo=github" alt="Tests"></a>
